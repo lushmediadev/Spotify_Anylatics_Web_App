@@ -209,6 +209,12 @@ h3 {
   user-select: none;
 }
 
+.group-item.group-selected {
+  background: rgba(29, 185, 84, 0.15);
+  border: 1px solid rgba(29, 185, 84, 0.45);
+  color: #f6fffb;
+}
+
 .group-item[draggable="true"] {
   cursor: grab;
 }
@@ -1192,6 +1198,30 @@ h3 {
   justify-content: flex-start;
 }
 
+.playlist-owner-sort-toggle {
+  margin-left: 6px;
+  width: 20px;
+  height: 20px;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  color: #8da2bd;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+}
+
+.playlist-owner-sort-toggle:hover,
+.playlist-owner-sort-toggle.is-active {
+  background: rgba(255, 255, 255, 0.12);
+  color: #e7f8ef;
+}
+
+.playlist-owner-sort-icon {
+  font-size: 16px !important;
+}
+
 .playlist-owner-empty {
   color: #c6cedb;
   font-size: 13px;
@@ -1207,6 +1237,10 @@ h3 {
   border-radius: 12px;
   box-shadow: 0 24px 60px rgba(0, 0, 0, 0.48);
   padding: 6px;
+}
+
+.group-context-menu {
+  min-width: 230px;
 }
 
 .row-context-item {

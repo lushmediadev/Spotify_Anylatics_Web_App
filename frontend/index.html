@@ -125,6 +125,14 @@
                     <span class="material-icons-round absolute left-3 top-1/2 -translate-y-1/2 text-secondary-text text-xl">search</span>
                     <input id="search-input" class="search-pill bg-[#242424] border-none rounded-full pl-10 pr-4 py-2 text-sm w-64 focus:ring-1 focus:ring-primary placeholder:text-secondary-text transition-all" placeholder="Search links..." type="text">
                 </div>
+                <div class="relative group">
+                    <span class="material-icons-round absolute left-3 top-1/2 -translate-y-1/2 text-secondary-text text-lg">sort_by_alpha</span>
+                    <select id="owner-sort-select" class="search-pill bg-[#242424] border-none rounded-full pl-10 pr-8 py-2 text-sm w-40 focus:ring-1 focus:ring-primary text-secondary-text transition-all">
+                        <option value="">Owner: Default</option>
+                        <option value="asc">Owner: A-Z</option>
+                        <option value="desc">Owner: Z-A</option>
+                    </select>
+                </div>
                 <button id="btn-refresh" onclick="refreshAllItems()" class="btn-ghost flex items-center gap-2 px-4 py-2 rounded-full border border-white/20 hover:border-white transition-colors text-sm font-bold cursor-pointer">
                     <span class="material-icons-round text-lg">refresh</span>
                     Refresh All
@@ -172,6 +180,9 @@
                             <div class="meta-cell head-cell" data-col-key="playlistOwner">
                                 <button type="button" class="column-resize-handle column-resize-handle-start" data-col-key="playlistOwner" data-resize-edge="start" aria-label="Resize Playlist Owner column from left"></button>
                                 <span class="head-cell-label">Playlist Owner</span>
+                                <button type="button" class="playlist-owner-sort-toggle" data-owner-sort-toggle aria-label="Sort Playlist Owner A-Z" title="Sort Playlist Owner A-Z">
+                                    <span class="material-icons-round playlist-owner-sort-icon">swap_vert</span>
+                                </button>
                                 <button type="button" class="column-resize-handle" data-col-key="playlistOwner" aria-label="Resize Playlist Owner column"></button>
                             </div>
                             <div class="meta-cell head-cell" data-col-key="playlistSaves">
@@ -398,9 +409,9 @@
                 <span class="flex items-center gap-1"><b class="text-white">Crawling:</b> <span id="footer-crawling">0</span></span>
             </div>
             <div class="flex items-center gap-4">
-                <button id="btn-clear-list" onclick="clearList()" class="hover:text-white transition-colors cursor-pointer">Clear List</button>
+                <span class="inline-flex items-center">API Status: <span id="api-status" class="text-primary font-bold uppercase ml-1">Connecting...</span></span>
                 <div class="w-[1px] h-3 bg-white/10"></div>
-                <span>API Status: <span id="api-status" class="text-primary font-bold uppercase">Connecting...</span></span>
+                <button id="btn-clear-list" onclick="clearList()" class="inline-flex items-center hover:text-white transition-colors cursor-pointer">Clear List</button>
             </div>
         </footer>
     </main>
@@ -424,6 +435,10 @@
                     <label class="block text-sm font-medium text-secondary-text mb-2">Group (optional)</label>
                     <div id="modal-group-select-wrap"></div>
                 </div>
+                <label class="flex items-center gap-2 text-xs text-secondary-text cursor-pointer select-none">
+                    <input id="modal-remove-duplicates" type="checkbox" class="h-4 w-4 rounded border-white/30 bg-white/5 text-primary focus:ring-primary/40">
+                    <span>Remove duplicate links in selected group</span>
+                </label>
                 <div class="flex gap-3 pt-4">
                     <button id="modal-cancel" class="flex-1 btn-ghost px-4 py-3 rounded-xl border border-white/20 text-sm font-bold cursor-pointer">Cancel</button>
                     <button id="modal-submit" class="flex-1 px-4 py-3 rounded-xl bg-primary hover:bg-primary/90 text-white text-sm font-bold transition-colors cursor-pointer">
@@ -574,43 +589,22 @@
             </button>
             <div class="row-context-separator"></div>
 
-            <div class="row-context-parent" data-context-group="clipboard">
-                <button type="button" class="row-context-item row-context-submenu-trigger">
-                    <span class="material-icons-round">content_paste</span>
-                    <span>Clipboard</span>
-                    <span class="material-icons-round row-context-chevron">chevron_right</span>
-                </button>
-                <div class="row-context-submenu">
-                    <button type="button" class="row-context-item row-context-submenu-item" data-context-action="clipboard-playlist-type3">
-                        <span>Playlist: Nghe si - Ten track | Link track | PlayCount</span>
-                    </button>
-                    <button type="button" class="row-context-item row-context-submenu-item" data-context-action="clipboard-album-type0">
-                        <span>Album: Ten album | STT track | Ten track | Link track | PlayCount</span>
-                    </button>
-                    <button type="button" class="row-context-item row-context-submenu-item" data-context-action="clipboard-track-offline">
-                        <span>Track Offline: Nghe si - Ten track | Link track | PlayCount | Listener/thang</span>
-                    </button>
-                </div>
-            </div>
+            <button type="button" class="row-context-item" data-context-action="clipboard-selected">
+                <span class="material-icons-round">content_paste</span>
+                <span>Copy selected rows</span>
+            </button>
 
-            <div class="row-context-parent" data-context-group="txt">
-                <button type="button" class="row-context-item row-context-submenu-trigger">
-                    <span class="material-icons-round">description</span>
-                    <span>Txt file</span>
-                    <span class="material-icons-round row-context-chevron">chevron_right</span>
-                </button>
-                <div class="row-context-submenu">
-                    <button type="button" class="row-context-item row-context-submenu-item" data-context-action="txt-playlist-type3">
-                        <span>Playlist: Nghe si - Ten track | Link track | PlayCount</span>
-                    </button>
-                    <button type="button" class="row-context-item row-context-submenu-item" data-context-action="txt-album-type0">
-                        <span>Album: Ten album | STT track | Ten track | Link track | PlayCount</span>
-                    </button>
-                    <button type="button" class="row-context-item row-context-submenu-item" data-context-action="txt-track-offline">
-                        <span>Track Offline: Nghe si - Ten track | Link track | PlayCount | Listener/thang</span>
-                    </button>
-                </div>
-            </div>
+        </div>
+
+        <div id="group-context-menu" class="row-context-menu group-context-menu" style="display:none">
+            <button type="button" class="row-context-item" data-group-context-action="clear-list">
+                <span class="material-icons-round">clear_all</span>
+                <span data-group-context-label="clear">Clear list</span>
+            </button>
+            <button type="button" class="row-context-item row-context-danger" data-group-context-action="delete-group">
+                <span class="material-icons-round">delete</span>
+                <span data-group-context-label="delete">Delete group</span>
+            </button>
         </div>
 
     <script src="app.js?v=20260311-64"></script>

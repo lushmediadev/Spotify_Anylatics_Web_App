@@ -4,12 +4,13 @@ import asyncio
 import uuid
 
 from fastapi import APIRouter, Depends, HTTPException
-from sqlalchemy import select
+from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import get_db
 from app.models.item import Item
 from app.models.crawl_job import CrawlJob
+from app.models.metrics_snapshot import MetricsSnapshot
 from app.models.user import User
 from app.schemas.crawl import (
     CrawlRequest,
@@ -66,6 +67,61 @@ async def _resolve_refresh_item(
     return item
 
 
+async def _delete_duplicate_rows(db: AsyncSession, duplicates: list[Item]) -> None:
+    if not duplicates:
+        return
+    duplicate_ids = [item.id for item in duplicates if item and item.id]
+    if not duplicate_ids:
+        return
+    await db.execute(delete(MetricsSnapshot).where(MetricsSnapshot.item_id.in_(duplicate_ids)))
+    await db.execute(delete(CrawlJob).where(CrawlJob.item_id.in_(duplicate_ids)))
+    for item in duplicates:
+        await db.delete(item)
+
+
+async def _resolve_or_create_item(
+    db: AsyncSession,
+    *,
+    spotify_id: str,
+    item_type: str,
+    target_user_id: uuid.UUID,
+    requested_group: str | None,
+    remove_duplicates: bool,
+) -> Item:
+    if remove_duplicates:
+        duplicate_query = select(Item).where(
+            Item.spotify_id == spotify_id,
+            Item.item_type == item_type,
+            Item.user_id == target_user_id,
+        )
+        if requested_group is None:
+            duplicate_query = duplicate_query.where(Item.group.is_(None))
+        else:
+            duplicate_query = duplicate_query.where(Item.group == requested_group)
+        duplicates = (
+            await db.execute(
+                duplicate_query.order_by(Item.updated_at.desc(), Item.created_at.desc())
+            )
+        ).scalars().all()
+        if duplicates:
+            primary = duplicates[0]
+            if requested_group is not None:
+                primary.group = requested_group
+            await _delete_duplicate_rows(db, duplicates[1:])
+            return primary
+
+    item = Item(
+        spotify_id=spotify_id,
+        item_type=item_type,
+        status="crawling",
+        group=requested_group,
+        user_id=target_user_id,
+    )
+    db.add(item)
+    await db.flush()
+    return item
+
+
 @router.post("/crawl", response_model=CrawlResponse)
 async def crawl(
     req: CrawlRequest,
@@ -93,15 +149,14 @@ async def crawl(
         if req.group is not None:
             item.group = requested_group
     else:
-        item = Item(
+        item = await _resolve_or_create_item(
+            db,
             spotify_id=spotify_id,
             item_type=item_type,
-            status="crawling",
-            group=requested_group,
-            user_id=target_user_id,
+            target_user_id=target_user_id,
+            requested_group=requested_group,
+            remove_duplicates=bool(req.remove_duplicates),
         )
-        db.add(item)
-        await db.flush()
     item.status = "crawling"
     item.error_code = None
     item.error_message = None
@@ -142,6 +197,7 @@ async def crawl_batch(
     if req.item_ids is not None and len(req.item_ids) != len(req.urls):
         raise HTTPException(status_code=400, detail="item_ids must align with urls length")
     item_ids = req.item_ids if req.item_ids is not None else [None] * len(req.urls)
+    seen_batch_keys: set[tuple[str, str, str, str]] = set()
 
     for idx, url in enumerate(req.urls):
         parsed = parse_spotify_url(url)
@@ -150,6 +206,16 @@ async def crawl_batch(
 
         item_type, spotify_id = parsed
         refresh_item_id = item_ids[idx] if idx < len(item_ids) else None
+        if req.remove_duplicates and not refresh_item_id:
+            dedupe_key = (
+                item_type,
+                spotify_id,
+                str(target_user_id),
+                requested_group or "",
+            )
+            if dedupe_key in seen_batch_keys:
+                continue
+            seen_batch_keys.add(dedupe_key)
         if refresh_item_id:
             item = await _resolve_refresh_item(
                 db=db,
@@ -162,15 +228,14 @@ async def crawl_batch(
             if req.group is not None:
                 item.group = requested_group
         else:
-            item = Item(
+            item = await _resolve_or_create_item(
+                db,
                 spotify_id=spotify_id,
                 item_type=item_type,
-                status="crawling",
-                group=requested_group,
-                user_id=target_user_id,
+                target_user_id=target_user_id,
+                requested_group=requested_group,
+                remove_duplicates=bool(req.remove_duplicates),
             )
-            db.add(item)
-            await db.flush()
         item.status = "crawling"
         item.error_code = None
         item.error_message = None

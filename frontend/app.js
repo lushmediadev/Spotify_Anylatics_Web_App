@@ -199,6 +199,8 @@ const state = {
     customGroups: [],
     groupSearchQuery: '',
     activeGroup: ALL_GROUP_ID,
+    selectedGroupIds: new Set(),
+    groupSelectionAnchorId: null,
     isCreatingGroup: false,
     renamingGroupId: null,
     searchQuery: '',
@@ -217,6 +219,7 @@ const state = {
     dragOverRowKey: null,
     dragOverRowPlacement: 'before',
     draggingGroupId: null,
+    draggingGroupIds: [],
     dragOverGroupId: null,
     dragOverGroupPlacement: 'before',
     suppressNextGroupClick: false,
@@ -231,12 +234,17 @@ const state = {
     remoteSyncInFlight: false,
     contextMenuVisible: false,
     contextMenuAnchorSelectionKey: null,
+    contextMenuGroupId: null,
     exportInProgress: false,
     exportLabel: '',
+    ownerSortDirection: '',
     metricSortColumn: null,
     metricSortMode: 'value',
     metricSortDirection: 'desc',
     metricSortMenuOpenKey: null,
+    playlistOwnerSortDirection: null,
+    groupContextMenuVisible: false,
+    groupContextMenuTargetId: null,
 };
 
 // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
@@ -313,7 +321,13 @@ class SpotiCheckAPI {
         const suffix = qs.toString() ? `?${qs.toString()}` : '';
         return this._fetch(`/items/${type}/${id}${suffix}`, { method: 'DELETE' });
     }
-    clearItems()          { return this._fetch('/items', { method: 'DELETE' }); }
+    clearItems(group = null, userId = null) {
+        const qs = new URLSearchParams();
+        if (group) qs.set('group', String(group));
+        if (userId) qs.set('user_id', String(userId));
+        const suffix = qs.toString() ? `?${qs.toString()}` : '';
+        return this._fetch(`/items${suffix}`, { method: 'DELETE' });
+    }
     getMyPreferences()    { return this._fetch('/auth/me/preferences'); }
     saveMyPreferences(preferences = {}) {
         return this._fetch('/auth/me/preferences', {
@@ -329,14 +343,20 @@ class SpotiCheckAPI {
         return this._fetch(`/items/group?${qs.toString()}`, { method: 'PATCH' });
     }
 
-    crawl(url, group = null, targetUserId = null, itemId = null) {
+    crawl(url, group = null, targetUserId = null, itemId = null, removeDuplicates = false) {
         return this._fetch('/crawl', {
             method: 'POST',
-            body: JSON.stringify({ url, group, target_user_id: targetUserId || null, item_id: itemId || null }),
+            body: JSON.stringify({
+                url,
+                group,
+                target_user_id: targetUserId || null,
+                item_id: itemId || null,
+                remove_duplicates: Boolean(removeDuplicates),
+            }),
         });
     }
 
-    crawlBatch(urls, group = null, targetUserId = null, itemIds = null) {
+    crawlBatch(urls, group = null, targetUserId = null, itemIds = null, removeDuplicates = false) {
         return this._fetch('/crawl/batch', {
             method: 'POST',
             body: JSON.stringify({
@@ -344,6 +364,7 @@ class SpotiCheckAPI {
                 group,
                 target_user_id: targetUserId || null,
                 item_ids: Array.isArray(itemIds) ? itemIds : null,
+                remove_duplicates: Boolean(removeDuplicates),
             }),
         });
     }
@@ -1320,6 +1341,35 @@ function parseGroupEntryId(groupId) {
     };
 }
 
+function toggleGroupSelection(groupId) {
+    const normalized = normalizeGroupName(groupId);
+    if (!normalized) return;
+    const next = new Set(state.selectedGroupIds || []);
+    if (next.has(normalized)) {
+        next.delete(normalized);
+    } else {
+        next.add(normalized);
+    }
+    state.selectedGroupIds = next;
+}
+
+function getSelectedGroupEntries() {
+    const selectedIds = Array.from(state.selectedGroupIds || []);
+    return selectedIds
+        .map((id) => getGroupEntryById(id))
+        .filter((entry) => Boolean(entry));
+}
+
+function getCurrentGroupClearScope() {
+    if (state.contextMenuGroupId) {
+        return getGroupEntryById(state.contextMenuGroupId) || parseGroupEntryId(state.contextMenuGroupId);
+    }
+    if (state.activeGroup && state.activeGroup !== ALL_GROUP_ID) {
+        return getGroupEntryById(state.activeGroup) || parseGroupEntryId(state.activeGroup);
+    }
+    return null;
+}
+
 function doesItemMatchGroupEntry(item, groupEntry) {
     if (!groupEntry || groupEntry.id === ALL_GROUP_ID) return true;
     const itemParsed = splitLegacyGroupName(item.group);
@@ -1347,6 +1397,50 @@ function updateGroupHeader() {
     const pageTitle = document.getElementById('page-title');
     if (breadcrumb) breadcrumb.textContent = name;
     if (pageTitle) pageTitle.textContent = name;
+}
+
+function getManageableGroupIds() {
+    return state.groups
+        .filter((g) => g.id !== ALL_GROUP_ID && canManageGroupEntry(g))
+        .map((g) => String(g.id));
+}
+
+function clearGroupSelection() {
+    state.selectedGroupIds = new Set();
+    state.groupSelectionAnchorId = null;
+}
+
+function normalizeGroupSelection() {
+    const allowed = new Set(getManageableGroupIds().map((id) => id.toLowerCase()));
+    state.selectedGroupIds = new Set(
+        Array.from(state.selectedGroupIds).filter((id) => allowed.has(String(id).toLowerCase()))
+    );
+    if (state.groupSelectionAnchorId && !allowed.has(String(state.groupSelectionAnchorId).toLowerCase())) {
+        state.groupSelectionAnchorId = null;
+    }
+}
+
+function setSingleGroupSelection(groupId) {
+    const normalized = normalizeGroupName(groupId);
+    if (!normalized || normalized.toLowerCase() === ALL_GROUP_ID) {
+        clearGroupSelection();
+        return;
+    }
+    state.selectedGroupIds = new Set([normalized]);
+    state.groupSelectionAnchorId = normalized;
+}
+
+function selectAllGroups() {
+    const ids = getManageableGroupIds();
+    if (!ids.length) {
+        clearGroupSelection();
+        renderGroups();
+        return;
+    }
+    state.selectedGroupIds = new Set(ids);
+    state.groupSelectionAnchorId = ids[0];
+    renderGroups();
+    showToast(`Selected ${ids.length} groups`, 'info');
 }
 
 function clearRowSelection() {
@@ -1402,6 +1496,23 @@ function getVisibleItems() {
             (i.spotify_id || '').toLowerCase().includes(q) ||
             (i.type || '').toLowerCase().includes(q)
         );
+    }
+
+    if (state.playlistOwnerSortDirection === 'asc' || state.playlistOwnerSortDirection === 'desc') {
+        const sortFactor = state.playlistOwnerSortDirection === 'asc' ? 1 : -1;
+        const sortedItems = [...items];
+        sortedItems.sort((a, b) => {
+            const left = getPlaylistOwnerLabel(a).toLowerCase();
+            const right = getPlaylistOwnerLabel(b).toLowerCase();
+            const leftEmpty = !left || left === '-';
+            const rightEmpty = !right || right === '-';
+            if (leftEmpty && rightEmpty) return 0;
+            if (leftEmpty) return 1;
+            if (rightEmpty) return -1;
+            if (left === right) return 0;
+            return left > right ? sortFactor : -sortFactor;
+        });
+        items = sortedItems;
     }
 
     if (state.metricSortColumn && METRIC_SORT_CONFIG[state.metricSortColumn]) {
@@ -1479,36 +1590,50 @@ function moveItemsByKeys(draggedKeys, targetKey, placement = 'before') {
     return true;
 }
 
-function moveCustomGroupBefore(draggedGroupId, targetGroupId, placement = 'before') {
-    const dragged = normalizeGroupName(draggedGroupId);
+function moveCustomGroupBefore(draggedGroupIds, targetGroupId, placement = 'before') {
     const target = normalizeGroupName(targetGroupId);
-    if (!dragged || !target || dragged === target) return false;
-    if (dragged.toLowerCase() === ALL_GROUP_ID || target.toLowerCase() === ALL_GROUP_ID) return false;
+    const draggedList = Array.isArray(draggedGroupIds) ? draggedGroupIds : [draggedGroupIds];
+    const normalizedDraggedIds = Array.from(new Set(
+        draggedList
+            .map((value) => normalizeGroupName(value))
+            .filter(Boolean)
+            .filter((value) => value.toLowerCase() !== ALL_GROUP_ID)
+    ));
+    if (!normalizedDraggedIds.length || !target || target.toLowerCase() === ALL_GROUP_ID) return false;
+    if (normalizedDraggedIds.some((value) => value.toLowerCase() === target.toLowerCase())) return false;
 
-    const draggedEntry = getGroupEntryById(dragged) || parseGroupEntryId(dragged);
     const targetEntry = getGroupEntryById(target) || parseGroupEntryId(target);
-    const draggedGroupName = normalizeStoredGroupName(draggedEntry?.name || dragged);
     const targetGroupName = normalizeStoredGroupName(targetEntry?.name || target);
-    if (!draggedGroupName || !targetGroupName || draggedGroupName.toLowerCase() === targetGroupName.toLowerCase()) return false;
+    if (!targetGroupName) return false;
+
+    const draggedNames = normalizedDraggedIds
+        .map((id) => getGroupEntryById(id) || parseGroupEntryId(id))
+        .map((entry) => normalizeStoredGroupName(entry?.name || ''))
+        .filter(Boolean);
+    if (!draggedNames.length) return false;
 
     const current = Array.from(new Set((state.customGroups || []).map(normalizeStoredGroupName).filter(Boolean)));
     const next = current.slice();
 
-    if (!next.some((name) => name.toLowerCase() === draggedGroupName.toLowerCase())) {
-        next.push(draggedGroupName);
-    }
+    draggedNames.forEach((name) => {
+        if (!next.some((item) => item.toLowerCase() === name.toLowerCase())) {
+            next.push(name);
+        }
+    });
     if (!next.some((name) => name.toLowerCase() === targetGroupName.toLowerCase())) {
         next.push(targetGroupName);
     }
 
-    const draggedIndex = next.findIndex((name) => name.toLowerCase() === draggedGroupName.toLowerCase());
-    const [movedName] = next.splice(draggedIndex, 1);
-    const targetIndex = next.findIndex((name) => name.toLowerCase() === targetGroupName.toLowerCase());
+    const draggedNameSet = new Set(draggedNames.map((name) => name.toLowerCase()));
+    const movingBlock = next.filter((name) => draggedNameSet.has(name.toLowerCase()));
+    if (!movingBlock.length) return false;
+    const remaining = next.filter((name) => !draggedNameSet.has(name.toLowerCase()));
+    const targetIndex = remaining.findIndex((name) => name.toLowerCase() === targetGroupName.toLowerCase());
     if (targetIndex === -1) return false;
     const insertIndex = placement === 'after' ? targetIndex + 1 : targetIndex;
-    next.splice(insertIndex, 0, movedName);
+    remaining.splice(insertIndex, 0, ...movingBlock);
 
-    state.customGroups = next;
+    state.customGroups = remaining;
     saveCustomGroups();
     return true;
 }
@@ -1532,8 +1657,10 @@ function syncGroupDragUi(container) {
     if (!host) return;
     host.querySelectorAll('.group-item[data-group]').forEach((groupBtn) => {
         const groupId = normalizeGroupName(groupBtn.getAttribute('data-group'));
-        const isDropTarget = Boolean(groupId && state.dragOverGroupId === groupId && state.draggingGroupId !== groupId);
-        groupBtn.classList.toggle('group-item-dragging', Boolean(groupId && state.draggingGroupId === groupId));
+        const draggedIds = state.draggingGroupIds.length ? state.draggingGroupIds : (state.draggingGroupId ? [state.draggingGroupId] : []);
+        const isDragging = Boolean(groupId && draggedIds.includes(groupId));
+        const isDropTarget = Boolean(groupId && state.dragOverGroupId === groupId && !isDragging);
+        groupBtn.classList.toggle('group-item-dragging', isDragging);
         groupBtn.classList.toggle('group-item-drop-target', isDropTarget);
         groupBtn.classList.toggle('group-drop-before', isDropTarget && state.dragOverGroupPlacement !== 'after');
         groupBtn.classList.toggle('group-drop-after', isDropTarget && state.dragOverGroupPlacement === 'after');
@@ -1819,6 +1946,7 @@ function rebuildGroups() {
     }
 
     state.groups = groups;
+    normalizeGroupSelection();
     if (state.activeGroup === ALL_GROUP_ID) {
         return;
     }
@@ -1859,6 +1987,7 @@ function renderGroups() {
 
     const groupButtons = groups.map((g) => {
         const isActive = g.id === state.activeGroup;
+        const isSelected = state.selectedGroupIds.has(g.id);
         const canDelete = canManageGroupEntry(g);
         const isDragging = state.draggingGroupId === g.id;
         const isDropTarget = state.dragOverGroupId === g.id && !isDragging;
@@ -1868,8 +1997,10 @@ function renderGroups() {
         );
         return `
             <button
-                class="group-item ${canDelete ? 'group-item-has-delete' : ''} ${isDragging ? 'group-item-dragging' : ''} ${isDropTarget ? 'group-item-drop-target' : ''} w-full flex items-center justify-between px-3 py-3 rounded-lg transition-colors ${isActive ? 'bg-primary/10 text-white' : 'text-secondary-text hover:text-white hover:bg-white/5'}"
+                class="group-item ${canDelete ? 'group-item-has-delete' : ''} ${isSelected ? 'group-selected' : ''} ${isDragging ? 'group-item-dragging' : ''} ${isDropTarget ? 'group-item-drop-target' : ''} w-full flex items-center justify-between px-3 py-3 rounded-lg transition-colors ${isActive ? 'bg-primary/10 text-white' : 'text-secondary-text hover:text-white hover:bg-white/5'}"
                 data-group="${escapeHtml(g.id)}"
+                data-group-manageable="${canDelete ? 'true' : 'false'}"
+                data-group-selected="${isSelected ? 'true' : 'false'}"
                 draggable="${canDelete ? 'true' : 'false'}"
             >
                 <div class="flex items-center gap-3 min-w-0">
@@ -2067,19 +2198,10 @@ function handleCreateGroup(rawName) {
     showToast(`Created group: ${name}`, 'success');
 }
 
-async function handleDeleteGroup(rawGroupId) {
-    const groupId = normalizeGroupName(rawGroupId);
-    if (!groupId || groupId.toLowerCase() === ALL_GROUP_ID) return;
-
-    const target = state.groups.find((g) => g.id.toLowerCase() === groupId.toLowerCase());
-    if (!canManageGroupEntry(target)) {
-        showToast('Select that user in Filter by User to manage this group', 'info');
-        return;
-    }
+async function deleteSingleGroup(target) {
+    if (!target || !target.id || target.id === ALL_GROUP_ID) return false;
+    const groupId = normalizeGroupName(target.id);
     const groupName = target?.name || groupId;
-    const confirmed = window.confirm(`Delete group "${groupName}"?\nAll links in this group will move to All Links.`);
-    if (!confirmed) return;
-
     const parsedEntry = parseGroupEntryId(groupId);
     const ownerUserId = target?.ownerUserId
         ? String(target.ownerUserId)
@@ -2108,17 +2230,59 @@ async function handleDeleteGroup(rawGroupId) {
         return { ...item, group: null };
     });
     await syncGroupItemsToServer(target?.name || groupName, '', ownerUserId || null, groupNameVariants);
+    return true;
+}
 
-    if ((state.activeGroup || '').toLowerCase() === groupId.toLowerCase()) {
+async function handleDeleteGroup(rawGroupId) {
+    const groupId = normalizeGroupName(rawGroupId);
+    if (!groupId) return;
+
+    if (groupId.toLowerCase() === ALL_GROUP_ID) {
+        await clearList({ groupEntry: { id: ALL_GROUP_ID, name: ALL_GROUP_LABEL, displayName: ALL_GROUP_LABEL } });
+        return;
+    }
+
+    const target = state.groups.find((g) => g.id.toLowerCase() === groupId.toLowerCase());
+    if (!canManageGroupEntry(target)) {
+        showToast('Select that user in Filter by User to manage this group', 'info');
+        return;
+    }
+    const selectedGroupIds = Array.from(state.selectedGroupIds).filter((id) => {
+        const entry = getGroupEntryById(id);
+        return entry && canManageGroupEntry(entry) && id.toLowerCase() !== ALL_GROUP_ID;
+    });
+    const targetIds = selectedGroupIds.length > 1 && selectedGroupIds.some((id) => id.toLowerCase() === groupId.toLowerCase())
+        ? selectedGroupIds
+        : [groupId];
+
+    const confirmed = targetIds.length > 1
+        ? window.confirm(`Delete ${targetIds.length} selected groups?\nAll links in these groups will move to All Links.`)
+        : window.confirm(`Delete group "${target?.name || groupId}"?\nAll links in this group will move to All Links.`);
+    if (!confirmed) return;
+
+    let deletedCount = 0;
+    for (const id of targetIds) {
+        const entry = getGroupEntryById(id);
+        if (!entry || !canManageGroupEntry(entry)) continue;
+        const ok = await deleteSingleGroup(entry);
+        if (ok) deletedCount += 1;
+    }
+
+    if ((state.activeGroup || '').toLowerCase() === groupId.toLowerCase() || targetIds.some((id) => id.toLowerCase() === (state.activeGroup || '').toLowerCase())) {
         state.activeGroup = ALL_GROUP_ID;
     }
+    clearGroupSelection();
     state.isCreatingGroup = false;
-    if ((state.renamingGroupId || '').toLowerCase() === groupId.toLowerCase()) {
+    if ((state.renamingGroupId || '').toLowerCase() === groupId.toLowerCase() || targetIds.some((id) => id.toLowerCase() === (state.renamingGroupId || '').toLowerCase())) {
         state.renamingGroupId = null;
     }
     syncGroupUI(true);
     renderList();
-    showToast(`Deleted group: ${groupName}`, 'success');
+    if (deletedCount > 1) {
+        showToast(`Deleted ${deletedCount} groups`, 'success');
+    } else if (deletedCount === 1) {
+        showToast(`Deleted group: ${target?.name || groupId}`, 'success');
+    }
 }
 
 function startCreateGroupFlow() {
@@ -2582,6 +2746,40 @@ function getMetricSortModeLabel(colKey) {
     return 'None';
 }
 
+function updatePlaylistOwnerSortControlUI() {
+    const selectEl = document.getElementById('owner-sort-select');
+    if (selectEl) {
+        const direction = state.playlistOwnerSortDirection === 'asc' || state.playlistOwnerSortDirection === 'desc'
+            ? state.playlistOwnerSortDirection
+            : '';
+        if (selectEl.value !== direction) {
+            selectEl.value = direction;
+        }
+    }
+
+    const toggle = document.querySelector('[data-owner-sort-toggle]');
+    if (toggle) {
+        const direction = state.playlistOwnerSortDirection;
+        const icon = toggle.querySelector('.playlist-owner-sort-icon');
+        if (icon) {
+            icon.textContent = direction === 'asc'
+                ? 'arrow_upward'
+                : direction === 'desc'
+                    ? 'arrow_downward'
+                    : 'swap_vert';
+        }
+        toggle.classList.toggle('is-active', Boolean(direction));
+        toggle.setAttribute(
+            'title',
+            direction === 'asc'
+                ? 'Playlist Owner A → Z'
+                : direction === 'desc'
+                    ? 'Playlist Owner Z → A'
+                    : 'Sort Playlist Owner A → Z'
+        );
+    }
+}
+
 function updateMetricSortControlsUI() {
     const controls = document.querySelectorAll('.metric-sort-controls[data-sort-col]');
     controls.forEach((control) => {
@@ -2664,6 +2862,25 @@ function ensureMetricSortControls() {
     if (head && head.dataset.metricSortBound !== 'true') {
         head.dataset.metricSortBound = 'true';
         head.addEventListener('click', (event) => {
+            const ownerSortToggle = event.target.closest('[data-owner-sort-toggle]');
+            if (ownerSortToggle) {
+                event.preventDefault();
+                event.stopPropagation();
+                if (state.playlistOwnerSortDirection === 'asc') {
+                    state.playlistOwnerSortDirection = 'desc';
+                } else if (state.playlistOwnerSortDirection === 'desc') {
+                    state.playlistOwnerSortDirection = null;
+                } else {
+                    state.playlistOwnerSortDirection = 'asc';
+                }
+                state.metricSortColumn = null;
+                state.metricSortMenuOpenKey = null;
+                renderList({ preserveScroll: true });
+                updateMetricSortControlsUI();
+                updatePlaylistOwnerSortControlUI();
+                return;
+            }
+
             const control = event.target.closest('.metric-sort-controls[data-sort-col]');
             if (!control) return;
             const colKey = control.dataset.sortCol;
@@ -2690,11 +2907,13 @@ function ensureMetricSortControls() {
                     state.metricSortMenuOpenKey = null;
                     renderList({ preserveScroll: true });
                     updateMetricSortControlsUI();
+                    updatePlaylistOwnerSortControlUI();
                     return;
                 }
 
                 const mode = selectedMode === 'delta' ? 'delta' : 'value';
                 state.metricSortColumn = colKey;
+                state.playlistOwnerSortDirection = null;
                 state.metricSortMode = mode;
                 if (!['asc', 'desc'].includes(state.metricSortDirection)) {
                     state.metricSortDirection = 'desc';
@@ -2702,6 +2921,7 @@ function ensureMetricSortControls() {
                 state.metricSortMenuOpenKey = null;
                 renderList({ preserveScroll: true });
                 updateMetricSortControlsUI();
+                updatePlaylistOwnerSortControlUI();
                 return;
             }
 
@@ -2715,9 +2935,11 @@ function ensureMetricSortControls() {
                 } else {
                     state.metricSortDirection = state.metricSortDirection === 'asc' ? 'desc' : 'asc';
                 }
+                state.playlistOwnerSortDirection = null;
                 state.metricSortMenuOpenKey = null;
                 renderList({ preserveScroll: true });
                 updateMetricSortControlsUI();
+                updatePlaylistOwnerSortControlUI();
             }
         });
     }
@@ -2732,6 +2954,7 @@ function ensureMetricSortControls() {
     }
 
     updateMetricSortControlsUI();
+    updatePlaylistOwnerSortControlUI();
 }
 /** Escape HTML to prevent XSS */
 function escapeHtml(str) {
@@ -2895,6 +3118,14 @@ function closeImagePreview() {
 function cleanExportText(value) {
     if (value == null) return '';
     return String(value).replace(/\r?\n/g, ' ').trim();
+}
+
+function formatPlainMetric(value) {
+    if (value == null || value === '') return '';
+    const numeric = Number(value);
+    if (!Number.isFinite(numeric)) return cleanExportText(value);
+    if (Number.isInteger(numeric)) return String(numeric);
+    return String(numeric);
 }
 
 function csvEscapeCell(value) {
@@ -3075,7 +3306,7 @@ function buildPlaylistType3ExportRows(items) {
             return [
                 `${artists} - ${trackName}`,
                 spotifyLink,
-                trackPlayCount === '' ? '' : formatDetailedMetric(trackPlayCount),
+                formatPlainMetric(trackPlayCount),
             ];
         });
 }
@@ -3104,7 +3335,7 @@ function buildAlbumType0ExportRows(items) {
                 '1',
                 cleanExportText(item.name || '-'),
                 getItemSpotifyUrlForExport(item),
-                item.playcount == null ? '' : formatDetailedMetric(item.playcount),
+                formatPlainMetric(item.playcount),
             ]);
         });
     return rows;
@@ -3117,10 +3348,8 @@ function buildTrackOfflineExportRows(items) {
             const artists = getItemArtistsLabel(item) || '-';
             const trackName = cleanExportText(item.name || '-');
             const spotifyLink = getItemSpotifyUrlForExport(item);
-            const playCount = item.playcount == null ? '' : formatDetailedMetric(item.playcount);
-            const firstArtistListenPerMonthCount = item.monthly_listeners == null
-                ? ''
-                : formatDetailedMetric(item.monthly_listeners);
+            const playCount = formatPlainMetric(item.playcount);
+            const firstArtistListenPerMonthCount = formatPlainMetric(item.monthly_listeners);
             return [
                 `${artists} - ${trackName}`,
                 spotifyLink,
@@ -3192,14 +3421,8 @@ function mapContextActionToExportRequest(action) {
     if (action === 'export-listview-excel') {
         return { exportAction: 'listview-excel', format: 'xlsx', deepFetch: false };
     }
-    if (action === 'clipboard-playlist-type3') {
-        return { exportAction: 'playlist-type3', format: 'json', deepFetch: true };
-    }
-    if (action === 'clipboard-album-type0') {
-        return { exportAction: 'album-type0', format: 'json', deepFetch: true };
-    }
-    if (action === 'clipboard-track-offline') {
-        return { exportAction: 'track-offline', format: 'json', deepFetch: false };
+    if (action === 'clipboard-selected') {
+        return { exportAction: 'listview-excel', format: 'json', deepFetch: false };
     }
     if (action === 'txt-playlist-type3') {
         return { exportAction: 'playlist-type3', format: 'txt', deepFetch: true };
@@ -3248,7 +3471,9 @@ async function runServerExport(contextAction, selectedItems) {
                 showToast('No data available for this export mode', 'info');
                 return true;
             }
-            const text = rowsToDelimitedText(rows, '\t');
+            const headers = Array.isArray(payload?.headers) ? payload.headers : [];
+            const includeHeaders = contextAction === 'clipboard-selected' && headers.length > 0;
+            const text = rowsToDelimitedText(includeHeaders ? [headers, ...rows] : rows, '\t');
             await copyToClipboard(text, `Copied ${rows.length} line(s)`);
             return true;
         }
@@ -3288,6 +3513,95 @@ function hideRowContextMenu() {
     menu.style.display = 'none';
     state.contextMenuVisible = false;
     state.contextMenuAnchorSelectionKey = null;
+    state.groupContextMenuVisible = false;
+    state.groupContextMenuTargetId = null;
+}
+
+function getGroupContextMenuElement() {
+    return document.getElementById('group-context-menu');
+}
+
+function hideGroupContextMenu() {
+    const menu = getGroupContextMenuElement();
+    if (!menu) return;
+    menu.classList.remove('open');
+    menu.style.display = 'none';
+    state.groupContextMenuVisible = false;
+    state.groupContextMenuTargetId = null;
+}
+
+function updateGroupContextMenuLabels() {
+    const menu = getGroupContextMenuElement();
+    if (!menu) return;
+    const targetId = normalizeGroupName(state.groupContextMenuTargetId) || ALL_GROUP_ID;
+    const clearLabel = menu.querySelector('[data-group-context-label="clear"]');
+    const deleteLabel = menu.querySelector('[data-group-context-label="delete"]');
+    const deleteBtn = menu.querySelector('[data-group-context-action="delete-group"]');
+    const selected = Array.from(state.selectedGroupIds).filter((id) => {
+        const entry = getGroupEntryById(id);
+        return entry && canManageGroupEntry(entry);
+    });
+    const selectedCount = selected.length;
+
+    if (clearLabel) {
+        clearLabel.textContent = targetId === ALL_GROUP_ID
+            ? 'Clear all links'
+            : `Clear group: ${(getGroupEntryById(targetId)?.displayName || getGroupEntryById(targetId)?.name || targetId)}`;
+    }
+    if (deleteLabel) {
+        if (targetId === ALL_GROUP_ID) {
+            deleteLabel.textContent = 'Delete all links';
+        } else if (selectedCount > 1 && selected.includes(targetId)) {
+            deleteLabel.textContent = `Delete ${selectedCount} selected groups`;
+        } else {
+            deleteLabel.textContent = 'Delete group';
+        }
+    }
+    if (deleteBtn) {
+        const disableDelete = targetId !== ALL_GROUP_ID && !canManageGroupEntry(getGroupEntryById(targetId));
+        deleteBtn.disabled = disableDelete;
+        deleteBtn.classList.toggle('is-disabled', disableDelete);
+    }
+}
+
+function showGroupContextMenu(clientX, clientY, rawGroupId) {
+    const menu = getGroupContextMenuElement();
+    if (!menu) return;
+    const groupId = normalizeGroupName(rawGroupId) || ALL_GROUP_ID;
+    const entry = getGroupEntryById(groupId) || parseGroupEntryId(groupId);
+    if (groupId !== ALL_GROUP_ID && entry && canManageGroupEntry(entry) && !state.selectedGroupIds.has(groupId)) {
+        setSingleGroupSelection(groupId);
+        renderGroups();
+    }
+
+    state.groupContextMenuTargetId = groupId;
+    updateGroupContextMenuLabels();
+    menu.style.display = 'block';
+    menu.classList.add('open');
+    const rect = menu.getBoundingClientRect();
+    const maxX = window.innerWidth - rect.width - 8;
+    const maxY = window.innerHeight - rect.height - 8;
+    const left = Math.max(8, Math.min(clientX, maxX));
+    const top = Math.max(8, Math.min(clientY, maxY));
+    menu.style.left = `${left}px`;
+    menu.style.top = `${top}px`;
+    state.groupContextMenuVisible = true;
+}
+
+async function executeGroupContextMenuAction(action) {
+    if (!action) return;
+    const targetId = normalizeGroupName(state.groupContextMenuTargetId) || ALL_GROUP_ID;
+    const entry = targetId === ALL_GROUP_ID
+        ? { id: ALL_GROUP_ID, name: ALL_GROUP_LABEL, displayName: ALL_GROUP_LABEL }
+        : (getGroupEntryById(targetId) || parseGroupEntryId(targetId));
+
+    if (action === 'clear-list') {
+        await clearList({ groupEntry: entry });
+        return;
+    }
+    if (action === 'delete-group') {
+        await handleDeleteGroup(targetId);
+    }
 }
 
 function setContextActionDisabled(menu, action, disabled) {
@@ -3346,9 +3660,7 @@ function updateRowContextMenuLabels() {
         'delete-selected',
         'fetch-selected',
         'export-listview-excel',
-        'clipboard-playlist-type3',
-        'clipboard-album-type0',
-        'clipboard-track-offline',
+        'clipboard-selected',
         'txt-playlist-type3',
         'txt-album-type0',
         'txt-track-offline',
@@ -3361,17 +3673,24 @@ function updateRowContextMenuLabels() {
 
 function showRowContextMenu(clientX, clientY, row) {
     const menu = getRowContextMenuElement();
-    if (!menu || !row) return;
-    const item = findItemFromRow(row);
-    if (!item) return;
+    if (!menu) return;
 
-    const targetSelectionKey = selectionKey(item);
-    if (!state.selectedItemKeys.has(targetSelectionKey)) {
-        state.selectedItemKeys = new Set([targetSelectionKey]);
-        state.selectionAnchorKey = targetSelectionKey;
-        renderList({ preserveScroll: true });
+    if (row) {
+        state.groupContextMenuVisible = false;
+        state.groupContextMenuTargetId = null;
+        const item = findItemFromRow(row);
+        if (!item) return;
+
+        const targetSelectionKey = selectionKey(item);
+        if (!state.selectedItemKeys.has(targetSelectionKey)) {
+            state.selectedItemKeys = new Set([targetSelectionKey]);
+            state.selectionAnchorKey = targetSelectionKey;
+            renderList({ preserveScroll: true });
+        }
+        state.contextMenuAnchorSelectionKey = targetSelectionKey;
+    } else {
+        state.contextMenuAnchorSelectionKey = null;
     }
-    state.contextMenuAnchorSelectionKey = targetSelectionKey;
     updateRowContextMenuLabels();
 
     menu.style.display = 'block';
@@ -3385,6 +3704,35 @@ function showRowContextMenu(clientX, clientY, row) {
     menu.style.top = `${top}px`;
     syncRowContextSubmenuDirection(menu);
     state.contextMenuVisible = true;
+}
+
+function getGroupContextMenuEntry() {
+    const targetId = normalizeGroupName(state.groupContextMenuTargetId);
+    if (!targetId) return null;
+    return getGroupEntryById(targetId) || parseGroupEntryId(targetId);
+}
+
+function showGroupContextMenu(clientX, clientY, groupId) {
+    const normalizedId = normalizeGroupName(groupId);
+    if (!normalizedId) return;
+    const entry = getGroupEntryById(normalizedId) || parseGroupEntryId(normalizedId);
+    if (!entry) return;
+
+    if (entry.id !== ALL_GROUP_ID && canManageGroupEntry(entry)) {
+        if (!state.selectedGroupIds.has(entry.id)) {
+            setSingleGroupSelection(entry.id);
+        }
+    } else if (entry.id === ALL_GROUP_ID) {
+        clearGroupSelection();
+    }
+
+    state.groupContextMenuVisible = true;
+    state.groupContextMenuTargetId = entry.id;
+    state.activeGroup = entry.id;
+    updateGroupHeader();
+    renderGroups();
+    renderList({ preserveScroll: true });
+    showRowContextMenu(clientX, clientY, null);
 }
 
 async function executeRowContextMenuAction(action) {
@@ -3456,6 +3804,25 @@ async function executeRowContextMenuAction(action) {
                 const fileName = buildExportFileName('spoticheck-listview', 'csv');
                 downloadTextFile(csv, fileName, 'text/csv;charset=utf-8');
                 showToast(`Exported ${rows.length} rows to Excel (CSV fallback)`, 'success');
+            } else if (action === 'clipboard-selected') {
+                const headers = [
+                    'Type',
+                    'Name',
+                    'Spotify URL',
+                    'Group',
+                    'User',
+                    'Playlist Owner',
+                    'Playlist (Save)',
+                    'Playlist (Count)',
+                    'Album (Track Count)',
+                    'Artist (Followers)',
+                    'Artist (Listeners)',
+                    'Tracks (Views)',
+                    'Updated',
+                ];
+                const rows = buildListViewExportRows(selectedItems);
+                const text = rowsToDelimitedText([headers, ...rows], '\t');
+                await copyToClipboard(text, `Copied ${rows.length} selected row(s)`);
             } else if (action.startsWith('clipboard-')) {
                 await runStructuredExport(action, selectedItems, 'clipboard');
             } else if (action.startsWith('txt-')) {
@@ -3466,7 +3833,8 @@ async function executeRowContextMenuAction(action) {
     }
 
     if (action === 'clear-list') {
-        await clearList();
+        const groupEntry = state.groupContextMenuVisible ? getGroupContextMenuEntry() : null;
+        await clearList(groupEntry ? { groupEntry } : {});
     }
 }
 async function handleDeleteItems(items, opts = {}) {
@@ -3621,28 +3989,62 @@ async function handleRefreshItem(item) {
     }
 }
 
-async function clearList() {
-    if (state.items.length === 0) {
+async function clearList(opts = {}) {
+    const activeEntry = state.activeGroup !== ALL_GROUP_ID ? getGroupEntryById(state.activeGroup) : null;
+    const groupEntry = Object.prototype.hasOwnProperty.call(opts, 'groupEntry')
+        ? (opts?.groupEntry || null)
+        : activeEntry;
+    const clearAll = !groupEntry || groupEntry.id === ALL_GROUP_ID;
+    const scopedItems = clearAll
+        ? state.items
+        : state.items.filter((item) => doesItemMatchGroupEntry(item, groupEntry));
+
+    if (!scopedItems.length) {
         showToast('List is already empty', 'info');
         return;
     }
-    const confirmed = window.confirm('Clear all links in the current scope?\nThis action cannot be undone.');
+
+    const scopeLabel = clearAll ? 'all links in the current scope' : `all links in group "${groupEntry.displayName || groupEntry.name}"`;
+    const confirmed = window.confirm(`Clear ${scopeLabel}?\nThis action cannot be undone.`);
     if (!confirmed) return;
 
-    state.items = [];
-    state.filteredItems = [];
+    if (clearAll) {
+        state.items = [];
+        state.filteredItems = [];
+    } else {
+        const scopedKeys = new Set(scopedItems.map((item) => itemIdentity(item)));
+        state.items = state.items.filter((item) => !scopedKeys.has(itemIdentity(item)));
+        state.filteredItems = state.filteredItems.filter((item) => !scopedKeys.has(itemIdentity(item)));
+    }
+
     clearRowSelection();
-    savePersistedRowOrder([]);
-    state.pendingJobs.clear();
-    state.pendingJobToItem.clear();
-    stopPolling();
+    savePersistedRowOrder(state.items.map((item) => selectionKey(item)));
+    syncGroupUI(true);
+
+    const scopedItemIds = new Set(scopedItems.map((item) => String(item.id)).filter(Boolean));
+    if (scopedItemIds.size) {
+        scopedItemIds.forEach((id) => state.pendingJobs.delete(id));
+        for (const [jobId, itemId] of state.pendingJobToItem.entries()) {
+            if (scopedItemIds.has(String(itemId)) || scopedItemIds.has(String(jobId))) {
+                state.pendingJobToItem.delete(jobId);
+                state.pendingJobs.delete(jobId);
+            }
+        }
+    }
+    if (!state.pendingJobs.size) {
+        stopPolling();
+    }
     renderList({ preserveScroll: true });
 
     try {
         if (state.apiOnline) {
-            await api.clearItems();
+            const targetGroupName = clearAll ? null : normalizeStoredGroupName(groupEntry?.name || '');
+            const targetUserId = clearAll
+                ? (state.adminFilterUserId ? String(state.adminFilterUserId) : null)
+                : (groupEntry?.ownerUserId ? String(groupEntry.ownerUserId) : (state.adminFilterUserId ? String(state.adminFilterUserId) : null));
+            await api.clearItems(targetGroupName || null, targetUserId);
         }
-        showToast('List cleared', 'success');
+        showToast(clearAll ? 'List cleared' : `Cleared group: ${groupEntry.displayName || groupEntry.name}`, 'success');
     } catch (e) {
         showToast(`Clear list local only: ${e.message}`, 'info');
     }
@@ -3757,6 +4159,8 @@ function openSpotifyPopup(url) {
 function openModal() {
     document.getElementById('add-link-modal').classList.add('open');
     document.getElementById('modal-batch-input').value = '';
+    const dedupeCheckbox = document.getElementById('modal-remove-duplicates');
+    if (dedupeCheckbox) dedupeCheckbox.checked = false;
     document.getElementById('modal-batch-input').focus();
     document.getElementById('modal-url-hint').textContent = 'Supports: playlist, track, album, and artist links';
     document.getElementById('modal-url-hint').className = 'text-xs text-secondary-text mt-2';
@@ -3770,6 +4174,7 @@ function closeModal() {
 async function submitSingle() {
     const textarea = document.getElementById('modal-batch-input');
     const urls = textarea.value.split('\n').map((u) => u.trim()).filter(Boolean);
+    const dedupeEnabled = Boolean(document.getElementById('modal-remove-duplicates')?.checked);
     const hint = document.getElementById('modal-url-hint');
 
     if (urls.length === 0) {
@@ -3788,28 +4193,67 @@ async function submitSingle() {
     const selectedGroup = resolveSelectedGroupContext();
     const group = selectedGroup.group;
     const currentIdentity = getUserIdentityById(selectedGroup.targetUserId);
+    let submitUrls = urls.slice();
+    if (dedupeEnabled) {
+        const seenInput = new Set();
+        const groupedExisting = new Set(
+            state.items
+                .filter((item) => {
+                    const itemGroup = normalizeStoredGroupName(item.group || '');
+                    const targetGroup = normalizeStoredGroupName(group || '');
+                    if (itemGroup !== targetGroup) return false;
+                    if (selectedGroup.targetUserId) {
+                        return String(item.user_id || '') === String(selectedGroup.targetUserId);
+                    }
+                    return String(item.user_id || '') === String(currentIdentity.id || '');
+                })
+                .map((item) => `${String(item.type || '').toLowerCase()}:${String(item.spotify_id || '').toLowerCase()}`)
+        );
+        const deduped = [];
+        let skipped = 0;
+        submitUrls.forEach((url) => {
+            const parsed = parseSpotifyUrl(url);
+            if (!parsed) return;
+            const key = `${parsed.type.toLowerCase()}:${parsed.id.toLowerCase()}`;
+            if (seenInput.has(key) || groupedExisting.has(key)) {
+                skipped += 1;
+                return;
+            }
+            seenInput.add(key);
+            deduped.push(url);
+        });
+        submitUrls = deduped;
+        if (!submitUrls.length) {
+            hint.textContent = 'No new links to add after duplicate filtering';
+            hint.className = 'text-xs text-amber-300 mt-2';
+            return;
+        }
+        if (skipped > 0) {
+            showToast(`Skipped ${skipped} duplicate link(s)`, 'info');
+        }
+    }
 
     try {
         let jobIds = [];
-        if (urls.length === 1) {
-            const result = await api.crawl(urls[0], group, selectedGroup.targetUserId);
+        if (submitUrls.length === 1) {
+            const result = await api.crawl(submitUrls[0], group, selectedGroup.targetUserId, null, dedupeEnabled);
             const singleJobId = result?.job_id;
             if (!singleJobId) {
                 throw new Error('Backend did not return job_id');
             }
             jobIds = [singleJobId];
         } else {
-            const result = await api.crawlBatch(urls, group, selectedGroup.targetUserId);
+            const result = await api.crawlBatch(submitUrls, group, selectedGroup.targetUserId, null, dedupeEnabled);
             jobIds = Array.isArray(result?.job_ids) ? result.job_ids : [];
             if (!jobIds.length) {
                 throw new Error('Backend did not return job_ids');
             }
         }
-        showToast(`Added ${urls.length} link${urls.length > 1 ? 's' : ''} - crawling started`, 'success');
+        showToast(`Added ${submitUrls.length} link${submitUrls.length > 1 ? 's' : ''} - crawling started`, 'success');
 
         const now = new Date().toISOString();
         let mappedJobs = 0;
-        urls.forEach((url, i) => {
+        submitUrls.forEach((url, i) => {
             const parsed = parseSpotifyUrl(url);
             const jobId = jobIds[i];
             if (!parsed || !jobId) return;
@@ -5109,6 +5553,18 @@ document.addEventListener('DOMContentLoaded', async () => {
     document.getElementById('search-input').addEventListener('input', (e) => {
         handleSearch(e.target.value);
     });
+    const ownerSortSelect = document.getElementById('owner-sort-select');
+    if (ownerSortSelect) {
+        ownerSortSelect.addEventListener('change', (e) => {
+            const direction = String(e.target.value || '').trim().toLowerCase();
+            state.playlistOwnerSortDirection = direction === 'asc' || direction === 'desc' ? direction : null;
+            state.metricSortColumn = null;
+            state.metricSortMenuOpenKey = null;
+            renderList({ preserveScroll: true });
+            updateMetricSortControlsUI();
+            updatePlaylistOwnerSortControlUI();
+        });
+    }
     const adminCreateBtn = document.getElementById('admin-users-create-btn');
     if (adminCreateBtn) {
         adminCreateBtn.addEventListener('click', openAdminCreateModal);
@@ -5172,9 +5628,34 @@ document.addEventListener('DOMContentLoaded', async () => {
             }
             if (state.renamingGroupId) return;
             const groupId = normalizeGroupName(groupBtn.getAttribute('data-group')) || ALL_GROUP_ID;
+            const manageable = groupBtn.getAttribute('data-group-manageable') === 'true';
+            const visibleManageableIds = Array.from(groupList.querySelectorAll('[data-group][data-group-manageable="true"]'))
+                .map((el) => normalizeGroupName(el.getAttribute('data-group')))
+                .filter(Boolean);
+
+            if (e.shiftKey && manageable && state.groupSelectionAnchorId && visibleManageableIds.includes(state.groupSelectionAnchorId)) {
+                const start = visibleManageableIds.indexOf(state.groupSelectionAnchorId);
+                const end = visibleManageableIds.indexOf(groupId);
+                if (start !== -1 && end !== -1) {
+                    const [from, to] = start < end ? [start, end] : [end, start];
+                    state.selectedGroupIds = new Set(visibleManageableIds.slice(from, to + 1));
+                }
+            } else if ((e.ctrlKey || e.metaKey) && manageable) {
+                const next = new Set(state.selectedGroupIds);
+                if (next.has(groupId)) next.delete(groupId);
+                else next.add(groupId);
+                state.selectedGroupIds = next;
+                state.groupSelectionAnchorId = groupId;
+            } else if (manageable) {
+                setSingleGroupSelection(groupId);
+            } else {
+                clearGroupSelection();
+            }
+
             const currentGroupId = normalizeGroupName(state.activeGroup) || ALL_GROUP_ID;
             if (groupId.toLowerCase() === currentGroupId.toLowerCase()) {
                 state.isCreatingGroup = false;
+                renderGroups();
                 return;
             }
             state.activeGroup = groupId;
@@ -5188,6 +5669,15 @@ document.addEventListener('DOMContentLoaded', async () => {
                 renderGroups();
                 renderList();
             }
+        });
+        groupList.addEventListener('contextmenu', (e) => {
+            const groupBtn = e.target.closest('[data-group]');
+            if (!groupBtn) return;
+            const groupId = normalizeGroupName(groupBtn.getAttribute('data-group'));
+            if (!groupId) return;
+            e.preventDefault();
+            e.stopPropagation();
+            showGroupContextMenu(e.clientX, e.clientY, groupId);
         });
         groupList.addEventListener('dblclick', (e) => {
             const groupName = e.target.closest('[data-role="group-name"]');
@@ -5241,19 +5731,34 @@ document.addEventListener('DOMContentLoaded', async () => {
                 e.preventDefault();
                 return;
             }
-            state.draggingGroupId = groupId;
+            const sourceEntry = getGroupEntryById(groupId) || parseGroupEntryId(groupId);
+            const sourceOwnerId = sourceEntry?.ownerUserId ? String(sourceEntry.ownerUserId) : '';
+            const selected = Array.from(state.selectedGroupIds).filter((id) => {
+                if (!id || id.toLowerCase() === ALL_GROUP_ID) return false;
+                const entry = getGroupEntryById(id) || parseGroupEntryId(id);
+                if (!entry || !canManageGroupEntry(entry)) return false;
+                const ownerId = entry.ownerUserId ? String(entry.ownerUserId) : '';
+                return ownerId === sourceOwnerId;
+            });
+            const draggingIds = selected.includes(groupId) ? selected : [groupId];
+            if (!draggingIds.length) {
+                e.preventDefault();
+                return;
+            }
+            state.draggingGroupIds = draggingIds;
+            state.draggingGroupId = draggingIds[0];
             state.dragOverGroupId = groupId;
             state.dragOverGroupPlacement = 'before';
             state.suppressNextGroupClick = true;
             if (e.dataTransfer) {
                 e.dataTransfer.effectAllowed = 'move';
-                e.dataTransfer.setData('text/plain', groupId);
+                e.dataTransfer.setData('text/plain', draggingIds.join(','));
             }
             syncGroupDragUi(groupList);
         });
         groupList.addEventListener('dragover', (e) => {
             const groupBtn = e.target.closest('[data-group]');
-            if (!state.draggingGroupId) return;
+            if (!state.draggingGroupId && !state.draggingGroupIds.length) return;
             updateDragAutoScroll(groupList, e.clientY);
             if (!groupBtn) return;
             const targetGroupId = normalizeGroupName(groupBtn.getAttribute('data-group'));
@@ -5269,12 +5774,17 @@ document.addEventListener('DOMContentLoaded', async () => {
         });
         groupList.addEventListener('drop', (e) => {
             const groupBtn = e.target.closest('[data-group]');
-            if (!groupBtn || !state.draggingGroupId) return;
+            if (!groupBtn || (!state.draggingGroupId && !state.draggingGroupIds.length)) return;
             e.preventDefault();
             stopDragAutoScroll();
             const targetGroupId = normalizeGroupName(groupBtn.getAttribute('data-group'));
-            const moved = moveCustomGroupBefore(state.draggingGroupId, targetGroupId, state.dragOverGroupPlacement);
+            const moved = moveCustomGroupBefore(
+                state.draggingGroupIds.length ? state.draggingGroupIds : state.draggingGroupId,
+                targetGroupId,
+                state.dragOverGroupPlacement
+            );
             state.draggingGroupId = null;
+            state.draggingGroupIds = [];
             state.dragOverGroupId = null;
             state.dragOverGroupPlacement = 'before';
             rebuildGroups();
@@ -5287,9 +5797,10 @@ document.addEventListener('DOMContentLoaded', async () => {
             }, 0);
         });
         groupList.addEventListener('dragend', () => {
-            if (!state.draggingGroupId && !state.dragOverGroupId) return;
+            if (!state.draggingGroupId && !state.draggingGroupIds.length && !state.dragOverGroupId) return;
             stopDragAutoScroll();
             state.draggingGroupId = null;
+            state.draggingGroupIds = [];
             state.dragOverGroupId = null;
             state.dragOverGroupPlacement = 'before';
             syncGroupDragUi(groupList);
@@ -5298,7 +5809,7 @@ document.addEventListener('DOMContentLoaded', async () => {
             }, 0);
         });
         groupList.addEventListener('dragleave', (e) => {
-            if (!state.draggingGroupId) return;
+            if (!state.draggingGroupId && !state.draggingGroupIds.length) return;
             if (e.currentTarget.contains(e.relatedTarget)) return;
             stopDragAutoScroll();
         });
@@ -5427,6 +5938,13 @@ document.addEventListener('DOMContentLoaded', async () => {
             }, 0);
         });
         if (listScrollWrap) {
+            listScrollWrap.addEventListener('contextmenu', (e) => {
+                const row = e.target.closest('.custom-grid-row');
+                if (row) return;
+                e.preventDefault();
+                e.stopPropagation();
+                showRowContextMenu(e.clientX, e.clientY, null);
+            });
             listScrollWrap.addEventListener('dragover', (e) => {
                 if (!state.draggingRowKeys.length) return;
                 e.preventDefault();
@@ -5455,6 +5973,21 @@ document.addEventListener('DOMContentLoaded', async () => {
             await executeRowContextMenuAction(action);
         });
         rowContextMenu.addEventListener('contextmenu', (e) => {
+            e.preventDefault();
+        });
+    }
+    const groupContextMenu = getGroupContextMenuElement();
+    if (groupContextMenu) {
+        groupContextMenu.addEventListener('click', async (e) => {
+            const actionBtn = e.target.closest('[data-group-context-action]');
+            if (!actionBtn) return;
+            e.preventDefault();
+            e.stopPropagation();
+            const action = actionBtn.getAttribute('data-group-context-action');
+            hideGroupContextMenu();
+            await executeGroupContextMenuAction(action);
+        });
+        groupContextMenu.addEventListener('contextmenu', (e) => {
             e.preventDefault();
         });
     }
@@ -5535,6 +6068,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     document.addEventListener('keydown', (e) => {
         if (e.key === 'Escape') {
             hideRowContextMenu();
+            hideGroupContextMenu();
             closeMetricSortMenu();
             closeModal();
             closeImagePreview();
@@ -5552,13 +6086,27 @@ document.addEventListener('DOMContentLoaded', async () => {
         if ((e.ctrlKey || e.metaKey) && e.key === 'k') {
             e.preventDefault();
             document.getElementById('search-input').focus();
+            return;
+        }
+        if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'a') {
+            const target = e.target;
+            const typingTarget = Boolean(target?.closest?.('input, textarea, select, [contenteditable="true"]'));
+            if (!typingTarget && state.currentView === 'linkchecker') {
+                e.preventDefault();
+                selectAllGroups();
+            }
         }
     });
     const handleOutsideSelectionClear = (e) => {
         const menu = getRowContextMenuElement();
+        const groupMenu = getGroupContextMenuElement();
         if (menu && menu.contains(e.target)) return;
+        if (groupMenu && groupMenu.contains(e.target)) return;
         if (state.contextMenuVisible && menu && !menu.contains(e.target)) {
             hideRowContextMenu();
+        }
+        if (state.groupContextMenuVisible && groupMenu && !groupMenu.contains(e.target)) {
+            hideGroupContextMenu();
         }
         if (e.button !== 0) return;
         if (state.currentView !== 'linkchecker') return;
@@ -5580,8 +6128,14 @@ document.addEventListener('DOMContentLoaded', async () => {
     };
     // Capture phase avoids clearing selection after row mousedown triggers re-render.
     document.addEventListener('mousedown', handleOutsideSelectionClear, true);
-    window.addEventListener('resize', hideRowContextMenu);
-    document.addEventListener('scroll', hideRowContextMenu, true);
+    window.addEventListener('resize', () => {
+        hideRowContextMenu();
+        hideGroupContextMenu();
+    });
+    document.addEventListener('scroll', () => {
+        hideRowContextMenu();
+        hideGroupContextMenu();
+    }, true);
 
     // Sticky header
     initStickyHeader();

@@ -122,7 +122,16 @@ def _parse_track_title(title: str) -> str | None:
     if not title:
         return None
     left = title.split("|", 1)[0].strip()
-    name = left.split(" - ", 1)[0].strip()
+    marker = " - song and lyrics by "
+    if marker in left.lower():
+        marker_index = left.lower().find(marker)
+        left = left[:marker_index].strip()
+    if " - " in left:
+        # Spotify titles can be "Artist - Track Name - song and lyrics by Artist".
+        # Prefer the trailing segment as track title.
+        name = left.rsplit(" - ", 1)[-1].strip()
+    else:
+        name = left.strip()
     return name or None
 
 
@@ -141,9 +150,11 @@ def _parse_album_title(title: str) -> tuple[str | None, str | None]:
     left = title.split("|", 1)[0].strip()
     album_name = left.split(" - Album", 1)[0].strip()
     owner_name = None
-    marker = "Album by "
-    if marker in left:
-        owner_name = left.split(marker, 1)[1].strip() or None
+    marker = "album by "
+    lower_left = left.lower()
+    if marker in lower_left:
+        marker_index = lower_left.find(marker)
+        owner_name = left[marker_index + len(marker):].strip() or None
     return album_name or None, owner_name
 
 

@@ -333,10 +333,10 @@ def _format_export_metric(value) -> str:
     if isinstance(value, bool):
         return "1" if value else "0"
     if isinstance(value, int):
-        return f"{value:,}".replace(",", ".")
+        return str(value)
     if isinstance(value, float):
         if value.is_integer():
-            return f"{int(value):,}".replace(",", ".")
+            return str(int(value))
         return str(value)
     return _safe_export_text(value)
 
@@ -386,6 +386,20 @@ def _extract_export_track_artists(track: dict, fallback: str = "-") -> str:
         return owner_name.strip()
 
     return fallback
+
+
+def _build_artist_track_title(artist_label: str, track_name: str) -> str:
+    artist = _safe_export_text(artist_label) or "-"
+    track = _safe_export_text(track_name) or "-"
+    if artist == "-":
+        return track
+    prefix = f"{artist} - "
+    if track.lower().startswith(prefix.lower()):
+        remainder = track[len(prefix):].strip()
+        if remainder.lower().startswith(prefix.lower()):
+            remainder = remainder[len(prefix):].strip()
+        return f"{artist} - {remainder}" if remainder else f"{artist} - -"
+    return f"{artist} - {track}"
 
 
 def _extract_playlist_owner(item: Item, raw_data: dict | None) -> str:
@@ -450,11 +464,14 @@ def _build_playlist_type3_rows(
     items: list[Item],
     raw_map: dict[str, dict],
 ) -> tuple[list[str], list[list[str]], str]:
-    headers = ["Artist - Track", "Track Link", "PlayCount"]
-    rows: list[list[str]] = []
+    playlist_blocks: list[list[list[str]]] = []
+    playlist_labels: list[str] = []
     for item in items:
         if item.item_type != "playlist":
             continue
+        playlist_label = _safe_export_text(item.name) or f"Playlist {len(playlist_labels) + 1}"
+        playlist_labels.append(playlist_label)
+        block_rows: list[list[str]] = []
         raw_data = raw_map.get(item.spotify_id)
         tracks = raw_data.get("tracks") if isinstance(raw_data, dict) else None
         if isinstance(tracks, list) and tracks:
@@ -463,25 +480,38 @@ def _build_playlist_type3_rows(
                     continue
                 artist_label = _extract_export_track_artists(track)
                 track_name = _safe_export_text(track.get("name")) or "-"
-                title = f"{artist_label} - {track_name}" if artist_label and artist_label != "-" else track_name
-                rows.append(
+                block_rows.append(
                     [
-                        title,
+                        _build_artist_track_title(artist_label, track_name),
                         _extract_export_track_url(track),
                         _format_export_metric(track.get("playcount_estimate")),
                     ]
                 )
-            continue
+        else:
+            fallback_artist = _safe_export_text(item.owner_name) or "-"
+            fallback_title = _safe_export_text(item.name) or "-"
+            block_rows.append(
+                [
+                    _build_artist_track_title(fallback_artist, fallback_title),
+                    _spotify_url("playlist", item.spotify_id),
+                    _format_export_metric(item.playcount),
+                ]
+            )
+        playlist_blocks.append(block_rows)
 
-        fallback_artist = _safe_export_text(item.owner_name) or "-"
-        fallback_title = _safe_export_text(item.name) or "-"
-        rows.append(
-            [
-                f"{fallback_artist} - {fallback_title}",
-                _spotify_url("playlist", item.spotify_id),
-                _format_export_metric(item.playcount),
-            ]
-        )
+    headers: list[str] = []
+    for label in playlist_labels:
+        headers.extend([f"{label} | Artist - Track", f"{label} | Track Link", f"{label} | PlayCount"])
+    rows: list[list[str]] = []
+    max_rows = max((len(block) for block in playlist_blocks), default=0)
+    for row_index in range(max_rows):
+        row: list[str] = []
+        for block in playlist_blocks:
+            if row_index < len(block):
+                row.extend(block[row_index])
+            else:
+                row.extend(["", "", ""])
+        rows.append(row)
     return headers, rows, "spoticheck-playlist-type3"
 
 
@@ -489,12 +519,14 @@ def _build_album_type0_rows(
     items: list[Item],
     raw_map: dict[str, dict],
 ) -> tuple[list[str], list[list[str]], str]:
-    headers = ["Album", "Track No", "Track Name", "Track Link", "PlayCount"]
-    rows: list[list[str]] = []
+    album_blocks: list[list[list[str]]] = []
+    album_labels: list[str] = []
     for item in items:
         if item.item_type != "album":
             continue
         album_name = _safe_export_text(item.name) or "-"
+        album_labels.append(album_name)
+        block_rows: list[list[str]] = []
         raw_data = raw_map.get(item.spotify_id)
         tracks = raw_data.get("tracks") if isinstance(raw_data, dict) else None
         if isinstance(tracks, list) and tracks:
@@ -503,7 +535,7 @@ def _build_album_type0_rows(
                 if not isinstance(track, dict):
                     continue
                 track_name = _safe_export_text(track.get("name")) or "-"
-                rows.append(
+                block_rows.append(
                     [
                         album_name,
                         str(index),
@@ -513,17 +545,39 @@ def _build_album_type0_rows(
                     ]
                 )
                 index += 1
-            continue
+        else:
+            block_rows.append(
+                [
+                    album_name,
+                    "1",
+                    _safe_export_text(item.name) or "-",
+                    _spotify_url("album", item.spotify_id),
+                    _format_export_metric(item.playcount),
+                ]
+            )
+        album_blocks.append(block_rows)
 
-        rows.append(
+    headers: list[str] = []
+    for label in album_labels:
+        headers.extend(
             [
-                album_name,
-                "1",
-                _safe_export_text(item.name) or "-",
-                _spotify_url("album", item.spotify_id),
-                _format_export_metric(item.playcount),
+                f"{label} | Album",
+                f"{label} | Track No",
+                f"{label} | Track Name",
+                f"{label} | Track Link",
+                f"{label} | PlayCount",
             ]
         )
+    rows: list[list[str]] = []
+    max_rows = max((len(block) for block in album_blocks), default=0)
+    for row_index in range(max_rows):
+        row: list[str] = []
+        for block in album_blocks:
+            if row_index < len(block):
+                row.extend(block[row_index])
+            else:
+                row.extend(["", "", "", "", ""])
+        rows.append(row)
     return headers, rows, "spoticheck-album-type0"
 
 
@@ -542,7 +596,7 @@ def _build_track_offline_rows(
         track_name = _safe_export_text(item.name) or "-"
         rows.append(
             [
-                f"{artist_label} - {track_name}",
+                _build_artist_track_title(artist_label, track_name),
                 _spotify_url("track", item.spotify_id),
                 _format_export_metric(item.playcount),
                 _format_export_metric(item.monthly_listeners),
@@ -886,8 +940,9 @@ async def clear_items(
     elif user_id:
         selected_items = selected_items.where(Item.user_id == user_id)
 
-    if group:
-        selected_items = selected_items.where(Item.group == group)
+    normalized_group = _normalize_group_name(group)
+    if normalized_group and normalized_group not in {"all", "all links"}:
+        selected_items = selected_items.where(func.lower(func.coalesce(Item.group, "")) == normalized_group)
 
     rows = (await db.execute(selected_items)).all()
     if not rows:

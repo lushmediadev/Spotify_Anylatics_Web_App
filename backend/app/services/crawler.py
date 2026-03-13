@@ -330,27 +330,42 @@ def _formatted_item_name(item_type: str, data: dict) -> str | None:
         return None
     base_name = name.strip()
 
+    def _normalize_names(values) -> list[str]:
+        if not isinstance(values, list):
+            return []
+        seen: set[str] = set()
+        normalized: list[str] = []
+        for raw in values:
+            if not isinstance(raw, str):
+                continue
+            clean = raw.strip()
+            if not clean:
+                continue
+            key = clean.lower()
+            if key in seen:
+                continue
+            seen.add(key)
+            normalized.append(clean)
+        return normalized
+
     if item_type == "track":
-        artist_names = data.get("artist_names") or []
-        if not isinstance(artist_names, list):
-            artist_names = []
-        artist_names = [
-            artist.strip()
-            for artist in artist_names
-            if isinstance(artist, str) and artist.strip()
-        ]
+        artist_names = _normalize_names(data.get("artist_names") or [])
         if not artist_names and isinstance(data.get("owner_name"), str) and data.get("owner_name").strip():
             artist_names = [data.get("owner_name").strip()]
         if artist_names:
             prefix = ', '.join(artist_names)
-            if base_name.lower().startswith(f"{prefix.lower()} - "):
-                return base_name
-            return f"{prefix} - {base_name}"
+            normalized_base = base_name
+            lower_prefix = prefix.lower()
+            if normalized_base.lower().startswith(f"{lower_prefix} - "):
+                normalized_base = normalized_base[len(prefix) + 3 :].strip()
+            return f"{prefix} - {normalized_base}" if normalized_base else prefix
 
     if item_type == "album":
-        owner_name = data.get("owner_name")
-        if isinstance(owner_name, str) and owner_name.strip():
-            prefix = owner_name.strip()
+        artist_names = _normalize_names(data.get("artist_names") or [])
+        if not artist_names and isinstance(data.get("owner_name"), str) and data.get("owner_name").strip():
+            artist_names = [data.get("owner_name").strip()]
+        if artist_names:
+            prefix = " - ".join(artist_names)
             if base_name.lower().startswith(f"{prefix.lower()} - "):
                 return base_name
             return f"{prefix} - {base_name}"

@@ -63,6 +63,39 @@ def _append_crawl_mode(base_mode: str | None, suffix: str) -> str:
     return f"{base_mode}+{suffix}"
 
 
+def _normalize_name_parts(values: list[str] | None) -> list[str]:
+    if not isinstance(values, list):
+        return []
+    seen: set[str] = set()
+    normalized: list[str] = []
+    for raw in values:
+        if not isinstance(raw, str):
+            continue
+        name = raw.strip()
+        if not name:
+            continue
+        key = name.lower()
+        if key in seen:
+            continue
+        seen.add(key)
+        normalized.append(name)
+    return normalized
+
+
+def _format_album_display_name(album_name: str | None, artist_names: list[str] | None) -> str | None:
+    base = (album_name or "").strip()
+    if not base:
+        return None
+    artists = _normalize_name_parts(artist_names)
+    if not artists:
+        return base
+    prefix = " - ".join(artists)
+    lower_prefix = prefix.lower()
+    if base.lower().startswith(f"{lower_prefix} - "):
+        return base
+    return f"{prefix} - {base}"
+
+
 async def _consume_scrape_task(task: asyncio.Task | None, label: str) -> dict[str, Any] | None:
     if task is None:
         return None
@@ -194,6 +227,7 @@ async def _apply_album_playwright_fallback(
         merged["name"] = scraped.get("name")
     if merged.get("owner_name") in (None, "") and scraped.get("owner_name"):
         merged["owner_name"] = scraped.get("owner_name")
+    merged["name"] = _format_album_display_name(merged.get("name"), merged.get("artist_names")) or merged.get("name")
     merged["crawl_mode"] = _append_crawl_mode(merged.get("crawl_mode"), "playwright")
     return merged
 
@@ -905,11 +939,22 @@ async def fetch_album(album_id: str) -> dict[str, Any] | None:
     if status == 200 and data:
         images = data.get("images") or []
         artists = data.get("artists") or []
+        artist_names = [
+            artist.get("name")
+            for artist in artists
+            if isinstance(artist, dict) and isinstance(artist.get("name"), str)
+        ]
         result = {
-            "name": data.get("name"),
+            "name": _format_album_display_name(data.get("name"), artist_names) or data.get("name"),
             "image": images[0]["url"] if images else None,
             "owner_name": artists[0]["name"] if artists else None,
             "owner_url": f"https://open.spotify.com/artist/{artists[0]['id']}" if artists and artists[0].get("id") else None,
+            "artist_names": _normalize_name_parts(artist_names),
+            "artists": [
+                {"spotify_id": artist.get("id"), "name": artist.get("name")}
+                for artist in artists
+                if isinstance(artist, dict) and artist.get("name")
+            ],
             "track_count": data.get("total_tracks"),
             "release_date": data.get("release_date"),
             "playcount": None,
@@ -943,9 +988,14 @@ async def fetch_album(album_id: str) -> dict[str, Any] | None:
 
     scraped = await _consume_scrape_task(playwright_task, "album")
     if scraped:
+        artist_names = _normalize_name_parts(
+            [scraped.get("owner_name")] if isinstance(scraped.get("owner_name"), str) else []
+        )
         return {
-            "name": scraped.get("name"),
+            "name": _format_album_display_name(scraped.get("name"), artist_names) or scraped.get("name"),
             "owner_name": scraped.get("owner_name"),
+            "artist_names": artist_names,
+            "artists": [{"spotify_id": None, "name": name} for name in artist_names],
             "track_count": scraped.get("track_count"),
             "tracks_crawled": scraped.get("tracks_crawled"),
             "tracks_expected": scraped.get("tracks_expected"),
@@ -1164,6 +1214,8 @@ async def _fetch_album_via_pathfinder(album_id: str) -> dict[str, Any] | None:
     owner_image: str | None = None
     owner_url: str | None = None
     release_date: str | None = None
+    album_artists: list[dict[str, Any]] = []
+    album_artist_names: list[str] = []
 
     offset = 0
     while offset < max_tracks:
@@ -1201,6 +1253,7 @@ async def _fetch_album_via_pathfinder(album_id: str) -> dict[str, Any] | None:
             image = _first_image_from_sources((album_union.get("coverArt") or {}).get("sources") or [])
             release_date = _pathfinder_date_to_iso(album_union.get("date"))
             artist_items = ((album_union.get("artists") or {}).get("items") or [])
+            album_artists, album_artist_names = _pathfinder_extract_artists(artist_items)
             main_artist = artist_items[0] if artist_items else {}
             owner_name = ((main_artist.get("profile") or {}).get("name"))
             owner_artist_id = _spotify_uri_to_id(main_artist.get("uri"))
@@ -1245,13 +1298,16 @@ async def _fetch_album_via_pathfinder(album_id: str) -> dict[str, Any] | None:
     deep_complete = bool(expected == 0 or len(tracks) >= expected)
     play_values = [t.get("playcount_estimate") for t in tracks if t.get("playcount_estimate") is not None]
     total_plays = sum(play_values) if deep_complete and len(play_values) >= expected else None
+    display_name = _format_album_display_name(name, album_artist_names) or name
 
     return {
-        "name": name,
+        "name": display_name,
         "image": image,
         "owner_name": owner_name,
         "owner_image": owner_image,
         "owner_url": owner_url,
+        "artist_names": _normalize_name_parts(album_artist_names),
+        "artists": album_artists,
         "track_count": expected,
         "release_date": release_date,
         "tracks": tracks,
