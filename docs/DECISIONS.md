@@ -8,3 +8,4 @@
 | Tách `final3.html` thành HTML/CSS/JS | Dễ maintain và mở rộng tính năng | Medium | 2026-03-06 |
 | Áp dụng AGENTS governance root + subfolders | Giảm regression khi làm việc multi-agent | Medium | 2026-03-13 |
 | Enable optional crawl dedupe theo user/group | Tránh tạo item trùng, không đổi default contract | Medium | 2026-03-13 |
+| Chuẩn hóa clipboard theo selected rows (không submenu type-specific) | Giảm nhầm lẫn thao tác copy/export và bám đúng selection hiện tại | Medium | 2026-03-13 |
