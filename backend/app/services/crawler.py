@@ -356,7 +356,7 @@ def _formatted_item_name(item_type: str, data: dict) -> str | None:
             prefix = ', '.join(artist_names)
             normalized_base = base_name
             lower_prefix = prefix.lower()
-            if normalized_base.lower().startswith(f"{lower_prefix} - "):
+            while normalized_base.lower().startswith(f"{lower_prefix} - "):
                 normalized_base = normalized_base[len(prefix) + 3 :].strip()
             return f"{prefix} - {normalized_base}" if normalized_base else prefix
 

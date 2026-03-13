@@ -396,7 +396,7 @@ def _build_artist_track_title(artist_label: str, track_name: str) -> str:
     prefix = f"{artist} - "
     if track.lower().startswith(prefix.lower()):
         remainder = track[len(prefix):].strip()
-        if remainder.lower().startswith(prefix.lower()):
+        while remainder.lower().startswith(prefix.lower()):
             remainder = remainder[len(prefix):].strip()
         return f"{artist} - {remainder}" if remainder else f"{artist} - -"
     return f"{artist} - {track}"

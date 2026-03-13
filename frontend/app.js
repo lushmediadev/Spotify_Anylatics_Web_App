@@ -3588,9 +3588,9 @@ function showGroupContextMenu(clientX, clientY, rawGroupId) {
     state.groupContextMenuVisible = true;
 }
 
-async function executeGroupContextMenuAction(action) {
+async function executeGroupContextMenuAction(action, rawTargetId = null) {
     if (!action) return;
-    const targetId = normalizeGroupName(state.groupContextMenuTargetId) || ALL_GROUP_ID;
+    const targetId = normalizeGroupName(rawTargetId || state.groupContextMenuTargetId) || ALL_GROUP_ID;
     const entry = targetId === ALL_GROUP_ID
         ? { id: ALL_GROUP_ID, name: ALL_GROUP_LABEL, displayName: ALL_GROUP_LABEL }
         : (getGroupEntryById(targetId) || parseGroupEntryId(targetId));
@@ -3710,29 +3710,6 @@ function getGroupContextMenuEntry() {
     const targetId = normalizeGroupName(state.groupContextMenuTargetId);
     if (!targetId) return null;
     return getGroupEntryById(targetId) || parseGroupEntryId(targetId);
-}
-
-function showGroupContextMenu(clientX, clientY, groupId) {
-    const normalizedId = normalizeGroupName(groupId);
-    if (!normalizedId) return;
-    const entry = getGroupEntryById(normalizedId) || parseGroupEntryId(normalizedId);
-    if (!entry) return;
-
-    if (entry.id !== ALL_GROUP_ID && canManageGroupEntry(entry)) {
-        if (!state.selectedGroupIds.has(entry.id)) {
-            setSingleGroupSelection(entry.id);
-        }
-    } else if (entry.id === ALL_GROUP_ID) {
-        clearGroupSelection();
-    }
-
-    state.groupContextMenuVisible = true;
-    state.groupContextMenuTargetId = entry.id;
-    state.activeGroup = entry.id;
-    updateGroupHeader();
-    renderGroups();
-    renderList({ preserveScroll: true });
-    showRowContextMenu(clientX, clientY, null);
 }
 
 async function executeRowContextMenuAction(action) {
@@ -5984,8 +5961,9 @@ document.addEventListener('DOMContentLoaded', async () => {
             e.preventDefault();
             e.stopPropagation();
             const action = actionBtn.getAttribute('data-group-context-action');
+            const targetGroupId = state.groupContextMenuTargetId;
             hideGroupContextMenu();
-            await executeGroupContextMenuAction(action);
+            await executeGroupContextMenuAction(action, targetGroupId);
         });
         groupContextMenu.addEventListener('contextmenu', (e) => {
             e.preventDefault();
