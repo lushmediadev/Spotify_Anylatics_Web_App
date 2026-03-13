@@ -5,6 +5,7 @@ from unittest.mock import AsyncMock, patch
 
 from app.api import crawl as crawl_api
 from app.models.item import Item
+from app.schemas.crawl import CrawlBatchRequest, CrawlRequest
 from app.services.crawler import _formatted_item_name
 from app.services.spotify_client import _format_album_display_name
 from app.services.spotify_web_scraper import _parse_track_title
@@ -52,11 +53,34 @@ class TrackNamingTests(unittest.TestCase):
         )
         self.assertEqual(result, "Andreas Gidlund - Everytime We Say Hello")
 
+    def test_formatted_item_name_dedupes_multiple_artist_prefixes_for_track(self):
+        result = _formatted_item_name(
+            "track",
+            {
+                "name": "Andreas Gidlund - Andreas Gidlund - Everytime We Say Hello",
+                "artist_names": ["Andreas Gidlund"],
+            },
+        )
+        self.assertEqual(result, "Andreas Gidlund - Everytime We Say Hello")
+
     def test_parse_track_title_removes_song_and_lyrics_suffix(self):
         title = (
             "Andreas Gidlund - Everytime We Say Hello - song and lyrics by Andreas Gidlund | Spotify"
         )
         self.assertEqual(_parse_track_title(title), "Everytime We Say Hello")
+
+
+class CrawlSchemaTests(unittest.TestCase):
+    def test_crawl_request_remove_duplicates_defaults_false(self):
+        payload = CrawlRequest(url="https://open.spotify.com/track/abc")
+        self.assertFalse(payload.remove_duplicates)
+
+    def test_crawl_batch_request_remove_duplicates_can_enable(self):
+        payload = CrawlBatchRequest(
+            urls=["https://open.spotify.com/track/abc"],
+            remove_duplicates=True,
+        )
+        self.assertTrue(payload.remove_duplicates)
 
 
 class CrawlDedupeTests(unittest.IsolatedAsyncioTestCase):

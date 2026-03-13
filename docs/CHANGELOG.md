@@ -20,3 +20,10 @@
 - Fixed: Album title formatting now includes all artists; track naming no longer duplicates artist prefix.
 - Affected files: `backend/app/schemas/crawl.py`, `backend/app/api/crawl.py`, `backend/app/services/spotify_client.py`, `backend/app/services/spotify_web_scraper.py`, `backend/app/services/crawler.py`, `frontend/app.js`, `docs/WORKLOG.md`, `docs/CHANGELOG.md`.
 - Impact/Risk: Medium; dedupe behavior now reuses existing rows in same user/group scope and removes duplicate DB rows.
+
+### 2026-03-13 18:10 - selection_clear_owner_copy_export
+- Added: Group context menu actions for `clear-list` and `delete-group`; owner sort UI control wiring; right-click empty-list context menu entrypoint.
+- Changed: Group selection supports multi-select/delete/drag and `Ctrl+A` select all groups.
+- Fixed: Clipboard submenu options removed from UI; copy now targets selected rows only. Export number formatting uses plain digits; playlist/album multi-export keeps side-by-side columns.
+- Affected files: `frontend/app.js`, `frontend/index.html`, `frontend/style.css`, `backend/app/api/items.py`, `backend/app/services/crawler.py`, `docs/WORKLOG.md`, `docs/CHANGELOG.md`.
+- Impact/Risk: Medium; interaction model nhóm/link context menu thay đổi nhẹ, cần smoke test UI thực tế trên data thật.
