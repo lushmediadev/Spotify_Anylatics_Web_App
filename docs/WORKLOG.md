@@ -46,10 +46,27 @@
 
 - Status: Done
 - Actions:
-  - Hoàn thiện multi-select groups (Ctrl/Shift), Ctrl+A select all groups, multi-drag reorder, multi-delete groups.
-  - Bổ sung/ổn định group context menu (`clear-list`, `delete-group`) và xử lý xóa `All Links` thành clear-scope.
-  - Bật right-click vùng trống dưới rows để mở row context menu.
-  - Kích hoạt owner sort control (`Owner: A-Z / Z-A`) trên topbar và đồng bộ render state.
-  - Bỏ submenu clipboard track/album/playlist trên UI; giữ copy đúng selected rows.
-  - Chuẩn hóa export metric số dạng plain digits và giữ layout side-by-side cho multi playlist/album export.
-  - Chạy `pytest` backend (9 passed), `node --check frontend/app.js`, và `python -m compileall app`.
+  - Hoan thien multi-select groups (Ctrl/Shift), Ctrl+A select all groups, multi-drag reorder, multi-delete groups.
+  - Bo sung/on dinh group context menu (`clear-list`, `delete-group`) va xu ly xoa `All Links` thanh clear-scope.
+  - Bat right-click vung trong duoi rows de mo row context menu.
+  - Kich hoat owner sort control (`Owner: A-Z / Z-A`) tren topbar va dong bo render state.
+  - Bo submenu clipboard track/album/playlist tren UI; giu copy dung selected rows.
+  - Chuan hoa export metric so dang plain digits va giu layout side-by-side cho multi playlist/album export.
+  - Chay `pytest` backend (9 passed), `node --check frontend/app.js`, va `python -m compileall app`.
+
+### Task: Finalize scope handoff (commit + test sweep)
+
+- Status: Done
+- Actions:
+  - Re-verified implementation coverage cho 8 yeu cau o `frontend/app.js`, `frontend/index.html`, `backend/app/api/*`, `backend/app/services/*`.
+  - Giu va chay regression tests backend/frontend contract cho export, dedupe, naming, owner sort, group context actions.
+  - Chay test kha thi: `cd backend && venv\Scripts\python.exe -m pytest` (pass), `node --test frontend/tests/ui_contract.test.mjs` (pass), `node --check frontend/app.js` (pass).
+  - Chuan bi commit sach cho toan bo thay doi trong workspace, loai tru `.codex/`.
+
+### Task: Selection UI agent validation tests
+
+- Status: Done
+- Actions:
+  - Added `backend/tests/test_selection_ui.py` to cover selection-ui scope with executable frontend JS checks via Node VM harness.
+  - Validated multi-group selection on `Ctrl+A`, multi-group drag block move, empty-list-area context menu wiring, and multi-group delete path wiring.
+  - Re-ran backend test suite with new coverage.

@@ -26,4 +26,18 @@
 - Changed: Group selection supports multi-select/delete/drag and `Ctrl+A` select all groups.
 - Fixed: Clipboard submenu options removed from UI; copy now targets selected rows only. Export number formatting uses plain digits; playlist/album multi-export keeps side-by-side columns.
 - Affected files: `frontend/app.js`, `frontend/index.html`, `frontend/style.css`, `backend/app/api/items.py`, `backend/app/services/crawler.py`, `docs/WORKLOG.md`, `docs/CHANGELOG.md`.
-- Impact/Risk: Medium; interaction model nhóm/link context menu thay đổi nhẹ, cần smoke test UI thực tế trên data thật.
+- Impact/Risk: Medium; interaction model nhom/link context menu thay doi nhe, can smoke test UI thuc te tren data that.
+
+### 2026-03-13 16:02 - finalize_scope_commit_and_test
+- Added: Contract smoke tests for frontend UI wiring (`frontend/tests/ui_contract.test.mjs`) and additional backend export-format assertions (`backend/tests/test_export_format.py`).
+- Changed: Consolidated final verification pass for scope 1..8 and synced project memory docs.
+- Fixed: Final regression gap check before handoff/commit.
+- Affected files: `frontend/tests/ui_contract.test.mjs`, `backend/tests/test_export_format.py`, `docs/WORKLOG.md`, `docs/CHANGELOG.md`.
+- Impact/Risk: Low; tests are lightweight contract checks, not full E2E browser flows.
+
+### 2026-03-13 16:04 - selection_ui_agent_validation
+- Added: Frontend behavior tests in `backend/tests/test_selection_ui.py` with Node VM execution of `frontend/app.js`.
+- Changed: Test suite now checks `Ctrl+A` group select-all and multi-group drag block reorder behavior.
+- Fixed: Added automated guard for empty-list-area context menu and multi-group delete selection wiring in `frontend/app.js`.
+- Affected files: `backend/tests/test_selection_ui.py`, `docs/WORKLOG.md`, `docs/CHANGELOG.md`.
+- Impact/Risk: Low; test-only hardening for selection-ui scope.

@@ -2,10 +2,11 @@
 
 | Decision | Reason | Impact | Date |
 | --- | --- | --- | --- |
-| Chọn FastAPI + Playwright + httpx | Phù hợp cho backend API + Spotify scraping hybrid | High | 2026-03-06 |
-| Không dùng Redis ở MVP | Giữ triển khai đơn giản, dùng background task | Medium | 2026-03-06 |
-| Giữ nguyên layout UI gốc | Yêu cầu giữ UX hiện có, chỉ thêm tính năng | Medium | 2026-03-06 |
-| Tách `final3.html` thành HTML/CSS/JS | Dễ maintain và mở rộng tính năng | Medium | 2026-03-06 |
-| Áp dụng AGENTS governance root + subfolders | Giảm regression khi làm việc multi-agent | Medium | 2026-03-13 |
-| Enable optional crawl dedupe theo user/group | Tránh tạo item trùng, không đổi default contract | Medium | 2026-03-13 |
-| Chuẩn hóa clipboard theo selected rows (không submenu type-specific) | Giảm nhầm lẫn thao tác copy/export và bám đúng selection hiện tại | Medium | 2026-03-13 |
+| Chon FastAPI + Playwright + httpx | Phu hop cho backend API + Spotify scraping hybrid | High | 2026-03-06 |
+| Khong dung Redis o MVP | Giu trien khai don gian, dung background task | Medium | 2026-03-06 |
+| Giu nguyen layout UI goc | Yeu cau giu UX hien co, chi them tinh nang | Medium | 2026-03-06 |
+| Tach `final3.html` thanh HTML/CSS/JS | De maintain va mo rong tinh nang | Medium | 2026-03-06 |
+| Ap dung AGENTS governance root + subfolders | Giam regression khi lam viec multi-agent | Medium | 2026-03-13 |
+| Enable optional crawl dedupe theo user/group | Tranh tao item trung, khong doi default contract | Medium | 2026-03-13 |
+| Chuan hoa clipboard theo selected rows (khong submenu type-specific) | Giam nham lan thao tac copy/export va bam dung selection hien tai | Medium | 2026-03-13 |
+| Dung lightweight contract tests cho frontend wiring (`node --test`) | Repo khong co frontend unit/e2e framework day du, can regression check nhanh cho scope UI | Low | 2026-03-13 |
