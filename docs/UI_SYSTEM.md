@@ -48,7 +48,7 @@
   - `btn-accent`: black filled primary action with white text
   - `btn-ghost`: transparent secondary action with thin border
 - Modals: centered light dialog with black-alpha backdrop and no detached decorative chrome
-- Hero keeps `--hero-image` from `updateHeroImage()` beneath an 88%-96% white overlay so dark text stays readable even over dark covers.
+- Hero is a photographic exception to the light chrome: preserve the Spotify cover selection, color filter, and dark gradient from the original UI. Use light heading/subtitle text and translucent dark KPI chips; never wash out the cover with a white overlay.
 - Dynamically inserted Manager assignment fields inherit the same custom dropdown palette without role-specific CSS.
 - Both HTML pages declare `data-theme="light"` and native controls use `color-scheme: light`.
 - Scoped compatibility CSS maps legacy white text/border/background utilities and admin cards emitted by `app.js`; do not change runtime markup just to recolor it.

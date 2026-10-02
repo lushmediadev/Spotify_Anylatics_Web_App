@@ -1,5 +1,11 @@
 # Changelog
 
+### 2026-10-02 16:20 - Restore original Spotify hero cover treatment
+- Changed: hero retains the original colored cover/filter and dark gradient, with light heading/subtitle and translucent KPI chips inside the light dashboard.
+- Fixed: removed the light-theme white overlay that obscured cover colors; cover selection logic remains unchanged.
+- Affected files: frontend/style.css, frontend/index.html, frontend/login.html, docs/UI_SYSTEM.md.
+- Impact/Risk: Hero-only visual change; bumped shared stylesheet version for both pages.
+
 ### 2026-10-02 16:03 - Light theme and assigned-manager roles
 - Added: manager role, admin manager-assignment controls, nullable UUID manager_id migration, scoped account/link/job permissions, and permission integration tests.
 - Changed: dashboard, login, settings and dialogs use the YouTube Manager white/grayscale palette while Spotify logo remains green.
