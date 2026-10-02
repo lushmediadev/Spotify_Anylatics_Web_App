@@ -1,5 +1,11 @@
 # Changelog
 
+### 2026-10-02 - YouTube channels and group-only navigation
+- Added: owner-scoped YouTube API keys/check/rotation, public channel view snapshots, persisted empty channel groups and shared Spotify playlist associations.
+- UI: Channel & Playlist matches existing light visual, shows playlists by default, supports Edit, grouped search/filter and refresh; profile remains accessible from avatar and global clipboard setting is preserved.
+- Changed: removed All Links/All Channels entries; both pages select a named group, and Spotify group deletion moves surviving links to Ungrouped.
+- Verification: 443 backend and 40 frontend/browser tests passed; desktop/mobile smoke and empty-group creation checked on loopback fixtures. Runtime deployment verification recorded after rollout.
+
 ### 2026-10-02 16:20 - Restore original Spotify hero cover treatment
 - Changed: hero retains the original colored cover/filter and dark gradient, with light heading/subtitle and translucent KPI chips inside the light dashboard.
 - Fixed: removed the light-theme white overlay that obscured cover colors; cover selection logic remains unchanged.

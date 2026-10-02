@@ -11,6 +11,7 @@
     <script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Inter+Tight:wght@600;700;800&family=Material+Symbols+Rounded:opsz,wght,FILL,GRAD@20..48,500,0..1,0&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="style.css?v=20261002-hero-2">
+    <link rel="stylesheet" href="channels.css?v=20261002-youtube-1">
     <script id="tailwind-config">
         tailwind.config = {
             darkMode: "class",
@@ -63,9 +64,9 @@
                 <span class="material-icons-round text-primary">link</span>
                 <span class="font-medium sidebar-label">Link Checker</span>
             </a>
-            <a id="nav-analytics" class="sidebar-tooltip-target flex items-center gap-4 px-3 py-3 rounded-lg text-secondary-text hover:text-white transition-colors group cursor-pointer" data-tooltip="Analytics" href="#">
-                <span class="material-icons-round">analytics</span>
-                <span class="font-medium sidebar-label">Analytics</span>
+            <a id="nav-channels" class="sidebar-tooltip-target flex items-center gap-4 px-3 py-3 rounded-lg text-secondary-text hover:text-white transition-colors group cursor-pointer" data-tooltip="Channel &amp; Playlist" href="#">
+                <span class="material-icons-round">subscriptions</span>
+                <span class="font-medium sidebar-label">Channel &amp; Playlist</span>
             </a>
             <a id="nav-settings" class="sidebar-tooltip-target flex items-center gap-4 px-3 py-3 rounded-lg text-secondary-text hover:text-white transition-colors group cursor-pointer" data-tooltip="Settings" href="#">
                 <span class="material-icons-round">settings</span>
@@ -94,18 +95,12 @@
         </div>
         <div id="group-list" class="flex-1 overflow-y-auto p-3 space-y-1">
             <!-- Groups rendered by JS -->
-            <button class="w-full flex items-center justify-between px-3 py-3 rounded-lg bg-primary/10 text-white group" data-group="all">
-                <div class="flex items-center gap-3">
-                    <span class="material-icons-round text-primary text-sm">folder</span>
-                    <span class="text-[14px] font-semibold">All Links</span>
-                </div>
-                <span id="group-count-all" class="text-xs font-bold bg-primary/20 text-primary px-2 py-0.5 rounded-full">0</span>
-            </button>
             <button class="w-full flex items-center gap-3 px-3 py-3 rounded-lg text-secondary-text hover:text-primary transition-colors mt-4 cursor-pointer" id="btn-new-group">
                 <span class="material-icons-round text-sm">add</span>
                 <span class="font-medium">New Group</span>
             </button>
         </div>
+        <div id="channel-group-rail" class="flex-1 overflow-y-auto p-3" style="display:none"></div>
     </section>
 
     <!-- Zone 3: List Panel -->
@@ -116,9 +111,9 @@
                 <nav class="flex items-center gap-2 text-xs text-secondary-text mb-1">
                     <span>Link Checker</span>
                     <span class="material-icons-round text-xs">chevron_right</span>
-                    <span id="breadcrumb-group" class="text-white">All Links</span>
+                    <span id="breadcrumb-group" class="text-white">Choose a group</span>
                 </nav>
-                <h1 id="page-title" class="text-2xl font-bold">All Links</h1>
+                <h1 id="page-title" class="text-2xl font-bold">Choose a group</h1>
             </div>
             <div class="flex items-center gap-4">
                 <div class="relative group">
@@ -284,6 +279,7 @@
                     <span class="material-icons-round">playlist_add</span>
                     <h3 class="text-lg font-bold text-white mb-2" data-empty-title>No links yet</h3>
                     <p class="text-sm max-w-xs" data-empty-description>Add your first Spotify link to start monitoring play counts, followers, and more.</p>
+                    <button id="btn-empty-new-group" class="mt-4 btn-ghost px-5 py-2 rounded-lg text-sm font-semibold" onclick="handleCreateGroup(window.prompt('Group name'))">New Group</button>
                     <button id="btn-empty-add-link" class="mt-6 btn-accent flex items-center gap-2 px-6 py-2.5 rounded-full text-sm font-bold cursor-pointer" onclick="document.getElementById('btn-add-link').click()">
                         <span class="material-icons-round text-lg">add</span>
                         Add Your First Link
@@ -293,8 +289,15 @@
         </div>
 
 
-        <!-- Settings Panel -->
-        <div id="settings-panel" class="flex-1 overflow-y-auto px-8 py-8" style="display:none">
+        <section id="channels-panel" class="flex-1 overflow-y-auto" style="display:none" aria-label="Channel &amp; Playlist"></section>
+        <section id="settings-panel" class="flex-1 overflow-y-auto px-8 py-8" style="display:none">
+            <div class="max-w-2xl">
+                <div id="youtube-key-settings"></div>
+                <div id="global-export-host"></div>
+            </div>
+        </section>
+        <!-- Own profile remains accessible through the sidebar avatar. -->
+        <div id="account-panel" class="flex-1 overflow-y-auto px-8 py-8" style="display:none">
             <div class="max-w-2xl">
                 <h2 class="text-2xl font-bold mb-8" style="font-family:'Inter Tight','Inter',system-ui,sans-serif; letter-spacing:-0.02em;">Account Settings</h2>
 
@@ -458,7 +461,7 @@
                     </div>
                 </div>
                 <div>
-                    <label class="block text-sm font-medium text-secondary-text mb-2">Group (optional)</label>
+                    <label class="block text-sm font-medium text-secondary-text mb-2">Group (required)</label>
                     <div id="modal-group-select-wrap"></div>
                 </div>
                 <div class="flex gap-3 pt-4">
@@ -651,6 +654,7 @@
             </div>
         </div>
 
-    <script src="app.js?v=20261002-light-1"></script>
+    <script src="channels.js?v=20261002-youtube-1"></script>
+    <script src="app.js?v=20261002-youtube-1"></script>
 </body>
 </html>

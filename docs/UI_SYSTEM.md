@@ -60,3 +60,6 @@
 - Keep list rows dense; do not convert them into card-heavy layouts
 - Search/filter tasks should stay behavioral unless a visual change is explicitly required
 - New UI work should inherit the existing palette, spacing rhythm, and typography rather than introduce a separate design language
+- Channel & Playlist uses the shared shell and channel group rail: a flat channel summary followed by visible playlist rows, with collapse-all as an optional control.
+- Both Spotify and channel rails contain named groups and New Group only, without All Links/All Channels entries. Opening a page selects its first available group before rendering rows; no-group state offers group creation, not an aggregate list.
+- Settings hosts per-account YouTube API keys and admin-only global clipboard settings. Own profile/password remain accessible through the sidebar avatar.

@@ -2,6 +2,8 @@
 
 | Decision | Reason | Impact | Date |
 | --- | --- | --- | --- |
+| Show named groups only for Spotify and Channel & Playlist | User removed both aggregate navigation entries. | Auto-select the first group after owner change; group discovery may still query aggregate counts internally. Deleting a Spotify group moves surviving links to named Ungrouped, not a hidden aggregate. | 2026-10-02 |
+| Integrate YouTube channels through additive APIs and references to existing Spotify playlists | Monitor channel view changes alongside playlist metrics without duplicated crawlers or deleting shared playlist records on unlink. | Per-owner keys; many-to-many channel-playlist links; standalone YTM remains unchanged. | 2026-10-02 |
 | Choose FastAPI + Playwright + httpx | This stack fits Spotify internal API crawling and fallback browser automation. | High | 2026-03-06 |
 | Skip Redis for MVP | Background tasks are enough for the current scope and keep deployment simpler. | Medium | 2026-03-06 |
 | Use hybrid auth flow | Playwright for cold auth and httpx for hot-path requests reduces runtime overhead. | High | 2026-03-06 |

@@ -15,6 +15,7 @@ from fastapi.staticfiles import StaticFiles
 from app.api.router import router as api_router
 from app.config import settings
 from app.database import init_db
+from app.services import youtube_jobs
 
 # Logging
 logging.basicConfig(
@@ -62,8 +63,13 @@ async def lifespan(app: FastAPI):
         logger.warning("AUTO_INIT_DB=false but running compatibility DB init to ensure schema integrity")
     await init_db()
     logger.info("Database tables checked/created")
+    await youtube_jobs.recover_stale_channels()
+    youtube_jobs.track(youtube_jobs.maintenance())
 
-    yield
+    try:
+        yield
+    finally:
+        await youtube_jobs.shutdown()
 
     logger.info("Shutting down SpotiCheck API...")
 

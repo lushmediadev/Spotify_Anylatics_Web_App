@@ -35,6 +35,7 @@ const ROW_ORDER_STORAGE_KEY = 'spoticheck_row_order_v1';
 const COLUMN_WIDTH_STORAGE_KEY = 'spoticheck_column_widths_v5';
 const ALL_GROUP_ID = 'all';
 const ALL_GROUP_LABEL = 'All Links';
+const RECOVERY_GROUP_LABEL = 'Ungrouped';
 const GROUP_SELECT_ALL = '__all__';
 const DEFAULT_COLUMN_WIDTHS = Object.freeze({
     stt: 52,
@@ -220,7 +221,8 @@ function setupAuthUI() {
         const profileWrap = document.querySelector('.sidebar-profile-wrap');
         if (profileWrap) {
             profileWrap.style.cursor = 'pointer';
-            profileWrap.onclick = () => document.getElementById('nav-settings')?.click();
+            profileWrap.onclick = () => switchToView('account');
+            profileWrap.title = 'Account Settings';
             const avatarHtml = user.avatar
                 ? '<img src="' + user.avatar + '" class="w-8 h-8 rounded-full object-cover flex-shrink-0 ring-1 ring-white/10">'
                 : '<div class="w-8 h-8 rounded-full flex-shrink-0 bg-gradient-to-br from-emerald-400 via-cyan-500 to-blue-700 text-white text-[11px] font-bold leading-none grid place-items-center overflow-hidden ring-1 ring-white/10">' + initials + '</div>';
@@ -275,7 +277,7 @@ function setupAuthUI() {
 const state = {
     items: [],
     filteredItems: [],
-    groups: [{ id: ALL_GROUP_ID, name: ALL_GROUP_LABEL, count: 0 }],
+    groups: [],
     customGroups: [],
     groupSearchQuery: '',
     activeGroup: ALL_GROUP_ID,
@@ -1892,7 +1894,7 @@ function saveCustomGroups() {
 }
 
 function getActiveGroupName() {
-    if (state.activeGroup === ALL_GROUP_ID) return ALL_GROUP_LABEL;
+    if (state.activeGroup === ALL_GROUP_ID) return 'Choose a group';
     const match = state.groups.find((g) => g.id === state.activeGroup);
     return match?.displayName || match?.name || state.activeGroup;
 }
@@ -2656,8 +2658,7 @@ function rebuildGroups() {
         }
     }
 
-    const allCount = Number(state.itemSummary?.all_total ?? state.items.length);
-    const groups = [{ id: ALL_GROUP_ID, name: ALL_GROUP_LABEL, count: allCount }];
+    const groups = [];
     const namedGroups = [];
     const seen = new Set();
     const pushUnique = (rawEntry) => {
@@ -2717,6 +2718,7 @@ function rebuildGroups() {
 
     state.groups = groups;
     if (state.activeGroup === ALL_GROUP_ID) {
+        state.activeGroup = groups[0]?.id || ALL_GROUP_ID;
         return;
     }
 
@@ -2740,7 +2742,7 @@ function rebuildGroups() {
         }) || null;
     }
 
-    state.activeGroup = remapped ? remapped.id : ALL_GROUP_ID;
+    state.activeGroup = remapped ? remapped.id : (groups[0]?.id || ALL_GROUP_ID);
 }
 
 function getGroupRenderSignature(groups, searchMatchCounts = new Map()) {
@@ -3287,9 +3289,6 @@ function handleGroupSelection(groupId, event) {
         : normalizedGroupId;
 
     if (normalizedGroupId.toLowerCase() === ALL_GROUP_ID) {
-        state.activeGroup = ALL_GROUP_ID;
-        state.selectedGroupIds = new Set([ALL_GROUP_ID]);
-        state.groupSelectionAnchorId = ALL_GROUP_ID;
         return;
     }
 
@@ -3328,13 +3327,17 @@ async function handleDeleteGroups(groupIds, opts = {}) {
         .filter(Boolean)
         .filter((group) => canManageGroupEntry(group));
     if (!targets.length) return;
+    if (targets.some((target) => target.name === RECOVERY_GROUP_LABEL && Number(target.count) > 0)) {
+        showToast('Move or delete links in Ungrouped before deleting this group', 'info');
+        return;
+    }
 
     const confirmed = opts.confirm === false
         ? true
         : window.confirm(
             targets.length > 1
-                ? `Delete ${targets.length} selected groups?\nAll links in those groups will move to All Links.`
-                : `Delete group "${targets[0].name}"?\nAll links in this group will move to All Links.`
+                ? `Delete ${targets.length} selected groups?\nTheir links will move to Ungrouped.`
+                : `Delete group "${targets[0].name}"?\nIts links will move to Ungrouped.`
         );
     if (!confirmed) return;
 
@@ -3367,10 +3370,10 @@ async function handleDeleteGroups(groupIds, opts = {}) {
             if (!itemGroup) return item;
             if (itemGroup.toLowerCase() !== groupKey && !groupNameMatchesVariants(item.group, groupNameVariants)) return item;
             if (target?.ownerUserId && !isItemOwnedByUser(item, target.ownerUserId)) return item;
-            return { ...item, group: null };
+            return { ...item, group: RECOVERY_GROUP_LABEL };
         });
 
-        await syncGroupItemsToServer(target?.name || groupName, '', ownerUserId || null, groupNameVariants);
+        await syncGroupItemsToServer(target?.name || groupName, RECOVERY_GROUP_LABEL, ownerUserId || null, groupNameVariants);
     }
 
     const deletedIdSet = new Set(targets.map((target) => String(target.id)));
@@ -3384,8 +3387,9 @@ async function handleDeleteGroups(groupIds, opts = {}) {
         state.renamingGroupId = null;
     }
     state.isCreatingGroup = false;
+    state.itemSummary = null;
     syncGroupUI(true);
-    renderList({ preserveScroll: true });
+    await loadData({ preserveScroll: true, force: true });
     showToast(
         targets.length > 1
             ? `Deleted ${targets.length} groups`
@@ -3466,6 +3470,9 @@ function handleCreateGroup(rawName) {
         renderList();
         populateGroupSelect();
         showToast(`Switched to group: ${existing.name}`, 'info');
+        resetVirtualList(0, getBackendListParams());
+        renderList({ force: true });
+        loadData({ force: true });
         return;
     }
 
@@ -3480,6 +3487,9 @@ function handleCreateGroup(rawName) {
     renderList();
     populateGroupSelect();
     showToast(`Created group: ${name}`, 'success');
+    resetVirtualList(0, getBackendListParams());
+    renderList({ force: true });
+    loadData({ force: true });
 }
 
 async function handleDeleteGroup(rawGroupId) {
@@ -4609,12 +4619,12 @@ function renderList(opts = {}) {
     if (items.length === 0) {
         if (!state.searchQuery && emptyState) {
             if (emptyTitleEl) {
-                emptyTitleEl.textContent = state.items.length === 0
+                emptyTitleEl.textContent = state.activeGroup === ALL_GROUP_ID ? 'Create your first group' : state.items.length === 0
                     ? defaultEmptyTitle
                     : `No links in "${getActiveGroupName()}"`;
             }
             if (emptyDescEl) {
-                emptyDescEl.textContent = state.items.length === 0
+                emptyDescEl.textContent = state.activeGroup === ALL_GROUP_ID ? 'Create a group before adding Spotify links.' : state.items.length === 0
                     ? defaultEmptyDescription
                     : 'Add a Spotify link to this group to start monitoring.';
             }
@@ -6486,6 +6496,18 @@ function handleAdminFilterChange(val) {
     const selectedUserId = val || (currentUser?.id ? String(currentUser.id) : null);
     state.adminFilterUserId = selectedUserId;
     state.activeGroup = ALL_GROUP_ID;
+    if (state.currentView === 'channels') {
+        state.dataLoadRequestId++;
+        state.items = [];
+        state.filteredItems = [];
+        state.itemSummary = null;
+        state.customGroups = selectedUserId ? getOwnerCustomGroups(selectedUserId) : [];
+        state.groups = [];
+        resetVirtualList(0, {});
+        window.ChannelPlaylists?.setUserFilter(selectedUserId);
+        return;
+    }
+    if (state.currentView && state.currentView !== 'linkchecker') return;
     state.groupSearchQuery = '';
     clearRowSelection();
     clearGroupSelection();
@@ -6498,7 +6520,7 @@ function handleAdminFilterChange(val) {
     state.customGroups = selectedUserId ? getOwnerCustomGroups(selectedUserId) : [];
     state.itemSummary = null;
     resetVirtualList(0, {});
-    state.groups = [{ id: ALL_GROUP_ID, name: ALL_GROUP_LABEL, count: 0 }];
+    state.groups = [];
     rebuildGroups();
     state.lastGroupRenderSignature = '';
     syncGroupUI(true);
@@ -6507,8 +6529,8 @@ function handleAdminFilterChange(val) {
     var breadcrumb = document.getElementById('breadcrumb-group');
     var selectedUser = state.adminUserList.find(function(u) { return String(u.id || u._id) === selectedUserId; });
     var username = (selectedUser && (selectedUser.display_name || selectedUser.username)) || selectedUserId;
-    if (pageTitle) pageTitle.textContent = ALL_GROUP_LABEL + ' (' + username + ')';
-    if (breadcrumb) breadcrumb.textContent = ALL_GROUP_LABEL + ' (' + username + ')';
+    if (pageTitle) pageTitle.textContent = getActiveGroupName();
+    if (breadcrumb) breadcrumb.textContent = getActiveGroupName();
 
     showInstantListOrLoading(getBackendListParams(), { preserveScroll: false });
     syncGroupsFromServer(selectedUserId || null);
@@ -6601,6 +6623,23 @@ async function loadData(opts = {}) {
             if (requestId !== state.dataLoadRequestId) return;
         }
         params = getBackendListParams();
+        // Discover named groups without displaying an aggregate item page.
+        if (state.activeGroup === ALL_GROUP_ID) {
+            const ownerParams = params.user_id ? { user_id: params.user_id } : {};
+            const discovery = await api.getItemsSummary(ownerParams);
+            if (requestId !== state.dataLoadRequestId) return;
+            state.itemSummary = discovery || null;
+            syncGroupUI(true);
+            params = getBackendListParams();
+            if (state.activeGroup === ALL_GROUP_ID) {
+                state.items = [];
+                resetVirtualList(0, params);
+                state.itemSummary = { ...(discovery || {}), total: 0, active: 0, errors: 0, crawling: 0 };
+                if (skeleton) skeleton.style.display = 'none';
+                renderList({ preserveScroll, force });
+                return;
+            }
+        }
         const previousScopeKey = state.listScopeKey;
         const previousTotal = state.listTotal;
         state.currentListParams = { ...params };
@@ -6745,7 +6784,7 @@ function initVirtualListScroll() {
 // VIEW MANAGEMENT â€” single source of truth for panel switching
 // ===================================================================
 
-state.currentView = 'linkchecker'; // 'linkchecker' | 'settings' | 'users'
+state.currentView = 'linkchecker'; // linkchecker | channels | settings | account | users
 
 function setElementDisplay(el, mode) {
     if (!el) return;
@@ -6775,6 +6814,8 @@ function updateAddLinkAvailability() {
 function switchToView(view) {
     var listWrap = document.querySelector('.list-wrap');
     var settingsPanel = document.getElementById('settings-panel');
+    var accountPanel = document.getElementById('account-panel');
+    var channelsPanel = document.getElementById('channels-panel');
     var adminPanel = document.getElementById('admin-users-panel');
     var btnRefresh = document.getElementById('btn-refresh');
     var btnAddLink = document.getElementById('btn-add-link');
@@ -6789,10 +6830,13 @@ function switchToView(view) {
     // 1) Hide ALL panels
     setElementDisplay(listWrap, 'none');
     setElementDisplay(settingsPanel, 'none');
+    setElementDisplay(accountPanel, 'none');
+    setElementDisplay(channelsPanel, 'none');
+    window.ChannelPlaylists?.hide();
     setElementDisplay(adminPanel, 'none');
 
     // 2) Update sidebar nav active state
-    var navMap = { linkchecker: 'nav-links', settings: 'nav-settings', users: 'nav-users' };
+    var navMap = { linkchecker: 'nav-links', channels: 'nav-channels', settings: 'nav-settings', account: 'nav-settings', users: 'nav-users' };
     document.querySelectorAll('#sidebar nav a').forEach(function(a) {
         a.classList.remove('text-white', 'bg-white/10');
         a.classList.add('text-secondary-text');
@@ -6816,9 +6860,23 @@ function switchToView(view) {
     // 4) Show the correct panel and load its data
     state.currentView = view;
     updateAddLinkAvailability();
+    const groupPanel = document.getElementById('group-panel');
+    if (groupPanel) {
+        setElementDisplay(groupPanel, ['linkchecker', 'channels'].includes(view) ? null : 'none');
+        Array.from(groupPanel.children).forEach((child) => {
+            if (child.id !== 'admin-badge' && child.id !== 'admin-user-filter-wrap') {
+                setElementDisplay(child, child.id === 'channel-group-rail'
+                    ? (view === 'channels' ? null : 'none')
+                    : (view === 'linkchecker' ? null : 'none'));
+            }
+        });
+    }
+    setElementDisplay(document.querySelector('main > footer'), view === 'linkchecker' ? null : 'none');
 
     if (view === 'linkchecker') {
         setElementDisplay(listWrap, null);
+        rebuildGroups();
+        renderList({ preserveScroll: true, force: true });
         if (breadcrumbParent) breadcrumbParent.textContent = 'Link Checker';
         updateGroupHeader();
         showInstantListOrLoading(getBackendListParams(), {
@@ -6828,10 +6886,23 @@ function switchToView(view) {
         loadData({ preserveScroll: true });
     } else if (view === 'settings') {
         setElementDisplay(settingsPanel, 'block');
-        if (breadcrumbParent) breadcrumbParent.textContent = 'Account';
+        if (breadcrumbParent) breadcrumbParent.textContent = 'YouTube';
         if (breadcrumb) breadcrumb.textContent = 'Settings';
+        if (pageTitle) pageTitle.textContent = 'API & Export Settings';
+        loadSettingsData();
+        window.ChannelPlaylists?.showKeySettings(document.getElementById('youtube-key-settings'));
+    } else if (view === 'account') {
+        setElementDisplay(accountPanel, 'block');
+        if (breadcrumbParent) breadcrumbParent.textContent = 'Account';
+        if (breadcrumb) breadcrumb.textContent = 'Profile';
         if (pageTitle) pageTitle.textContent = 'Account Settings';
         loadSettingsData();
+    } else if (view === 'channels') {
+        setElementDisplay(channelsPanel, 'block');
+        if (breadcrumbParent) breadcrumbParent.textContent = 'YouTube';
+        if (breadcrumb) breadcrumb.textContent = 'Channel & Playlist';
+        if (pageTitle) pageTitle.textContent = 'Channel & Playlist';
+        window.ChannelPlaylists?.show({ userId: state.adminFilterUserId || getAuthUser()?.id });
     } else if (view === 'users') {
         setElementDisplay(adminPanel, 'block');
         if (breadcrumbParent) breadcrumbParent.textContent = 'Admin';
@@ -8096,6 +8167,21 @@ document.addEventListener('DOMContentLoaded', async () => {
 
 
     // Settings nav
+    const exportHost = document.getElementById('global-export-host');
+    const exportPanel = document.getElementById('settings-global-export');
+    if (exportHost && exportPanel) exportHost.appendChild(exportPanel);
+    window.ChannelPlaylists?.init({
+        request: (path, options) => api._fetch(path, options),
+        getUser: getAuthUser,
+        onItemChanged: () => {
+            state.listScopeCache?.clear();
+            state.itemSummary = null;
+        },
+    });
+    document.getElementById('nav-channels')?.addEventListener('click', (e) => {
+        e.preventDefault();
+        switchToView('channels');
+    });
     document.getElementById('nav-settings').addEventListener('click', (e) => {
         e.preventDefault();
         switchToView('settings');

@@ -9,6 +9,86 @@ const appJs = fs.readFileSync(path.join(root, "app.js"), "utf8");
 const indexHtml = fs.readFileSync(path.join(root, "index.html"), "utf8");
 const styleCss = fs.readFileSync(path.join(root, "style.css"), "utf8");
 
+test("YouTube page reuses the shell and leaves own profile accessible", () => {
+  assert.match(indexHtml, /id="nav-channels"/);
+  assert.match(indexHtml, /id="channels-panel"/);
+  assert.match(indexHtml, /id="youtube-key-settings"/);
+  assert.match(indexHtml, /id="account-panel"/);
+  assert.ok(indexHtml.indexOf('src="channels.js?') < indexHtml.indexOf('src="app.js?'));
+  assert.match(appJs, /profileWrap\.onclick = \(\) => switchToView\('account'\)/);
+  assert.match(appJs, /exportHost\.appendChild\(exportPanel\)/);
+});
+
+test("channel owner filter does not trigger Spotify list loads", () => {
+  const calls = [];
+  const context = vm.createContext({
+    getAuthUser: () => ({ id: 'admin' }),
+    state: { currentView: 'channels' },
+    ALL_GROUP_ID: 'all',
+    getOwnerCustomGroups: () => [],
+    resetVirtualList: () => {},
+    window: { ChannelPlaylists: { setUserFilter: (id) => calls.push(id) } },
+  });
+  vm.runInContext(appJs.slice(appJs.indexOf('function handleAdminFilterChange('), appJs.indexOf('async function loadVirtualPage(')), context);
+  context.handleAdminFilterChange('assigned-owner');
+  assert.equal(context.state.adminFilterUserId, 'assigned-owner');
+  assert.deepEqual(calls, ['assigned-owner']);
+});
+
+test("Spotify group navigation excludes aggregate and selects a named group", () => {
+  const state = { activeGroup: 'all', groups: [], customGroups: [], items: [],
+    itemSummary: { groups: [{ name: 'Jazz', count: 2 }, { name: 'Blues', count: 3 }] } };
+  const context = vm.createContext({ state, ALL_GROUP_ID: 'all',
+    getAuthUser: () => ({ role: 'user', id: 'owner' }),
+    getScopedGroupOwnerUserId: () => 'owner',
+    parseGroupEntryId: () => null,
+    normalizeStoredGroupName: value => String(value || '').trim(),
+    normalizeGroupName: value => String(value || '').trim(),
+    buildGroupEntryId: name => name,
+    splitLegacyGroupName: name => ({ name }),
+    isAdminAllUsersMode: () => false,
+    getAdminGroupDisplayName: name => name,
+  });
+  vm.runInContext(appJs.slice(appJs.indexOf('function rebuildGroups()'), appJs.indexOf('function getGroupRenderSignature(')), context);
+  context.rebuildGroups();
+  assert.equal(state.activeGroup, 'Jazz');
+  assert.equal(state.groups.some(group => group.id === 'all'), false);
+  state.activeGroup = 'removed';
+  context.rebuildGroups();
+  assert.equal(state.activeGroup, 'Jazz');
+  state.itemSummary.groups = [];
+  context.rebuildGroups();
+  assert.equal(state.groups.length, 0);
+  assert.equal(state.activeGroup, 'all'); // Internal no-selection sentinel, never a visible group.
+  assert.doesNotMatch(indexHtml, /data-group="all"/);
+});
+
+test("Spotify bootstrap discovers groups but never requests an aggregate item page", async () => {
+  for (const group of ['Jazz', null]) {
+    const calls = [];
+    const state = { activeGroup: 'all', dataLoadRequestId: 0, listTotal: 0 };
+    const context = vm.createContext({ state, ALL_GROUP_ID: 'all', CONFIG: { LIST_PAGE_SIZE: 120 }, console,
+      document: { getElementById: () => null },
+      getAuthUser: () => ({ role: 'user' }), canManageUsers: () => false,
+      getAuthToken: () => 'fixture', updateApiStatus: () => {},
+      getBackendListParams: () => state.activeGroup === 'all' ? {} : { group: state.activeGroup },
+      getBackendListScopeKey: params => JSON.stringify(params),
+      syncGroupUI: () => { if (group) state.activeGroup = group; },
+      resetVirtualList: () => {}, commitPageItems: () => {}, saveCurrentListScopeCache: () => {},
+      renderList: () => {}, scheduleWarmCurrentListScope: () => {}, scheduleSmallGroupPrefetch: () => {},
+      api: { health: async () => ({}),
+        getItemsSummary: async () => ({ groups: group ? [{ name: group, count: 1 }] : [], total: group ? 1 : 0 }),
+        getItems: async params => { calls.push(params); return { items: [], total: 0 }; },
+      },
+    });
+    const start = appJs.indexOf('async function loadData(');
+    vm.runInContext(appJs.slice(start, appJs.indexOf('\n}', start) + 2), context);
+    await context.loadData();
+    assert.equal(calls.length, group ? 1 : 0);
+    if (group) assert.equal(calls[0].group, group);
+  }
+});
+
 test("manager account uses assigned-user scope and cannot assign privileged roles", () => {
   let account = { id: 'manager-id', role: 'manager' };
   const context = vm.createContext({

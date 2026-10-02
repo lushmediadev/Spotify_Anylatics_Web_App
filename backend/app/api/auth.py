@@ -640,6 +640,8 @@ async def admin_delete_user(
     target_id = user.id
 
     try:
+        # Serialize deletion with owner-scoped channel/playlist mutations.
+        await db.execute(select(User.id).where(User.id == target_id).with_for_update())
         # Resolve all item ids first so dependent tables can be cleaned safely.
         item_rows = (
             await db.execute(select(Item.id).where(Item.user_id == target_id))
