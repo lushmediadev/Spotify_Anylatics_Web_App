@@ -6,6 +6,7 @@
 - Fixed: manager scope consistently applies to list, export, refresh, grouping, and deletion; frontend refreshes account role on bootstrap.
 - Affected files: backend auth/models/schemas/database/API, frontend JS/HTML/CSS, tests, UI_SYSTEM and access-control memory.
 - Impact/Risk: Additive migration preserves existing users and links; existing users remain unassigned until admin selects a manager. Local validation: 233 backend and 26 frontend tests passed.
+- Deployment: GitHub commit `779ad3d` pulled to VPS, app healthy; PostgreSQL migration and transaction-rollback manager scope checks passed, authenticated `/auth/me`, `/auth/users`, preferences and items return 200. Pre-release backup: `/opt/spoticheck/backups/postgres/pre-light-manager-20261002-1603.sql.gz`. Existing VPS Caddy changes preserved.
 
 ### 2026-06-12 11:35 - Smooth link-list loading with scope cache
 - Added: frontend scope cache for paged link lists plus lightweight background warming for remaining pages.
