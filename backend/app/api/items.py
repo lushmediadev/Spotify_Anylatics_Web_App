@@ -21,7 +21,7 @@ from app.models.metrics_snapshot import MetricsSnapshot
 from app.models.raw_response import RawResponse
 from app.models.user import User
 from app.schemas.item import ItemGroupSummary, ItemListResponse, ItemMoveRequest, ItemResponse, ItemSummaryResponse
-from app.services.auth import get_current_user
+from app.services.auth import get_current_user, owner_scope_condition
 from app.services import spotify_client
 from app.utils.spotify_urls import parse_spotify_url
 
@@ -65,10 +65,13 @@ def _apply_item_scope(
     group = _query_param_value(group)
     search = _query_param_value(search)
 
-    if current_user.role != "admin":
-        query = query.where(Item.user_id == current_user.id)
-    elif user_id:
-        query = query.where(Item.user_id == user_id)
+    query = query.where(owner_scope_condition(current_user, Item.user_id))
+    if user_id:
+        try:
+            owner_id = uuid.UUID(str(user_id))
+        except (ValueError, TypeError) as exc:
+            raise HTTPException(status_code=400, detail="Invalid user_id") from exc
+        query = query.where(Item.user_id == owner_id)
 
     if type:
         query = query.where(Item.item_type == type)
@@ -1042,7 +1045,7 @@ async def list_items(
     type: str | None = Query(None, description="Filter by item type"),
     group: str | None = Query(None, description="Filter by group"),
     status: str | None = Query(None, description="Filter by status"),
-    user_id: str | None = Query(None, description="Filter by user (admin only)"),
+    user_id: str | None = Query(None, description="Filter by accessible user"),
     search: str | None = Query(None, description="Search by title, owner, group, or Spotify ID"),
     sort: str | None = Query(None, description="Sort key"),
     sort_direction: str | None = Query(None, description="Sort direction"),
@@ -1091,7 +1094,7 @@ async def list_items(
 async def item_summary(
     type: str | None = Query(None, description="Filter by item type"),
     group: str | None = Query(None, description="Active group filter"),
-    user_id: str | None = Query(None, description="Filter by user (admin only)"),
+    user_id: str | None = Query(None, description="Filter by accessible user"),
     search: str | None = Query(None, description="Search by title, owner, group, or Spotify ID"),
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
@@ -1147,10 +1150,7 @@ async def move_items_group(
     target_group = (payload.group or "").strip() or None
     target_query = select(Item).where(Item.id.in_(payload.item_ids))
 
-    if current_user.role != "admin":
-        target_query = target_query.where(Item.user_id == current_user.id)
-    elif payload.user_id:
-        target_query = target_query.where(Item.user_id == payload.user_id)
+    target_query = _apply_item_scope(target_query, current_user, payload.user_id)
 
     result = await db.execute(target_query)
     items = result.scalars().all()
@@ -1171,7 +1171,7 @@ async def move_items_group(
 async def get_item(
     item_type: str,
     spotify_id: str,
-    user_id: str | None = Query(None, description="Target user (admin only)"),
+    user_id: str | None = Query(None, description="Target accessible user"),
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
@@ -1180,14 +1180,12 @@ async def get_item(
         Item.spotify_id == spotify_id,
         Item.item_type == item_type,
     )
-    if current_user.role != "admin":
-        query = query.where(Item.user_id == current_user.id)
-    elif user_id:
-        query = query.where(Item.user_id == user_id)
+    user_id = _query_param_value(user_id)
+    query = _apply_item_scope(query, current_user, user_id)
 
     result = await db.execute(query.order_by(Item.updated_at.desc()))
     rows = result.scalars().all()
-    if current_user.role == "admin" and not user_id and len(rows) > 1:
+    if current_user.role in {"admin", "manager"} and not user_id and len(rows) > 1:
         raise HTTPException(
             status_code=409,
             detail="Multiple users track this link. Specify user_id.",
@@ -1195,9 +1193,6 @@ async def get_item(
     item = rows[0] if rows else None
     if not item:
         raise HTTPException(status_code=404, detail="Item not found")
-
-    if current_user.role != "admin" and item.user_id != current_user.id:
-        raise HTTPException(status_code=403, detail="Not authorized to view this item")
 
     raw_map = await _load_latest_raw_data(db, [item])
     snapshot_map = await _load_recent_snapshots(db, [item])
@@ -1215,7 +1210,7 @@ async def get_item(
 async def rename_group(
     old_group: str = Query(..., description="Current group name"),
     new_group: str | None = Query(None, description="New group name (empty = clear group)"),
-    user_id: str | None = Query(None, description="Target user (admin only)"),
+    user_id: str | None = Query(None, description="Target accessible user"),
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
@@ -1228,7 +1223,8 @@ async def rename_group(
     old_norm = _normalize_group_name(old_clean)
 
     target_user_id = current_user.id
-    if current_user.role == "admin" and user_id:
+    user_id = _query_param_value(user_id)
+    if user_id:
         try:
             target_user_id = uuid.UUID(str(user_id))
         except ValueError as exc:
@@ -1242,7 +1238,7 @@ async def rename_group(
         else:
             query = query.where(Item.user_id == target_user_id)
     else:
-        query = query.where(Item.user_id == target_user_id)
+        query = _apply_item_scope(query, current_user, target_user_id)
 
     items = (await db.execute(query)).scalars().all()
     updated = 0
@@ -1266,7 +1262,7 @@ async def rename_group(
 async def delete_item(
     item_type: str,
     spotify_id: str,
-    user_id: str | None = Query(None, description="Target user (admin only)"),
+    user_id: str | None = Query(None, description="Target accessible user"),
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
@@ -1275,14 +1271,12 @@ async def delete_item(
         Item.spotify_id == spotify_id,
         Item.item_type == item_type,
     )
-    if current_user.role != "admin":
-        query = query.where(Item.user_id == current_user.id)
-    elif user_id:
-        query = query.where(Item.user_id == user_id)
+    user_id = _query_param_value(user_id)
+    query = _apply_item_scope(query, current_user, user_id)
 
     result = await db.execute(query.order_by(Item.updated_at.desc()))
     rows = result.scalars().all()
-    if current_user.role == "admin" and not user_id and len(rows) > 1:
+    if current_user.role in {"admin", "manager"} and not user_id and len(rows) > 1:
         raise HTTPException(
             status_code=409,
             detail="Multiple users track this link. Specify user_id.",
@@ -1290,9 +1284,6 @@ async def delete_item(
     item = rows[0] if rows else None
     if not item:
         raise HTTPException(status_code=404, detail="Item not found")
-
-    if current_user.role != "admin" and item.user_id != current_user.id:
-        raise HTTPException(status_code=403, detail="Not authorized to delete this item")
 
     await db.execute(delete(MetricsSnapshot).where(MetricsSnapshot.item_id == item.id))
     await db.execute(delete(CrawlJob).where(CrawlJob.item_id == item.id))
@@ -1314,13 +1305,12 @@ async def delete_item_by_id(
     except ValueError as exc:
         raise HTTPException(status_code=400, detail="Invalid item_id") from exc
 
-    result = await db.execute(select(Item).where(Item.id == item_uuid))
+    result = await db.execute(_apply_item_scope(
+        select(Item).where(Item.id == item_uuid), current_user,
+    ))
     item = result.scalar_one_or_none()
     if not item:
         raise HTTPException(status_code=404, detail="Item not found")
-
-    if current_user.role != "admin" and item.user_id != current_user.id:
-        raise HTTPException(status_code=403, detail="Not authorized to delete this item")
 
     await db.execute(delete(MetricsSnapshot).where(MetricsSnapshot.item_id == item.id))
     await db.execute(delete(CrawlJob).where(CrawlJob.item_id == item.id))
@@ -1333,20 +1323,15 @@ async def delete_item_by_id(
 @router.delete("/items")
 async def clear_items(
     group: str | None = Query(None, description="Optional group to clear"),
-    user_id: str | None = Query(None, description="Filter by user (admin only)"),
+    user_id: str | None = Query(None, description="Filter by accessible user"),
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
     """Clear all items (or items in one group)."""
     selected_items = select(Item.id, Item.spotify_id)
 
-    if current_user.role != "admin":
-        selected_items = selected_items.where(Item.user_id == current_user.id)
-    elif user_id:
-        selected_items = selected_items.where(Item.user_id == user_id)
-
-    if group:
-        selected_items = selected_items.where(Item.group == group)
+    group = _query_param_value(group)
+    selected_items = _apply_item_scope(selected_items, current_user, user_id, group=group)
 
     rows = (await db.execute(selected_items)).all()
     if not rows:
@@ -1395,8 +1380,7 @@ async def export_items(
         raise HTTPException(status_code=400, detail="No item_ids provided")
 
     query = select(Item).where(Item.id.in_(ordered_item_uuids))
-    if current_user.role != "admin":
-        query = query.where(Item.user_id == current_user.id)
+    query = _apply_item_scope(query, current_user)
     result = await db.execute(query)
     rows = result.scalars().all()
     if not rows:

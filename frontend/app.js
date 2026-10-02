@@ -149,6 +149,58 @@ function getAuthToken() {
 function getAuthUser() {
     try { return JSON.parse(localStorage.getItem('spoticheck_user')); } catch(e) { return null; }
 }
+
+function canManageUsers(user = getAuthUser()) {
+    return user?.role === 'admin' || user?.role === 'manager';
+}
+
+function getRoleLabel(role) {
+    return { admin: 'Admin', manager: 'Manager', user: 'User' }[role] || 'User';
+}
+
+function getAssignableRoles() {
+    return getAuthUser()?.role === 'admin'
+        ? [{ value: 'user', label: 'User' }, { value: 'manager', label: 'Manager' }, { value: 'admin', label: 'Admin' }]
+        : [{ value: 'user', label: 'User' }];
+}
+
+function setupManagerAssignment(prefix, selected = '') {
+    const roleWrap = document.getElementById(`${prefix}-role-wrap`);
+    if (!roleWrap) return;
+    let field = document.getElementById(`${prefix}-manager-field`);
+    if (!field) {
+        field = document.createElement('div');
+        field.id = `${prefix}-manager-field`;
+        field.className = 'mt-4';
+        const label = document.createElement('label');
+        label.className = 'block text-[13px] font-semibold text-secondary-text mb-2';
+        label.textContent = 'Manager';
+        field.appendChild(label);
+        roleWrap.parentElement.insertAdjacentElement('afterend', field);
+    }
+    const options = [{ value: '', label: 'Unassigned' }, ..._adminUsersCache
+        .filter((user) => user.role === 'manager' && user.is_active)
+        .map((user) => ({ value: user.id, label: user.display_name || user.username }))];
+    const id = `${prefix}-manager`;
+    if (document.getElementById(`${id}-dropdown`)) {
+        updateCustomDropdownOptions(`${id}-dropdown`, options, selected || '');
+    } else {
+        field.appendChild(createCustomDropdown({ id, options, selected: selected || '' }));
+    }
+    updateManagerAssignmentVisibility(prefix);
+}
+
+function updateManagerAssignmentVisibility(prefix) {
+    const role = document.getElementById(`${prefix}-role-dropdown`)?.getAttribute('data-value');
+    const field = document.getElementById(`${prefix}-manager-field`);
+    if (field) field.style.display = getAuthUser()?.role === 'admin' && role === 'user' ? '' : 'none';
+}
+
+function getManagerAssignment(prefix, role) {
+    if (getAuthUser()?.role !== 'admin') return {};
+    const selected = document.getElementById(`${prefix}-manager-dropdown`)?.getAttribute('data-value');
+    return { manager_id: role === 'user' ? (selected || null) : null };
+}
 function logout() {
     localStorage.removeItem('spoticheck_token');
     localStorage.removeItem('spoticheck_user');
@@ -175,7 +227,7 @@ function setupAuthUI() {
             profileWrap.innerHTML = avatarHtml +
                 '<div class="sidebar-user-info overflow-hidden">' +
                 '<p class="text-sm font-semibold truncate">' + (user.display_name || user.username) + '</p>' +
-                '<p class="text-xs text-secondary-text truncate">' + (user.role === 'admin' ? 'Admin' : 'User') + '</p>' +
+                '<p class="text-xs text-secondary-text truncate">' + getRoleLabel(user.role) + '</p>' +
                 '</div>';
         }
     }
@@ -189,13 +241,13 @@ function setupAuthUI() {
         logoutBtn.onclick = logout;
         sidebarProfile.appendChild(logoutBtn);
     }
-    if (user && user.role === 'admin') {
+    if (canManageUsers(user)) {
         const groupPanel = document.getElementById('group-panel');
         if (groupPanel && !document.getElementById('admin-badge')) {
             const badge = document.createElement('div');
             badge.id = 'admin-badge';
             badge.className = 'px-5 py-2 border-b border-white/5';
-            badge.innerHTML = '<span class="inline-flex items-center gap-1.5 text-[11px] font-bold uppercase tracking-[0.12em] text-primary"><span class="material-icons-round text-sm">admin_panel_settings</span>Admin Mode</span>';
+            badge.innerHTML = '<span class="inline-flex items-center gap-1.5 text-[11px] font-bold uppercase tracking-[0.12em] text-primary"><span class="material-icons-round text-sm">admin_panel_settings</span>' + getRoleLabel(user.role) + ' Mode</span>';
             groupPanel.insertBefore(badge, groupPanel.firstChild);
         }
         setupAdminUserFilter();
@@ -1689,7 +1741,7 @@ function getGroupsFromUserRecord(userRecord) {
 function getOwnerCustomGroups(ownerUserId) {
     const ownerId = ownerUserId ? String(ownerUserId) : '';
     const currentUser = getAuthUser();
-    if (currentUser?.role === 'admin' && ownerId) {
+    if (canManageUsers(currentUser) && ownerId) {
         const user = (state.adminUserList || []).find((u) => String(u.id || u._id || '') === ownerId);
         return getGroupsFromUserRecord(user);
     }
@@ -1743,7 +1795,7 @@ async function syncGroupsFromServer(targetUserId) {
         var data = await res.json();
         const currentUser = getAuthUser();
         if (
-            currentUser?.role === 'admin'
+            canManageUsers(currentUser)
             && requestedTargetUserId
             && String(state.adminFilterUserId || '') !== requestedTargetUserId
         ) {
@@ -1787,7 +1839,7 @@ async function saveGroupsToServer(groups, targetUserId) {
         // If admin is filtering a specific user, save to that user
         var uid = targetUserId || state.adminFilterUserId;
         var currentUser = getAuthUser();
-        if (uid && currentUser && currentUser.role === 'admin' && uid !== currentUser.id) {
+        if (uid && canManageUsers(currentUser) && uid !== currentUser.id) {
             url += '/auth/users/' + uid + '/groups';
         } else {
             url += '/auth/me/groups';
@@ -1827,11 +1879,11 @@ function saveCustomGroups() {
     ));
     state.customGroups = cleaned;
     var currentUser = getAuthUser();
-    if (currentUser?.role === 'admin' && isAdminAllUsersMode() && currentUser.id) {
+    if (canManageUsers(currentUser) && isAdminAllUsersMode() && currentUser.id) {
         setOwnerCustomGroups(currentUser.id, cleaned);
     }
     // If admin is filtering another user, don't save to own localStorage
-    var filteringOther = state.adminFilterUserId && currentUser && currentUser.role === 'admin' && state.adminFilterUserId !== currentUser.id;
+    var filteringOther = state.adminFilterUserId && canManageUsers(currentUser) && state.adminFilterUserId !== currentUser.id;
     if (!filteringOther) {
         localStorage.setItem(getUserGroupStorageKey(), JSON.stringify(cleaned));
     }
@@ -2502,7 +2554,7 @@ function getCurrentUserLabel() {
 
 function getAdminTargetUserId() {
     const currentUser = getAuthUser();
-    if (currentUser?.role !== 'admin') return null;
+    if (!canManageUsers(currentUser)) return null;
     if (state.adminFilterUserId) {
         return String(state.adminFilterUserId);
     }
@@ -2512,7 +2564,7 @@ function getAdminTargetUserId() {
 function getScopedGroupOwnerUserId() {
     const currentUser = getAuthUser();
     if (!currentUser?.id) return null;
-    if (currentUser.role === 'admin' && state.adminFilterUserId) {
+    if (canManageUsers(currentUser) && state.adminFilterUserId) {
         return String(state.adminFilterUserId);
     }
     return String(currentUser.id);
@@ -2531,7 +2583,7 @@ function getAdminGroupBaseName(groupName, ownerLabel = '') {
 
 function getAdminGroupDisplayName(groupName, ownerUserId = null) {
     const currentUser = getAuthUser();
-    if (currentUser?.role !== 'admin' || !groupName || groupName === ALL_GROUP_LABEL) {
+    if (!canManageUsers(currentUser) || !groupName || groupName === ALL_GROUP_LABEL) {
         return groupName;
     }
 
@@ -2854,7 +2906,7 @@ function resolveSelectedGroupContext() {
     var dd = document.getElementById('modal-group-select-dropdown');
     var picked = normalizeGroupName(dd ? dd.getAttribute('data-value') : null);
     var currentUser = getAuthUser();
-    var adminTargetUserId = currentUser?.role === 'admin' ? getAdminTargetUserId() : null;
+    var adminTargetUserId = canManageUsers(currentUser) ? getAdminTargetUserId() : null;
     if (!picked || picked.toLowerCase() === GROUP_SELECT_ALL.toLowerCase()) {
         return {
             group: null,
@@ -2870,7 +2922,7 @@ function resolveSelectedGroupContext() {
     if (entry && entry.id !== ALL_GROUP_ID) {
         var nameFromEntry = normalizeStoredGroupName(entry.name);
         if (nameFromEntry) resolvedGroup = nameFromEntry;
-        if (currentUser?.role === 'admin' && entry.ownerUserId) {
+        if (canManageUsers(currentUser) && entry.ownerUserId) {
             resolvedTargetUserId = String(entry.ownerUserId);
         }
     }
@@ -2880,7 +2932,7 @@ function resolveSelectedGroupContext() {
         var parsedName = normalizeStoredGroupName(parsed ? parsed.name : '');
         if (parsedName && parsedName.toLowerCase() !== ALL_GROUP_ID) {
             resolvedGroup = parsedName;
-            if (currentUser?.role === 'admin' && parsed?.ownerUserId) {
+            if (canManageUsers(currentUser) && parsed?.ownerUserId) {
                 resolvedTargetUserId = String(parsed.ownerUserId);
             }
         }
@@ -2893,7 +2945,7 @@ function resolveSelectedGroupContext() {
 
     return {
         group: resolvedGroup || null,
-        targetUserId: currentUser?.role === 'admin' ? (resolvedTargetUserId || null) : null,
+        targetUserId: canManageUsers(currentUser) ? (resolvedTargetUserId || null) : null,
     };
 }
 
@@ -2908,7 +2960,7 @@ function getCurrentListScope() {
         ? normalizeStoredGroupName(activeEntry.name)
         : null;
     let targetUserId = null;
-    if (currentUser?.role === 'admin') {
+    if (canManageUsers(currentUser)) {
         targetUserId = getAdminTargetUserId()
             || (activeEntry?.ownerUserId ? String(activeEntry.ownerUserId) : null);
     }
@@ -2928,7 +2980,7 @@ function getCurrentListScope() {
 function getBackendListParams() {
     const params = {};
     const currentUser = getAuthUser();
-    if (currentUser?.role === 'admin') {
+    if (canManageUsers(currentUser)) {
         const targetUserId = getAdminTargetUserId();
         if (targetUserId) params.user_id = targetUserId;
     }
@@ -3109,7 +3161,7 @@ function showInstantListOrLoading(params = getBackendListParams(), opts = {}) {
 function getListParamsForGroupEntry(groupEntry) {
     const params = {};
     const currentUser = getAuthUser();
-    if (currentUser?.role === 'admin') {
+    if (canManageUsers(currentUser)) {
         const targetUserId = getAdminTargetUserId() || (groupEntry?.ownerUserId ? String(groupEntry.ownerUserId) : null);
         if (targetUserId) params.user_id = targetUserId;
     }
@@ -5730,7 +5782,7 @@ async function handleRefreshItem(item) {
 
     try {
         const currentUser = getAuthUser();
-        const targetUserId = currentUser?.role === 'admin' ? (item.user_id || null) : null;
+        const targetUserId = canManageUsers(currentUser) ? (item.user_id || null) : null;
         const result = await api.crawl(url, item.group || null, targetUserId, item.id);
         const jobId = result?.job_id;
         if (!jobId) {
@@ -5837,7 +5889,7 @@ async function refreshAllItems() {
 
     try {
         const currentUser = getAuthUser();
-        const isAdmin = currentUser?.role === 'admin';
+        const isAdmin = canManageUsers(currentUser);
         const groupedByOwner = new Map();
         refreshableItems.forEach((item) => {
             const ownerId = isAdmin && item.user_id ? String(item.user_id) : '';
@@ -6362,7 +6414,7 @@ function getDemoData() {
 
 async function setupAdminUserFilter() {
     const user = getAuthUser();
-    if (!user || user.role !== 'admin') return;
+    if (!canManageUsers(user)) return;
 
     try {
         const users = await _fetchAdminUsers({ preferCache: true });
@@ -6544,7 +6596,7 @@ async function loadData(opts = {}) {
     try {
         const currentUser = getAuthUser();
         let params = {};
-        if (currentUser?.role === 'admin') {
+        if (canManageUsers(currentUser)) {
             await _fetchAdminUsers({ preferCache: Boolean(state.adminFilterUserId) });
             if (requestId !== state.dataLoadRequestId) return;
         }
@@ -6814,7 +6866,7 @@ function loadSettingsData() {
 
     document.getElementById('settings-username').value = user.username || '';
     document.getElementById('settings-displayname').value = user.display_name || '';
-    document.getElementById('settings-role').textContent = user.role === 'admin' ? 'Admin' : 'User';
+    document.getElementById('settings-role').textContent = getRoleLabel(user.role);
     document.getElementById('settings-created').textContent = user.created_at ? new Date(user.created_at).toLocaleDateString() : '-';
 
     updateSettingsAvatar(user);
@@ -7114,7 +7166,7 @@ function renderAdminUsersLoading() {
 
 function prefetchAdminUsers() {
     var user = getAuthUser();
-    if (!user || user.role !== 'admin') return;
+    if (!canManageUsers(user)) return;
     _fetchAdminUsers({ preferCache: true })
         .then(function(users) {
             state.adminUserList = Array.isArray(users) ? users.slice() : [];
@@ -7188,7 +7240,7 @@ function renderAdminUsers(users) {
             ? '<img src="' + u.avatar + '" class="w-12 h-12 rounded-full object-cover flex-shrink-0 ring-1 ring-white/10">'
             : '<div class="w-12 h-12 rounded-full flex-shrink-0 bg-gradient-to-br from-emerald-400 via-cyan-500 to-blue-700 text-white text-sm font-bold grid place-items-center ring-1 ring-white/10">' + initials + '</div>';
 
-        var roleBadge = u.role === 'admin'
+        var roleBadge = u.role === 'admin' || u.role === 'manager'
             ? '<span class="inline-flex items-center gap-1 text-[11px] font-bold uppercase tracking-wider text-primary bg-primary/10 px-2 py-0.5 rounded-full"><span class="material-icons-round" style="font-size:12px">admin_panel_settings</span>Admin</span>'
             : '<span class="text-[11px] font-bold uppercase tracking-wider text-secondary-text bg-white/5 px-2 py-0.5 rounded-full">User</span>';
 
@@ -7202,7 +7254,8 @@ function renderAdminUsers(users) {
         var isSelf = currentUser && currentUser.id === u.id;
 
         var extraBtns = '';
-        if (!isSelf) {
+        var canEdit = currentUser?.role === 'admin' || (u.role === 'user' && u.manager_id === currentUser?.id);
+        if (!isSelf && canEdit) {
             var toggleColor = u.is_active ? 'red' : 'emerald';
             var toggleTitle = u.is_active ? 'Deactivate' : 'Activate';
             var toggleIcon = u.is_active ? 'person_off' : 'person';
@@ -7216,14 +7269,15 @@ function renderAdminUsers(users) {
                 '<div class="flex-1 min-w-0">' +
                     '<div class="flex items-center gap-2 mb-0.5 flex-wrap">' +
                         '<span class="font-semibold text-white truncate">' + (u.display_name || u.username) + '</span>' +
-                        roleBadge +
+                        roleBadge.replace('>Admin</span>', '>' + getRoleLabel(u.role) + '</span>') +
                         statusBadge +
                         (isSelf ? '<span class="text-[11px] text-secondary-text">(you)</span>' : '') +
                     '</div>' +
-                    '<div class="text-sm text-secondary-text truncate">@' + u.username + '</div>' +
+                    '<div class="text-sm text-secondary-text truncate">@' + escapeHtml(u.username) + '</div>' +
+                    (u.manager_id ? '<div class="text-xs text-secondary-text">Manager: ' + escapeHtml(_adminUsersCache.find((manager) => manager.id === u.manager_id)?.display_name || _adminUsersCache.find((manager) => manager.id === u.manager_id)?.username || 'Assigned') + '</div>' : '') +
                     '<div class="text-xs text-secondary-text mt-1">Joined ' + created + ' &middot; Last login: ' + lastLogin + '</div>' +
                 '</div>' +
-                '<div class="flex items-center gap-2 flex-shrink-0">' +
+                '<div class="flex items-center gap-2 flex-shrink-0"' + (canEdit ? '' : ' style="display:none"') + '>' +
                     '<button data-action="edit-user" data-uid="' + u.id + '" class="p-2 rounded-lg hover:bg-white/10 text-secondary-text hover:text-white transition-colors cursor-pointer" title="Edit user"><span class="material-icons-round text-lg">edit</span></button>' +
                     '<button data-action="reset-pw" data-uid="' + u.id + '" data-uname="' + u.username + '" class="p-2 rounded-lg hover:bg-white/10 text-secondary-text hover:text-white transition-colors cursor-pointer" title="Reset password"><span class="material-icons-round text-lg">lock_reset</span></button>' +
                     extraBtns +
@@ -7246,17 +7300,19 @@ function openAdminEditModal(userId) {
     if (roleWrap) {
         var existingRoleDD = document.getElementById('admin-edit-role-dropdown');
         if (existingRoleDD) {
-            updateCustomDropdownOptions('admin-edit-role-dropdown', [{value:'user',label:'User'},{value:'admin',label:'Admin'}], user.role);
+            updateCustomDropdownOptions('admin-edit-role-dropdown', getAssignableRoles(), user.role);
         } else {
             var roleDD = createCustomDropdown({
                 id: 'admin-edit-role',
-                options: [{value:'user',label:'User'},{value:'admin',label:'Admin'}],
-                selected: user.role
+                options: getAssignableRoles(),
+                selected: user.role,
+                onChange: () => updateManagerAssignmentVisibility('admin-edit'),
             });
             roleWrap.innerHTML = '';
             roleWrap.appendChild(roleDD);
         }
     }
+    setupManagerAssignment('admin-edit', user.manager_id);
     document.getElementById('admin-edit-status').style.display = 'none';
     document.getElementById('admin-edit-status').textContent = '';
 
@@ -7273,19 +7329,21 @@ function openAdminCreateModal() {
     if (roleWrap) {
         var existingRoleDD = document.getElementById('admin-create-role-dropdown');
         if (existingRoleDD) {
-            updateCustomDropdownOptions('admin-create-role-dropdown', [{value:'user',label:'User'},{value:'admin',label:'Admin'}], 'user');
+            updateCustomDropdownOptions('admin-create-role-dropdown', getAssignableRoles(), 'user');
         } else {
             var roleDD = createCustomDropdown({
                 id: 'admin-create-role',
                 cssClass: 'dropdown-modal',
-                options: [{value:'user',label:'User'},{value:'admin',label:'Admin'}],
-                selected: 'user'
+                options: getAssignableRoles(),
+                selected: 'user',
+                onChange: () => updateManagerAssignmentVisibility('admin-create'),
             });
             roleWrap.innerHTML = '';
             roleWrap.appendChild(roleDD);
         }
     }
 
+    setupManagerAssignment('admin-create');
     var statusEl = document.getElementById('admin-create-status');
     statusEl.style.display = 'none';
     statusEl.textContent = '';
@@ -7332,6 +7390,7 @@ async function submitAdminCreateUser() {
                 password: password,
                 display_name: displayName || null,
                 role: role || 'user',
+                ...getManagerAssignment('admin-create', role),
             }),
         });
         var data = await res.json().catch(function() { return {}; });
@@ -7373,7 +7432,7 @@ async function saveAdminEditUser() {
         var res = await fetch(CONFIG.API_BASE + '/auth/users/' + userId, {
             method: 'PATCH',
             headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + token },
-            body: JSON.stringify({ username: username, display_name: displayName || null, role: role }),
+            body: JSON.stringify({ username: username, display_name: displayName || null, role: role, ...getManagerAssignment('admin-edit', role) }),
         });
         var data = await res.json();
         if (!res.ok) throw new Error(data.detail || 'Failed to update user');
@@ -7555,6 +7614,12 @@ window.hideAdminUsers = hideAdminUsers;
 
 document.addEventListener('DOMContentLoaded', async () => {
     if (!requireAuth()) return;
+    try {
+        const user = await api._fetch('/auth/me');
+        if (user) localStorage.setItem('spoticheck_user', JSON.stringify(user));
+    } catch (err) {
+        console.warn('[Auth] Could not refresh account:', err.message);
+    }
     setupAuthUI();
     await hydrateUiPreferencesFromServer();
     state.columnWidths = loadPersistedColumnWidths();

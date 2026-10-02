@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html class="dark" lang="en">
+<html data-theme="light" lang="en">
 
 <head>
     <meta charset="utf-8">
@@ -10,20 +10,20 @@
     <link rel="shortcut icon" type="image/svg+xml" href="favicon.svg?v=1">
     <script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Inter+Tight:wght@600;700;800&family=Material+Symbols+Rounded:opsz,wght,FILL,GRAD@20..48,500,0..1,0&display=swap" rel="stylesheet">
-    <link rel="stylesheet" href="style.css?v=20260318-84">
+    <link rel="stylesheet" href="style.css?v=20261002-light-1">
     <script id="tailwind-config">
         tailwind.config = {
             darkMode: "class",
             theme: {
                 extend: {
                     colors: {
-                        "primary": "#1db954",
-                        "background-light": "#f6f8f7",
-                        "background-dark": "#121212",
-                        "sidebar-dark": "#0A0A0A",
-                        "panel-dark": "#181818",
-                        "row-hover": "#282828",
-                        "secondary-text": "#B3B3B3"
+                        "primary": "#0f0f0f",
+                        "background-light": "#ffffff",
+                        "background-dark": "#ffffff",
+                        "sidebar-dark": "#f9f9f9",
+                        "panel-dark": "#f9f9f9",
+                        "row-hover": "#f2f2f2",
+                        "secondary-text": "#606060"
                     },
                     fontFamily: {
                         "display": ["Inter", "Inter Tight", "system-ui", "sans-serif"]
@@ -123,7 +123,7 @@
             <div class="flex items-center gap-4">
                 <div class="relative group">
                     <span class="material-icons-round absolute left-3 top-1/2 -translate-y-1/2 text-secondary-text text-xl">search</span>
-                    <input id="search-input" class="search-pill bg-[#242424] border-none rounded-full pl-10 pr-4 py-2 text-sm w-64 focus:ring-1 focus:ring-primary placeholder:text-secondary-text transition-all" placeholder="Search title, owner, ID, or Spotify URL..." aria-label="Search title, owner, ID, or Spotify URL" type="text">
+                    <input id="search-input" class="search-pill bg-row-hover border-none rounded-full pl-10 pr-4 py-2 text-sm w-64 focus:ring-1 focus:ring-primary placeholder:text-secondary-text transition-all" placeholder="Search title, owner, ID, or Spotify URL..." aria-label="Search title, owner, ID, or Spotify URL" type="text">
                 </div>
                 <button id="btn-refresh" onclick="refreshAllItems()" class="btn-ghost flex items-center gap-2 px-4 py-2 rounded-full border border-white/20 hover:border-white transition-colors text-sm font-bold cursor-pointer">
                     <span class="material-icons-round text-lg">refresh</span>
@@ -299,7 +299,7 @@
                 <h2 class="text-2xl font-bold mb-8" style="font-family:'Inter Tight','Inter',system-ui,sans-serif; letter-spacing:-0.02em;">Account Settings</h2>
 
                 <!-- Avatar Section -->
-                <div class="mb-8 p-6 rounded-xl border border-white/10" style="background:#1a1d21">
+                <div class="mb-8 p-6 rounded-xl border border-white/10" style="background:var(--surface-1)">
                     <h3 class="text-sm font-bold uppercase tracking-widest text-secondary-text mb-4">Profile Picture</h3>
                     <div class="flex items-center gap-6">
                         <div id="settings-avatar-preview" class="w-20 h-20 rounded-full bg-gradient-to-br from-emerald-400 via-cyan-500 to-blue-700 text-white text-2xl font-bold grid place-items-center overflow-hidden ring-2 ring-white/10 flex-shrink-0">
@@ -317,7 +317,7 @@
                 </div>
 
                 <!-- Profile Info Section -->
-                <div class="mb-8 p-6 rounded-xl border border-white/10" style="background:#1a1d21">
+                <div class="mb-8 p-6 rounded-xl border border-white/10" style="background:var(--surface-1)">
                     <h3 class="text-sm font-bold uppercase tracking-widest text-secondary-text mb-4">Profile Information</h3>
                     <div class="space-y-4">
                         <div>
@@ -340,7 +340,7 @@
                 </div>
 
                 <!-- Global Export Settings -->
-                <div id="settings-global-export" class="mb-8 p-6 rounded-xl border border-white/10" style="background:#1a1d21;display:none">
+                <div id="settings-global-export" class="mb-8 p-6 rounded-xl border border-white/10" style="background:var(--surface-1);display:none">
                     <h3 class="text-sm font-bold uppercase tracking-widest text-secondary-text mb-4">Global Export Settings</h3>
                     <p class="text-sm text-secondary-text mb-4">This admin setting applies to every account when using Clipboard (Playlist).</p>
                     <div class="space-y-4">
@@ -360,7 +360,7 @@
                 </div>
 
                 <!-- Change Password Section -->
-                <div class="mb-8 p-6 rounded-xl border border-white/10" style="background:#1a1d21">
+                <div class="mb-8 p-6 rounded-xl border border-white/10" style="background:var(--surface-1)">
                     <h3 class="text-sm font-bold uppercase tracking-widest text-secondary-text mb-4">Change Password</h3>
                     <div class="space-y-4">
                         <div>
@@ -386,7 +386,7 @@
                 </div>
 
                 <!-- Account Info (read-only) -->
-                <div class="p-6 rounded-xl border border-white/10" style="background:#1a1d21">
+                <div class="p-6 rounded-xl border border-white/10" style="background:var(--surface-1)">
                     <h3 class="text-sm font-bold uppercase tracking-widest text-secondary-text mb-4">Account Info</h3>
                     <div class="space-y-2 text-sm">
                         <div class="flex justify-between"><span class="text-secondary-text">Role</span><span id="settings-role" class="text-white font-medium">-</span></div>
@@ -651,6 +651,6 @@
             </div>
         </div>
 
-    <script src="app.js?v=20260911-97"></script>
+    <script src="app.js?v=20261002-light-1"></script>
 </body>
 </html>

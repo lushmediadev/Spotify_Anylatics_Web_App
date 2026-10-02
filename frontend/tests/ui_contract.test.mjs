@@ -2,11 +2,36 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import fs from "node:fs";
 import path from "node:path";
+import vm from "node:vm";
 
 const root = "D:/Spotify_AnylaticsWeb_App/frontend";
 const appJs = fs.readFileSync(path.join(root, "app.js"), "utf8");
 const indexHtml = fs.readFileSync(path.join(root, "index.html"), "utf8");
 const styleCss = fs.readFileSync(path.join(root, "style.css"), "utf8");
+
+test("manager account uses assigned-user scope and cannot assign privileged roles", () => {
+  let account = { id: 'manager-id', role: 'manager' };
+  const context = vm.createContext({
+    localStorage: { getItem: () => JSON.stringify(account) },
+    state: { adminFilterUserId: 'assigned-user', activeGroup: 'Jazz' },
+    getGroupEntryById: () => ({ id: 'Jazz', name: 'Jazz' }),
+    normalizeStoredGroupName: (value) => value,
+    ALL_GROUP_ID: 'all',
+    CHECKED_SORT_MODES: { NONE: 'none' },
+    METRIC_SORT_CONFIG: {},
+  });
+  vm.runInContext(appJs.slice(appJs.indexOf('function getAuthUser()'), appJs.indexOf('function logout()')), context);
+  vm.runInContext(appJs.slice(appJs.indexOf('function getAdminTargetUserId()'), appJs.indexOf('function getScopedGroupOwnerUserId()')), context);
+  vm.runInContext(appJs.slice(appJs.indexOf('function getBackendListParams()'), appJs.indexOf('function getBackendListScopeKey(')), context);
+  assert.equal(vm.runInContext('canManageUsers()', context), true);
+  assert.equal(vm.runInContext('getAssignableRoles().map(role => role.value).join(",")', context), 'user');
+  assert.equal(vm.runInContext('getBackendListParams().user_id', context), 'assigned-user');
+  account = { id: 'user-id', role: 'user' };
+  assert.equal(vm.runInContext('canManageUsers()', context), false);
+  assert.equal(vm.runInContext('getBackendListParams().user_id', context), undefined);
+  account = { id: 'admin-id', role: 'admin' };
+  assert.equal(vm.runInContext('getAssignableRoles().map(role => role.value).join(",")', context), 'user,manager,admin');
+});
 
 test("display title helper supports multi-artist track and album labels", () => {
   assert.match(appJs, /function buildDisplayTitleWithArtists/);

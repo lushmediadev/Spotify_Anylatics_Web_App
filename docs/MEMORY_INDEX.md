@@ -8,6 +8,7 @@ Read this after `AGENTS.md` and `docs/PROJECT_BRIEF.md`.
 - API contracts, item list performance, exports: inspect `backend/app/api/` and `backend/app/database.py`.
 - Runtime and VPS deploy: inspect `deploy/docker-compose.vps.yml`, `deploy/Caddyfile`, and helper scripts before changing deploy behavior.
 - Architecture decisions: read `docs/DECISIONS_INDEX.md` first, then `docs/DECISIONS.md` only if detail is needed.
+- Roles, manager assignment, and resource permissions: read `docs/modules/access-control.md` and `backend/app/services/auth.py`.
 - Historical context: use `docs/PROJECT_CONTEXT.md`, `docs/WORKLOG.md`, and `docs/CHANGELOG.md` only when the current task needs older background.
 
 ## Current High-Value Context

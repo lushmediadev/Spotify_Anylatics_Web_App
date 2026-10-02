@@ -31,6 +31,9 @@ from app.services.auth import (
     create_access_token,
     get_current_user,
     get_admin_user,
+    get_manager_or_admin_user,
+    user_scope_condition,
+    require_user_access,
 )
 
 router = APIRouter(prefix="/auth")
@@ -75,6 +78,7 @@ def _user_response(user: User) -> UserResponse:
         email=_public_email(user.email),
         display_name=user.display_name,
         role=user.role,
+        manager_id=str(user.manager_id) if getattr(user, "manager_id", None) is not None else None,
         is_active=user.is_active,
         created_at=user.created_at.isoformat() if user.created_at else None,
         last_login=user.last_login.isoformat() if user.last_login else None,
@@ -225,11 +229,13 @@ async def me(current_user: User = Depends(get_current_user)):
 
 @router.get("/users", response_model=list[UserResponse])
 async def list_users(
-    admin: User = Depends(get_admin_user),
+    admin: User = Depends(get_manager_or_admin_user),
     db: AsyncSession = Depends(get_db),
 ):
-    """Admin only — list all users."""
-    result = await db.execute(select(User).order_by(User.created_at))
+    """List all accounts for admins, or self and assigned users for managers."""
+    result = await db.execute(
+        select(User).where(user_scope_condition(admin)).order_by(User.created_at)
+    )
     users = result.scalars().all()
     return [_user_response(u) for u in users]
 
@@ -237,10 +243,10 @@ async def list_users(
 @router.post("/users", response_model=UserResponse, status_code=201)
 async def admin_create_user(
     req: AdminCreateUserRequest,
-    admin: User = Depends(get_admin_user),
+    admin: User = Depends(get_manager_or_admin_user),
     db: AsyncSession = Depends(get_db),
 ):
-    """Admin only - create a new user account from the dashboard."""
+    """Create an account; managers may only create users assigned to themselves."""
     username = (req.username or "").strip()
     email = _resolve_email(username, req.email)
     display_name = (req.display_name or "").strip() or None
@@ -253,8 +259,14 @@ async def admin_create_user(
             status_code=400,
             detail="Password must be at least 4 characters",
         )
-    if role not in ("admin", "user"):
-        raise HTTPException(status_code=400, detail="Role must be 'admin' or 'user'")
+    if role not in ("admin", "manager", "user"):
+        raise HTTPException(status_code=400, detail="Role must be 'admin', 'manager' or 'user'")
+    manager_id = req.manager_id
+    if admin.role == "manager":
+        if role != "user" or (manager_id is not None and manager_id != admin.id):
+            raise HTTPException(status_code=403, detail="Managers can only create their own users")
+        manager_id = admin.id
+    await _validate_manager_assignment(db, role, manager_id)
 
     existing = await db.execute(
         select(User).where((User.username == username) | (User.email == email))
@@ -272,6 +284,7 @@ async def admin_create_user(
         display_name=display_name,
         role=role,
         is_active=True,
+        manager_id=manager_id,
     )
     db.add(user)
     await db.flush()
@@ -460,18 +473,78 @@ async def save_my_groups(
 # ---------------------------------------------------------------------------
 
 
+async def _validate_manager_assignment(db: AsyncSession, role: str, manager_id):
+    if manager_id is None:
+        return
+    if role != "user":
+        raise HTTPException(status_code=400, detail="Only users may be assigned to a manager")
+    # Serialize assignment with manager demotion/deletion.
+    result = await db.execute(
+        select(User).where(User.id == manager_id).with_for_update()
+        .execution_options(populate_existing=True)
+    )
+    manager = result.scalar_one_or_none()
+    if manager is None or manager.role != "manager" or not manager.is_active:
+        raise HTTPException(status_code=400, detail="manager_id must reference an active manager")
+
+
+async def _protect_manager_demotion(db: AsyncSession, user: User):
+    if user.role != "manager":
+        return
+    result = await db.execute(
+        select(User).where(User.id == user.id).with_for_update()
+        .execution_options(populate_existing=True)
+    )
+    locked_user = result.scalar_one_or_none()
+    if locked_user is None:
+        raise HTTPException(status_code=404, detail="User not found")
+    if locked_user.role != "manager":
+        return
+    result = await db.execute(
+        select(func.count()).select_from(User).where(User.manager_id == user.id)
+    )
+    if result.scalar():
+        raise HTTPException(status_code=400, detail="Reassign users before removing their manager")
+
+
+async def _protect_active_admin(db: AsyncSession, actor: User, user: User):
+    if str(actor.id) == str(user.id):
+        raise HTTPException(status_code=400, detail="Cannot demote or deactivate your own admin account")
+    if user.role != "admin" or not user.is_active:
+        return
+    # Lock the same ordered set for concurrent privilege-removal requests.
+    result = await db.execute(
+        select(User.id).where(User.role == "admin", User.is_active.is_(True))
+        .order_by(User.id).with_for_update()
+    )
+    if not any(str(admin_id) != str(user.id) for admin_id in result.scalars().all()):
+        raise HTTPException(status_code=400, detail="Cannot remove the last active admin")
+
+
 @router.patch("/users/{user_id}", response_model=UserResponse)
 async def admin_update_user(
     user_id: str,
     req: AdminUpdateUserRequest,
-    admin: User = Depends(get_admin_user),
+    admin: User = Depends(get_manager_or_admin_user),
     db: AsyncSession = Depends(get_db),
 ):
-    """Admin — edit any user's profile, role, or active status."""
-    result = await db.execute(select(User).where(User.id == user_id))
-    user = result.scalar_one_or_none()
-    if not user:
-        raise HTTPException(status_code=404, detail="User not found")
+    """Edit an accessible account without allowing manager privilege escalation."""
+    user = await require_user_access(db, admin, user_id, management=True)
+    next_role = req.role if req.role is not None else user.role
+    next_active = req.is_active if req.is_active is not None else user.is_active
+    assignment_set = "manager_id" in req.model_fields_set
+    next_manager_id = req.manager_id if assignment_set else getattr(user, "manager_id", None)
+    if admin.role == "manager":
+        if next_role != "user" or next_manager_id != admin.id:
+            raise HTTPException(status_code=403, detail="Managers cannot elevate or reassign users")
+    if next_role not in ("admin", "manager", "user"):
+        raise HTTPException(status_code=400, detail="Role must be 'admin', 'manager' or 'user'")
+    if user.role == "admin" and (next_role != "admin" or not next_active):
+        await _protect_active_admin(db, admin, user)
+    if user.role == "manager" and next_role != "manager":
+        await _protect_manager_demotion(db, user)
+    if assignment_set or next_role != user.role:
+        await _validate_manager_assignment(db, next_role, next_manager_id)
 
     if req.username is not None:
         next_username = (req.username or "").strip()
@@ -492,11 +565,11 @@ async def admin_update_user(
     if req.display_name is not None:
         user.display_name = req.display_name
     if req.role is not None:
-        if req.role not in ("admin", "user"):
-            raise HTTPException(status_code=400, detail="Role must be 'admin' or 'user'")
-        user.role = req.role
+        user.role = next_role
     if req.is_active is not None:
         user.is_active = req.is_active
+    if assignment_set:
+        user.manager_id = next_manager_id
 
     await db.flush()
     return _user_response(user)
@@ -506,14 +579,11 @@ async def admin_update_user(
 async def admin_reset_password(
     user_id: str,
     req: AdminResetPasswordRequest,
-    admin: User = Depends(get_admin_user),
+    admin: User = Depends(get_manager_or_admin_user),
     db: AsyncSession = Depends(get_db),
 ):
     """Admin — set a new password for any user (no old password needed)."""
-    result = await db.execute(select(User).where(User.id == user_id))
-    user = result.scalar_one_or_none()
-    if not user:
-        raise HTTPException(status_code=404, detail="User not found")
+    user = await require_user_access(db, admin, user_id, management=True)
     if len(req.new_password) < 4:
         raise HTTPException(status_code=400, detail="Password must be at least 4 characters")
     user.password_hash = hash_password(req.new_password)
@@ -526,14 +596,11 @@ async def admin_reset_password(
 @router.get("/users/{user_id}/groups")
 async def admin_get_user_groups(
     user_id: str,
-    admin: User = Depends(get_admin_user),
+    admin: User = Depends(get_manager_or_admin_user),
     db: AsyncSession = Depends(get_db),
 ):
-    """Admin — get any user's groups."""
-    result = await db.execute(select(User).where(User.id == user_id))
-    user = result.scalar_one_or_none()
-    if not user:
-        raise HTTPException(status_code=404, detail="User not found")
+    """Get groups for self or an accessible user."""
+    user = await require_user_access(db, admin, user_id, management=False)
     try:
         groups = json.loads(user.custom_groups) if user.custom_groups else []
     except (json.JSONDecodeError, TypeError):
@@ -545,14 +612,11 @@ async def admin_get_user_groups(
 async def admin_save_user_groups(
     user_id: str,
     req: dict,
-    admin: User = Depends(get_admin_user),
+    admin: User = Depends(get_manager_or_admin_user),
     db: AsyncSession = Depends(get_db),
 ):
-    """Admin — save any user's groups."""
-    result = await db.execute(select(User).where(User.id == user_id))
-    user = result.scalar_one_or_none()
-    if not user:
-        raise HTTPException(status_code=404, detail="User not found")
+    """Save groups for self or an accessible user."""
+    user = await require_user_access(db, admin, user_id, management=False)
     groups = req.get("groups", [])
     if not isinstance(groups, list):
         raise HTTPException(status_code=400, detail="groups must be an array")
@@ -564,23 +628,21 @@ async def admin_save_user_groups(
 @router.delete("/users/{user_id}")
 async def admin_delete_user(
     user_id: str,
-    admin: User = Depends(get_admin_user),
+    admin: User = Depends(get_manager_or_admin_user),
     db: AsyncSession = Depends(get_db),
 ):
     """Admin — permanently delete a user and all their data (items, crawl jobs)."""
-    if str(admin.id) == user_id:
+    user = await require_user_access(db, admin, user_id, management=True)
+    if str(admin.id) == str(user.id):
         raise HTTPException(status_code=400, detail="Cannot delete your own account")
-    result = await db.execute(select(User).where(User.id == user_id))
-    user = result.scalar_one_or_none()
-    if not user:
-        raise HTTPException(status_code=404, detail="User not found")
 
     username = user.username
+    target_id = user.id
 
     try:
         # Resolve all item ids first so dependent tables can be cleaned safely.
         item_rows = (
-            await db.execute(select(Item.id).where(Item.user_id == user_id))
+            await db.execute(select(Item.id).where(Item.user_id == target_id))
         ).all()
         item_ids = [row[0] for row in item_rows]
 
@@ -589,11 +651,11 @@ async def admin_delete_user(
             await db.execute(delete(CrawlJob).where(CrawlJob.item_id.in_(item_ids)))
 
         # Delete crawl jobs belonging to user
-        await db.execute(delete(CrawlJob).where(CrawlJob.user_id == user_id))
+        await db.execute(delete(CrawlJob).where(CrawlJob.user_id == target_id))
         # Delete items belonging to user
-        await db.execute(delete(Item).where(Item.user_id == user_id))
+        await db.execute(delete(Item).where(Item.user_id == target_id))
         # Delete the user
-        await db.execute(delete(User).where(User.id == user_id))
+        await db.execute(delete(User).where(User.id == target_id))
         await db.flush()
     except Exception as exc:  # pragma: no cover - defensive safety path
         await db.rollback()

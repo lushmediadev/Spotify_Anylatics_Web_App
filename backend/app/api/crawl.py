@@ -19,7 +19,7 @@ from app.schemas.crawl import (
 )
 from app.utils.spotify_urls import parse_spotify_url
 from app.services.crawler import crawl_item_task
-from app.services.auth import get_current_user
+from app.services.auth import get_current_user, require_user_access, owner_scope_condition
 
 router = APIRouter()
 
@@ -30,14 +30,9 @@ async def _resolve_target_user_id(
     if requested_user_id is None:
         return current_user.id
 
-    if current_user.role != "admin":
-        raise HTTPException(status_code=403, detail="Not authorized to set target user")
-
-    user_result = await db.execute(select(User).where(User.id == requested_user_id))
-    target_user = user_result.scalar_one_or_none()
-    if not target_user:
-        raise HTTPException(status_code=404, detail="Target user not found")
-
+    if requested_user_id == current_user.id:
+        return current_user.id
+    target_user = await require_user_access(db, current_user, requested_user_id)
     return target_user.id
 
 
@@ -49,13 +44,12 @@ async def _resolve_refresh_item(
     expected_type: str,
     expected_spotify_id: str,
 ) -> Item:
-    item_result = await db.execute(select(Item).where(Item.id == item_id))
+    item_result = await db.execute(select(Item).where(
+        Item.id == item_id, owner_scope_condition(current_user, Item.user_id),
+    ))
     item = item_result.scalar_one_or_none()
     if not item:
         raise HTTPException(status_code=404, detail="Item not found for refresh")
-
-    if current_user.role != "admin" and item.user_id != current_user.id:
-        raise HTTPException(status_code=403, detail="Not authorized to refresh this item")
 
     if target_user_id and item.user_id != target_user_id:
         raise HTTPException(status_code=400, detail="target_user_id does not match item owner")
@@ -108,7 +102,7 @@ async def crawl(
             db=db,
             current_user=current_user,
             item_id=req.item_id,
-            target_user_id=target_user_id,
+            target_user_id=req.target_user_id,
             expected_type=item_type,
             expected_spotify_id=spotify_id,
         )
@@ -154,7 +148,7 @@ async def crawl(
         spotify_url=req.url,
         item_type=item_type,
         status="pending",
-        user_id=current_user.id,
+        user_id=item.user_id or current_user.id,
     )
     db.add(job)
     await db.flush()
@@ -199,7 +193,7 @@ async def crawl_batch(
                 db=db,
                 current_user=current_user,
                 item_id=refresh_item_id,
-                target_user_id=target_user_id,
+                target_user_id=req.target_user_id,
                 expected_type=item_type,
                 expected_spotify_id=spotify_id,
             )
@@ -239,7 +233,7 @@ async def crawl_batch(
             spotify_url=url,
             item_type=item_type,
             status="pending",
-            user_id=current_user.id,
+            user_id=item.user_id or current_user.id,
         )
         db.add(job)
         await db.flush()

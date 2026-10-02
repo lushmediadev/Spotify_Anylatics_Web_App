@@ -19,6 +19,7 @@ SpotiCheck tracks public Spotify metrics for Artist, Track, Album, and Playlist 
 - `backend/app/services/`: Spotify fetch/crawl logic.
 - `backend/app/database.py`: async DB setup and runtime indexes.
 - `deploy/`: VPS compose, Caddy, helpers, and backup scripts.
+- Role permissions: see `docs/modules/access-control.md`; shared owner predicates live in `backend/app/services/auth.py`.
 
 ## Build And Test
 

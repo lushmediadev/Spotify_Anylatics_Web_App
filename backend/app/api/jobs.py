@@ -3,16 +3,32 @@
 import uuid
 
 from fastapi import APIRouter, Depends, HTTPException
-from sqlalchemy import select
+from sqlalchemy import and_, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import get_db
 from app.models.crawl_job import CrawlJob
+from app.models.item import Item
 from app.models.user import User
 from app.schemas.job import JobBatchRequest, JobBatchResponse, JobResponse
-from app.services.auth import get_current_user
+from app.services.auth import get_current_user, owner_scope_condition
 
 router = APIRouter()
+
+
+def _job_scope_condition(current_user: User):
+    if current_user.role == "admin":
+        return owner_scope_condition(current_user, CrawlJob.user_id)
+    # Older jobs store the initiator, not necessarily the item's owner.
+    # Resolve ownership in SQL so reassignment immediately revokes access.
+    owned_item = select(Item.id).where(
+        Item.id == CrawlJob.item_id,
+        owner_scope_condition(current_user, Item.user_id),
+    ).exists()
+    return or_(
+        owned_item,
+        and_(CrawlJob.item_id.is_(None), owner_scope_condition(current_user, CrawlJob.user_id)),
+    )
 
 
 def _serialize_job(job: CrawlJob) -> JobResponse:
@@ -57,8 +73,7 @@ async def get_jobs_batch(
         return JobBatchResponse(jobs=[])
 
     query = select(CrawlJob).where(CrawlJob.id.in_(parsed_job_ids))
-    if current_user.role != "admin":
-        query = query.where(CrawlJob.user_id == current_user.id)
+    query = query.where(_job_scope_condition(current_user))
 
     result = await db.execute(query)
     job_map = {str(job.id): job for job in result.scalars().all()}
@@ -77,12 +92,15 @@ async def get_job(
     current_user: User = Depends(get_current_user),
 ):
     """Get crawl job status."""
-    result = await db.execute(select(CrawlJob).where(CrawlJob.id == job_id))
+    try:
+        parsed_id = uuid.UUID(str(job_id))
+    except (ValueError, TypeError) as exc:
+        raise HTTPException(status_code=400, detail="Invalid job_id") from exc
+    result = await db.execute(select(CrawlJob).where(
+        CrawlJob.id == parsed_id, _job_scope_condition(current_user),
+    ))
     job = result.scalar_one_or_none()
     if not job:
         raise HTTPException(status_code=404, detail="Job not found")
-
-    if current_user.role != "admin" and job.user_id != current_user.id:
-        raise HTTPException(status_code=403, detail="Not authorized to view this job")
 
     return _serialize_job(job)

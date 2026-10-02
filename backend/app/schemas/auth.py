@@ -1,5 +1,7 @@
 """Auth-related Pydantic schemas."""
 
+from uuid import UUID
+
 from pydantic import BaseModel
 
 
@@ -21,6 +23,7 @@ class UserResponse(BaseModel):
     email: str | None = None
     display_name: str | None
     role: str
+    manager_id: str | None = None
     is_active: bool = True
     created_at: str | None = None
     last_login: str | None = None
@@ -54,6 +57,7 @@ class AdminUpdateUserRequest(BaseModel):
     display_name: str | None = None
     role: str | None = None
     is_active: bool | None = None
+    manager_id: UUID | None = None
 
 
 class AdminResetPasswordRequest(BaseModel):
@@ -66,3 +70,4 @@ class AdminCreateUserRequest(BaseModel):
     password: str
     display_name: str | None = None
     role: str = "user"
+    manager_id: UUID | None = None

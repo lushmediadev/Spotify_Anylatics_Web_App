@@ -1,5 +1,12 @@
 # Changelog
 
+### 2026-10-02 16:03 - Light theme and assigned-manager roles
+- Added: manager role, admin manager-assignment controls, nullable UUID manager_id migration, scoped account/link/job permissions, and permission integration tests.
+- Changed: dashboard, login, settings and dialogs use the YouTube Manager white/grayscale palette while Spotify logo remains green.
+- Fixed: manager scope consistently applies to list, export, refresh, grouping, and deletion; frontend refreshes account role on bootstrap.
+- Affected files: backend auth/models/schemas/database/API, frontend JS/HTML/CSS, tests, UI_SYSTEM and access-control memory.
+- Impact/Risk: Additive migration preserves existing users and links; existing users remain unassigned until admin selects a manager. Local validation: 233 backend and 26 frontend tests passed.
+
 ### 2026-06-12 11:35 - Smooth link-list loading with scope cache
 - Added: frontend scope cache for paged link lists plus lightweight background warming for remaining pages.
 - Changed: group/search/sort interactions now try cached rows first and keep the current view responsive while fresh data loads.

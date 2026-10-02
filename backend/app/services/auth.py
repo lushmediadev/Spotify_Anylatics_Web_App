@@ -2,12 +2,13 @@
 
 from datetime import datetime, timedelta
 from typing import Optional
+import uuid
 
 from fastapi import Depends, HTTPException, status
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from jose import JWTError, jwt
 import bcrypt
-from sqlalchemy import select
+from sqlalchemy import and_, or_, select, true
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import settings
@@ -115,3 +116,50 @@ async def get_admin_user(
             detail="Admin privileges required",
         )
     return current_user
+
+
+async def get_manager_or_admin_user(
+    current_user: User = Depends(get_current_user),
+) -> User:
+    if current_user.role not in {"admin", "manager"}:
+        raise HTTPException(status_code=403, detail="Manager or admin privileges required")
+    return current_user
+
+
+def user_scope_condition(actor: User):
+    """Assigned accounts never grant access to other managers or admins."""
+    if actor.role == "admin":
+        return true()
+    if actor.role == "manager":
+        return or_(User.id == actor.id, and_(User.role == "user", User.manager_id == actor.id))
+    return User.id == actor.id
+
+
+def owner_scope_condition(actor: User, owner_column):
+    if actor.role == "admin":
+        return true()
+    if actor.role == "manager":
+        return owner_column.in_(select(User.id).where(user_scope_condition(actor)))
+    return owner_column == actor.id
+
+
+async def require_user_access(
+    db: AsyncSession, actor: User, user_id, *, management: bool = False,
+) -> User:
+    try:
+        target_id = uuid.UUID(str(user_id))
+    except (ValueError, TypeError) as exc:
+        raise HTTPException(status_code=400, detail="Invalid user_id") from exc
+    result = await db.execute(select(User).where(User.id == target_id))
+    target = result.scalar_one_or_none()
+    if target is None:
+        raise HTTPException(status_code=404, detail="User not found")
+    own = str(target.id) == str(actor.id)
+    assigned = (
+        actor.role == "manager" and target.role == "user"
+        and str(target.manager_id) == str(actor.id)
+    )
+    allowed = actor.role == "admin" or assigned or (own and not management)
+    if not allowed:
+        raise HTTPException(status_code=403, detail="Not authorized to access this user")
+    return target

@@ -2,19 +2,20 @@
 
 ## Visual direction
 
-- Dark desktop dashboard with fixed left rail, dedicated group rail, and dense list workspace.
+- Light-only desktop dashboard with fixed left rail, dedicated group rail, and dense list workspace.
 - The list view uses a wide photographic hero strip; preserve that existing pattern instead of introducing new wrappers or alternate shells.
-- Spotify green remains the primary functional accent, while the rest of the UI stays on near-black surfaces with low-contrast borders.
+- Use the exact YouTube Manager grayscale palette from `D:\Youtube_manager\frontend\style.css`; retain Spotify logo SVG green `#1DB954`, semantic status colors, and functional group accents.
 
 ## Core palette
 
-- App background: `#0b0f14` to `#111315`
-- Sidebar background: `#0a0e13`
-- Secondary surfaces: `#1a1d21`, `#1e2328`
-- Primary accent: `#1db954`
-- Main text: `#f2f5fb`
-- Muted text: `#a8b1c0`, `#b3b3b3`
-- Borders: thin white alpha strokes around `0.06` to `0.16`
+- App background / surface 0: `#ffffff`
+- Surface 1 (rails, settings, forms): `#f9f9f9`
+- Surface 2 (hover, search): `#f2f2f2`
+- Surface 3 (selection): `#e5e5e5`
+- Main text / primary actions: `#0f0f0f`; primary action hover: `#272727`
+- Muted text: `#606060`
+- Borders: black alpha, soft `0.08`, medium `0.14`
+- Status/type text uses readable darker semantic hues on light surfaces; group accent RGB variables still control search and drag/drop indicators.
 
 ## Typography
 
@@ -41,12 +42,17 @@
 
 - Sidebar: icon-first collapsed rail with tooltip labels
 - Group rail: flat stacked list with subtle selected and search-match states
-- Search: rounded dark input in the top bar
+- Search: rounded light grayscale input in the top bar
 - Rows: cover thumbnail + title/meta on the left, metrics grid on the right
 - Buttons:
-  - `btn-accent`: white filled primary action
+  - `btn-accent`: black filled primary action with white text
   - `btn-ghost`: transparent secondary action with thin border
-- Modals: centered dark dialog with blur backdrop and no detached decorative chrome
+- Modals: centered light dialog with black-alpha backdrop and no detached decorative chrome
+- Hero keeps `--hero-image` from `updateHeroImage()` beneath an 88%-96% white overlay so dark text stays readable even over dark covers.
+- Dynamically inserted Manager assignment fields inherit the same custom dropdown palette without role-specific CSS.
+- Both HTML pages declare `data-theme="light"` and native controls use `color-scheme: light`.
+- Scoped compatibility CSS maps legacy white text/border/background utilities and admin cards emitted by `app.js`; do not change runtime markup just to recolor it.
+- Keep JS/CSS cache query versions current in both pages; login uses inline auth logic, not `app.js`.
 
 ## UI guardrails
 
