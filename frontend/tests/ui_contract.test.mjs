@@ -9,6 +9,14 @@ const appJs = fs.readFileSync(path.join(root, "app.js"), "utf8");
 const indexHtml = fs.readFileSync(path.join(root, "index.html"), "utf8");
 const styleCss = fs.readFileSync(path.join(root, "style.css"), "utf8");
 
+test("channel timestamps interpret naive backend values as UTC and show Vietnam time", () => {
+  const source = fs.readFileSync(path.join(root, 'channels.js'), 'utf8');
+  const context = vm.createContext({});
+  vm.runInContext(source.slice(source.indexOf('const date ='), source.indexOf('function safeUrl(')), context);
+  assert.equal(vm.runInContext("date('2026-10-02T10:30:00')", context), vm.runInContext("date('2026-10-02T10:30:00Z')", context));
+  assert.match(vm.runInContext("date('2026-10-02T10:30:00')", context), /17:30/);
+});
+
 test("YouTube page reuses the shell and leaves own profile accessible", () => {
   assert.match(indexHtml, /id="nav-channels"/);
   assert.match(indexHtml, /id="channels-panel"/);

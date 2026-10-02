@@ -15,8 +15,10 @@
     const number = value => value == null ? '-' : new Intl.NumberFormat('vi-VN').format(value);
     const date = value => {
         if (!value) return '-';
-        const parsed = new Date(value);
-        return Number.isNaN(parsed.getTime()) ? '-' : parsed.toLocaleString('vi-VN');
+        const input = typeof value === 'string' && /^\d{4}-\d{2}-\d{2}T/.test(value)
+            && !/(?:Z|[+-]\d{2}:\d{2})$/i.test(value) ? value + 'Z' : value;
+        const parsed = new Date(input);
+        return Number.isNaN(parsed.getTime()) ? '-' : parsed.toLocaleString('vi-VN', { timeZone: 'Asia/Ho_Chi_Minh' });
     };
     function safeUrl(value) {
         try {

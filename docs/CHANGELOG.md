@@ -4,7 +4,7 @@
 - Added: owner-scoped YouTube API keys/check/rotation, public channel view snapshots, persisted empty channel groups and shared Spotify playlist associations.
 - UI: Channel & Playlist matches existing light visual, shows playlists by default, supports Edit, grouped search/filter and refresh; profile remains accessible from avatar and global clipboard setting is preserved.
 - Changed: removed All Links/All Channels entries; both pages select a named group, and Spotify group deletion moves surviving links to Ungrouped.
-- Verification: 443 backend and 40 frontend/browser tests passed; desktop/mobile smoke and empty-group creation checked on loopback fixtures. Runtime deployment verification recorded after rollout.
+- Verification: 443 backend and 41 frontend/browser tests passed; desktop/mobile smoke and empty-group creation checked on loopback fixtures. Channel timestamps explicitly use Vietnam time and normalize naive UTC backend values.
 - Deployment: `9f12f6f` pushed to GitHub and pulled on VPS; app-only rebuild healthy. Authenticated YouTube/settings/Spotify summary APIs return 200; PostgreSQL group/key isolation/manager associations and rollback checks passed. Caddy hash unchanged. Backup: `/opt/spoticheck/backups/postgres/pre-youtube-integration-20261002-103105.sql.gz`; rollback image: `spoticheck-rollback:pre-youtube-integration`. No old YTM data/key migration; real Google crawl requires an owner-configured key.
 
 ### 2026-10-02 16:20 - Restore original Spotify hero cover treatment
