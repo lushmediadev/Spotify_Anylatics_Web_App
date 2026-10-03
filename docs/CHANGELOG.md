@@ -1,5 +1,10 @@
 # Changelog
 
+### 2026-10-03 - Playlist editor visual parity
+- Updated: existing picker layout uses shared light surfaces, typography, rounded inputs, monochrome checkboxes, compact cover rows and icon buttons. Styling is scoped to the editor; filtering, selection and save contracts remain unchanged.
+- Short-screen fix: scroll only the dialog body so Cancel/Save remain visible.
+- Verification: 522 backend and 70 frontend/browser tests passed, including 390px dialog bounds, footer visibility and hidden selection preservation; local fixture visual smoke checked.
+
 ### 2026-10-03 - Playlist picker and deletion clarity
 - Added: context-menu icons and a separately confirmed delete-link action; unlink remains parent-channel-only, while deleting a Spotify Item removes its tracking and all channel associations.
 - Edit picker: filter by Spotify group, search title/owner/ID/link, show cover thumbnails and selected count, retain hidden checked choices across filters.

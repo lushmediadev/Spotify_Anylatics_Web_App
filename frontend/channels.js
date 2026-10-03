@@ -970,6 +970,10 @@
             notifyItems();
         });
         let loaded = false;
+        const editor = modal.node.querySelector('.chp-dialog');
+        editor.classList.add('chp-playlist-editor');
+        editor.querySelector('header [data-close]').innerHTML = '<span class="material-icons-round" aria-hidden="true">close</span>';
+        editor.querySelector('[type="submit"]').insertAdjacentHTML('afterbegin', '<span class="material-icons-round" aria-hidden="true">save</span>');
         const picker = modal.node.querySelector('.chp-picker');
         const button = modal.node.querySelector('[type="submit"]'); button.disabled = true;
         try {

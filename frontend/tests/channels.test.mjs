@@ -682,6 +682,25 @@ test('ChannelPlaylists isolated browser behavior', async t => {
             await page.locator('[data-menu="edit"]').click();
             await page.waitForSelector('.chp-pick');
             assert.equal(await page.locator('.chp-pick-cover').count(), 3);
+            const visual = await page.locator('.chp-playlist-editor').evaluate(editor => {
+                const style = selector => getComputedStyle(editor.querySelector(selector));
+                return { radius: style('[name="picker_group"]').borderRadius,
+                    inputHeight: style('[name="picker_search"]').height,
+                    titleWeight: style('.chp-pick > span:last-child').fontWeight,
+                    checkboxAccent: style('[name="playlist"]').accentColor,
+                    saveIcon: editor.querySelector('[type="submit"] .material-icons-round').textContent };
+            });
+            assert.deepEqual(visual, { radius: '14px', inputHeight: '44px', titleWeight: '700', checkboxAccent: 'rgb(15, 15, 15)', saveIcon: 'save' });
+            await page.setViewportSize({ width: 390, height: 640 });
+            const geometry = await page.locator('.chp-playlist-editor').evaluate(editor => {
+                const rect = editor.getBoundingClientRect();
+                const footer = editor.querySelector('footer').getBoundingClientRect();
+                return { left: rect.left, right: rect.right, bottom: rect.bottom, footerBottom: footer.bottom,
+                    overflow: editor.scrollWidth > editor.clientWidth };
+            });
+            assert.ok(geometry.left >= 0 && geometry.right <= 390 && geometry.bottom <= 640);
+            assert.ok(geometry.footerBottom <= geometry.bottom);
+            assert.equal(geometry.overflow, false);
             await page.getByLabel('Nhóm playlist', { exact: true }).selectOption('group:Lofi');
             assert.equal(await page.locator('[name="playlist"]').count(), 1);
             await page.locator('[name="playlist"]').check();
