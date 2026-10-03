@@ -352,6 +352,13 @@ test('ChannelPlaylists isolated browser behavior', async t => {
             assert.equal(await page.locator('.chp-children .list-cover-image').evaluate(node => getComputedStyle(node).width), '44px');
             assert.equal(await page.locator('.chp-channel .status-dot.active').count(), 1);
             assert.equal(await page.locator('.chp-children .list-columns-head').count(), 0);
+            assert.equal(await page.locator('.chp-list > .list-head .head-cell-label').allTextContents().then(labels => labels.join('|')), 'STT|Channel|Owner|View|Delta / Days|Checked');
+            for (const width of [1920, 1440, 997]) {
+                await page.setViewportSize({ width, height: 1080 });
+                const head = await page.locator('.chp-list > .list-head .head-cell').nth(2).boundingBox();
+                const owner = await page.locator('.chp-playlist-grid .playlist-owner-cell').boundingBox();
+                assert.ok(Math.abs(head.x - owner.x) < 2, `Owner must align at ${width}px`);
+            }
             assert.equal(await page.locator('.chp-playlist-grid > div').count(), 6);
             assert.doesNotMatch(await page.locator('.chp-playlist-grid').textContent(), /User <script>/);
             assert.equal(await page.locator('.chp-channel-labels .chp-playlist-count').textContent(), '1 playlists');

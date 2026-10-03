@@ -18,8 +18,8 @@
 .chp-key-warning { font-size: 14px; }
 .chp-key-warning button { text-decoration: underline; font: inherit; cursor: pointer; }
 .chp-list { overflow-x: auto; }
-.chp-grid.custom-grid-row { grid-template-columns: 58px minmax(350px, 1fr) 150px 160px 200px; min-width: 950px; }
-.chp-playlist-grid.custom-grid-row { grid-template-columns: 58px minmax(280px, 1fr) 160px 150px 160px 200px; min-width: 1088px; }
+.chp-grid.custom-grid-row { grid-template-columns: 58px minmax(280px, 1fr) 160px 150px 160px 200px; min-width: 1178px; }
+.chp-playlist-grid.custom-grid-row { grid-template-columns: 58px minmax(280px, 1fr) 160px 150px 160px 200px; min-width: 1120px; }
 .chp-root .list-grid > .custom-grid-row { min-height: 76px; padding-block: 7px !important; }
 .chp-root .list-cover-image { width: 44px; min-width: 44px; max-width: 44px; height: 44px; min-height: 44px; max-height: 44px; flex: 0 0 44px; }
 .chp-root .list-columns-head { min-height: 44px; padding-block: 10px !important; }

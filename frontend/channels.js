@@ -175,7 +175,7 @@
         const url = item.youtube_url || (item.youtube_id ? `https://www.youtube.com/channel/${encodeURIComponent(item.youtube_id)}` : item.query);
         return `<section data-chp-block="${escapeHtml(item.id)}"><div class="list-grid"><div class="custom-grid-row chp-grid chp-channel px-4 py-3 bg-white/5 rounded-lg border border-transparent transition-colors group ${state.selected.has(item.id) ? 'row-selected' : ''}" data-chp-channel="${escapeHtml(item.id)}" tabindex="0" aria-selected="${state.selected.has(item.id)}">
             <div class="meta-cell stt-cell text-secondary-text">${index + 1}</div><div class="list-asset-cell flex items-center gap-4">${image(item.image)}<div><div class="chp-channel-labels"><span class="list-type-badge">channel</span><span class="chp-playlist-count text-secondary-text">${(item.playlists || []).length} playlists</span></div><h3 class="list-asset-title">${link(url, item.name || item.query || 'Kênh YouTube')}</h3><div class="list-asset-meta"><p class="list-asset-uri text-secondary-text">${escapeHtml(item.youtube_id || item.query || '')}</p></div></div></div>
-            <div class="meta-cell"><span class="metric-main">${number(item.view_count)}</span></div><div class="meta-cell">${metricDelta(item.view_count_delta, item.delta_days) || '<span class="metric-empty">-</span>'}</div><div class="meta-cell text-right">${checked(item)}</div></div></div>
+            <div class="meta-cell chp-owner-empty" aria-hidden="true"></div><div class="meta-cell"><span class="metric-main">${number(item.view_count)}</span></div><div class="meta-cell">${metricDelta(item.view_count_delta, item.delta_days) || '<span class="metric-empty">-</span>'}</div><div class="meta-cell text-right">${checked(item)}</div></div></div>
             <div class="chp-children"${collapsed ? ' hidden' : ''} aria-label="Playlists của ${escapeHtml(item.name || item.query)}"><div class="list-grid">${(item.playlists || []).map(playlistRow).join('') || '<p class="chp-empty">Chưa liên kết playlist. Nhấp chuột phải vào kênh để chọn Edit playlists.</p>'}</div></div></section>`;
     }
     function listHead(labels, grid, filter = false) {
@@ -187,7 +187,7 @@
         notifyGroup();
         const list = state.host?.querySelector('.chp-list');
         if (!list || list.contains(document.activeElement)) { state.pendingRender = true; return; }
-        const html = listHead(['STT', 'Channel', 'View', 'Delta / Days', 'Checked'], 'chp-grid', true) + (state.group && state.items.length ? state.items.map(channelRow).join('') : `<p class="chp-empty">${state.groups.length ? 'Chưa có kênh phù hợp. Thêm kênh hoặc đổi bộ lọc.' : 'Chọn New Group trong danh sách nhóm để bắt đầu.'}</p>`);
+        const html = listHead(['STT', 'Channel', 'Owner', 'View', 'Delta / Days', 'Checked'], 'chp-grid', true) + (state.group && state.items.length ? state.items.map(channelRow).join('') : `<p class="chp-empty">${state.groups.length ? 'Chưa có kênh phù hợp. Thêm kênh hoặc đổi bộ lọc.' : 'Chọn New Group trong danh sách nhóm để bắt đầu.'}</p>`);
         if (list.innerHTML !== html) list.innerHTML = html;
         const select = state.tools.querySelector('.chp-groups');
         if (document.activeElement !== select) {
