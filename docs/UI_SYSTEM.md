@@ -63,6 +63,7 @@
 - Channel & Playlist uses the shared shell and channel group rail: a flat channel summary followed by visible playlist rows, with collapse-all as an optional control.
 - Channel search/refresh/add belong in the existing topbar, never in a second toolbar below it. Group search and creation belong in the left group rail, including the empty-group state.
 - Channel workspace reuses `.playlist-hero`, `.hero-kpi`, list typography, covers, status dots and metric badges. Its hero takes the first filtered YouTube channel banner using the YTM cover URL logic.
+- Channel & Playlist rows are compact: 76px minimum height and 44px covers, matching YouTube Manager density. Playlist count sits beside CHANNEL; group subtitles, repeated child headers and child User / Updated cells are omitted. Spotify's separate list sizing is unchanged.
 - Channel edits are right-click/keyboard context-menu actions, not row Edit buttons. No visible page controls; backend paging is internal and must load the complete selected group.
 - Spotify background sync cannot update another view's header/title/controls.
 - Both Spotify and channel rails contain named groups and New Group only, without All Links/All Channels entries. Opening a page selects its first available group before rendering rows; no-group state offers group creation, not an aggregate list.

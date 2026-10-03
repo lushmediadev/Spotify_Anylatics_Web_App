@@ -1,5 +1,11 @@
 # Changelog
 
+### 2026-10-03 - Compact combined channel/playlist rows
+- Removed: repeated playlist column headers and User / Updated cells in the combined workspace.
+- Changed: playlist count sits beside CHANNEL instead of the group subtitle; channel/playlist rows use 76px minimum height with 44px covers and compact column headers.
+- Scope: Channel & Playlist presentation only; Spotify list, data ownership, API and association logic unchanged.
+- Verification: 50 frontend/browser and 443 backend tests passed; browser measurements confirm 76px channel/playlist rows and no repeated child headers or User / Updated cells.
+
 ### 2026-10-03 - Align Channel & Playlist with the original dashboard
 - Changed: channel tools move into the shared topbar, group controls stay in the left rail, and the workspace reuses the original hero/KPI/row typography and status/metric components.
 - Fixed: Spotify background group synchronization no longer overwrites another view's title; channel hero selects the first filtered channel banner using YouTube Manager logic.

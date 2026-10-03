@@ -348,10 +348,20 @@ test('ChannelPlaylists isolated browser behavior', async t => {
             assert.equal(await page.locator('.playlist-hero').evaluate(node => getComputedStyle(node).minHeight), '230px');
             assert.equal(await page.locator('.playlist-hero h2').evaluate(node => getComputedStyle(node).fontSize), '52px');
             assert.deepEqual(await page.locator('.chp-channel .list-asset-title').evaluate(node => [getComputedStyle(node).fontSize, getComputedStyle(node).fontWeight]), ['15px', '700']);
-            assert.equal(await page.locator('.chp-channel .list-cover-image').evaluate(node => getComputedStyle(node).width), '70px');
-            assert.equal(await page.locator('.chp-children .list-cover-image').evaluate(node => getComputedStyle(node).width), '70px');
+            assert.equal(await page.locator('.chp-channel .list-cover-image').evaluate(node => getComputedStyle(node).width), '44px');
+            assert.equal(await page.locator('.chp-children .list-cover-image').evaluate(node => getComputedStyle(node).width), '44px');
             assert.equal(await page.locator('.chp-channel .status-dot.active').count(), 1);
-            assert.equal(await page.locator('.chp-children .list-columns-head').textContent().then(text => text.replace(/\s+/g, ' ').trim()), 'STTAsset DetailsUser / UpdatedPlaylist OwnerSavesTrack CountChecked');
+            assert.equal(await page.locator('.chp-children .list-columns-head').count(), 0);
+            assert.equal(await page.locator('.chp-playlist-grid > div').count(), 6);
+            assert.doesNotMatch(await page.locator('.chp-playlist-grid').textContent(), /User <script>/);
+            assert.equal(await page.locator('.chp-channel-labels .chp-playlist-count').textContent(), '1 playlists');
+            assert.equal(await page.locator('.chp-channel .list-asset-subtitle').count(), 0);
+            const bounds = await page.locator('.chp-channel-labels').evaluate(node => [...node.children].map(child => child.getBoundingClientRect().toJSON()));
+            assert.ok(Math.abs(bounds[0].top - bounds[1].top) < 3);
+            assert.ok(bounds[1].left > bounds[0].right);
+            assert.ok(await page.locator('.chp-channel').evaluate(node => node.getBoundingClientRect().height <= 80));
+            assert.ok(await page.locator('.chp-playlist-grid').evaluate(node => node.getBoundingClientRect().height <= 80));
+            assert.ok(await page.locator('.chp-list > .list-head .list-columns-head').evaluate(node => node.getBoundingClientRect().height <= 50));
         } finally { await page.close(); }
     });
 
@@ -482,7 +492,7 @@ test('ChannelPlaylists isolated browser behavior', async t => {
             assert.equal(await page.locator('.chp-channel .list-checked-text').textContent(), 'Just now');
             assert.match(await page.locator('.chp-channel .list-checked-text').getAttribute('title'), /17:30/);
             assert.equal(await page.locator('.chp-channel .checked-status').textContent(), 'Active');
-            assert.match(await page.locator('.chp-playlist-grid .list-asset-subtitle').textContent(), /02\/10\/2026/);
+            assert.equal(await page.locator('.chp-playlist-grid .list-asset-subtitle').count(), 0);
         } finally { await page.close(); }
     });
 
