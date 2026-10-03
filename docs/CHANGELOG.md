@@ -5,6 +5,7 @@
 - Fixed: Spotify background group synchronization no longer overwrites another view's title; channel hero selects the first filtered channel banner using YouTube Manager logic.
 - Removed: row Edit buttons and visible pagination. Edit remains in the right-click/keyboard context menu; API paging remains internal to complete group loading.
 - Verification: no backend diff; 443 backend and 50 frontend/browser tests passed. Checked shared shell/hero/row styling, right-click editor, empty groups, more than 50 channels, stale owner responses and 390px mobile layout; header no longer overlaps hero. Avatar/owner/time formatting reuses Spotify helpers.
+- Deployment: `2f05a03` pushed to GitHub and pulled on VPS; app-only rebuild healthy. Authenticated channel/Spotify APIs return 200; public JS/CSS hashes match deployed files. Shared Caddy hash unchanged. Backup: `/opt/spoticheck/backups/postgres/pre-channel-ui-parity-20261003-013419.sql.gz`; rollback image: `spoticheck-rollback:pre-channel-ui-parity`.
 
 ### 2026-10-02 - YouTube channels and group-only navigation
 - Added: owner-scoped YouTube API keys/check/rotation, public channel view snapshots, persisted empty channel groups and shared Spotify playlist associations.
