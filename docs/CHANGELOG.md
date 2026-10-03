@@ -5,6 +5,7 @@
 - Changed: resource authorization is own-account-only for admin, manager and user. Role-based account management and admin global settings remain separate.
 - Migration: no row reassignment or schema change; API routes/payload fields remain compatible, but cross-account resource access is denied.
 - Verification: 480 backend and 53 frontend/browser tests passed; foreign admin/assigned-manager resource targets are denied, account management still works, and private group preferences are redacted from other-account management responses. VPS has no unowned Spotify rows.
+- Deployment: `87009e1` pushed/pulled through GitHub; app-only rebuild healthy and Caddy unchanged. Authenticated public API checks and real PostgreSQL admin/manager/user scope checks passed; fixture writes rolled back. Backup: `/opt/spoticheck/backups/postgres/pre-own-account-scope-20261003-043022.sql.gz`; rollback image: `spoticheck-rollback:pre-own-account-scope`.
 
 ### 2026-10-03 - Compact combined channel/playlist rows
 - Removed: repeated playlist column headers and User / Updated cells in the combined workspace.
