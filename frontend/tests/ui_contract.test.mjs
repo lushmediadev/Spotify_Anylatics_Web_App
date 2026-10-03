@@ -52,20 +52,30 @@ test("Spotify background group sync never overwrites the channel header", () => 
   assert.equal(values['page-title'].textContent, 'Spotify Group');
 });
 
-test("channel owner filter does not trigger Spotify list loads", () => {
+test("account filter UI and stale filter state are removed", () => {
+  assert.doesNotMatch(appJs, /adminFilterUserId|admin-user-filter|setupAdminUserFilter|handleAdminFilterChange/);
+  assert.match(appJs, /ChannelPlaylists\?\.show\(\)/);
+});
+
+test("group preference requests never target another account", async () => {
   const calls = [];
   const context = vm.createContext({
-    getAuthUser: () => ({ id: 'admin' }),
-    state: { currentView: 'channels' },
-    ALL_GROUP_ID: 'all',
-    getOwnerCustomGroups: () => [],
-    resetVirtualList: () => {},
-    window: { ChannelPlaylists: { setUserFilter: (id) => calls.push(id) } },
+    state: { customGroups: ['Own'] },
+    getAuthUser: () => ({ id: 'own', role: 'admin' }), getAuthToken: () => 'fixture',
+    getUserGroupStorageKey: () => 'own-groups', normalizeStoredGroupName: value => value,
+    localStorage: { setItem: () => {} }, CONFIG: { API_BASE: '/api' }, console,
+    syncGroupUI: () => {},
+    fetch: async (url, options) => { calls.push({ url, options }); return { ok: true, json: async () => ({ groups: ['Own'] }) }; },
   });
-  vm.runInContext(appJs.slice(appJs.indexOf('function handleAdminFilterChange('), appJs.indexOf('async function loadVirtualPage(')), context);
-  context.handleAdminFilterChange('assigned-owner');
-  assert.equal(context.state.adminFilterUserId, 'assigned-owner');
-  assert.deepEqual(calls, ['assigned-owner']);
+  vm.runInContext(appJs.slice(appJs.indexOf('function getOwnerCustomGroups('), appJs.indexOf('function saveCustomGroups()')), context);
+  context.setOwnerCustomGroups('foreign', ['Foreign']);
+  await context.syncGroupsFromServer('foreign');
+  await context.saveGroupsToServer(['Foreign'], 'foreign');
+  assert.deepEqual(context.state.customGroups, ['Own']);
+  assert.equal(calls.length, 0);
+  await context.syncGroupsFromServer();
+  await context.saveGroupsToServer(['Own']);
+  assert.deepEqual(calls.map(call => call.url), ['/api/auth/me/groups', '/api/auth/me/groups']);
 });
 
 test("Spotify group navigation excludes aggregate and selects a named group", () => {
@@ -122,7 +132,7 @@ test("Spotify bootstrap discovers groups but never requests an aggregate item pa
   }
 });
 
-test("manager account uses assigned-user scope and cannot assign privileged roles", () => {
+test("all roles use own data while manager account role restrictions remain", () => {
   let account = { id: 'manager-id', role: 'manager' };
   const context = vm.createContext({
     localStorage: { getItem: () => JSON.stringify(account) },
@@ -138,11 +148,12 @@ test("manager account uses assigned-user scope and cannot assign privileged role
   vm.runInContext(appJs.slice(appJs.indexOf('function getBackendListParams()'), appJs.indexOf('function getBackendListScopeKey(')), context);
   assert.equal(vm.runInContext('canManageUsers()', context), true);
   assert.equal(vm.runInContext('getAssignableRoles().map(role => role.value).join(",")', context), 'user');
-  assert.equal(vm.runInContext('getBackendListParams().user_id', context), 'assigned-user');
+  assert.equal(vm.runInContext('getBackendListParams().user_id', context), 'manager-id');
   account = { id: 'user-id', role: 'user' };
   assert.equal(vm.runInContext('canManageUsers()', context), false);
   assert.equal(vm.runInContext('getBackendListParams().user_id', context), undefined);
   account = { id: 'admin-id', role: 'admin' };
+  assert.equal(vm.runInContext('getBackendListParams().user_id', context), 'admin-id');
   assert.equal(vm.runInContext('getAssignableRoles().map(role => role.value).join(",")', context), 'user,manager,admin');
 });
 
@@ -165,14 +176,9 @@ test("admin default scope uses own links instead of all users", () => {
   assert.match(appJs, /function getAdminTargetUserId/);
   assert.doesNotMatch(appJs, /label: 'My Links'/);
   assert.doesNotMatch(appJs, /label: 'All Users'/);
-  assert.match(appJs, /state\.adminFilterUserId = currentUserId \|\| null/);
-  assert.match(appJs, /const selectedUserId = val \|\| \(currentUser\?\.id \? String\(currentUser\.id\) : null\)/);
-  assert.match(appJs, /state\.items = \[\]/);
-  assert.match(appJs, /state\.customGroups = selectedUserId \? getOwnerCustomGroups\(selectedUserId\) : \[\]/);
   assert.match(appJs, /const requestId = \+\+state\.dataLoadRequestId/);
   assert.match(appJs, /const targetUserId = getAdminTargetUserId\(\)/);
   assert.match(appJs, /if \(targetUserId\) params\.user_id = targetUserId/);
-  assert.match(appJs, /loadData\(\{ preserveScroll: false, force: true \}\)/);
   assert.match(appJs, /function resetVirtualList/);
   assert.match(appJs, /function loadVirtualPage/);
   assert.match(appJs, /getItemsSummary\(params = \{\}\)/);

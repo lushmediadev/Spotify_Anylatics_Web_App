@@ -1,6 +1,7 @@
 """HTTP integration contracts backed by SQLite, with no remote lifespan/jobs."""
 
 import asyncio
+import json
 import uuid
 from concurrent.futures import ThreadPoolExecutor
 from contextlib import asynccontextmanager
@@ -11,7 +12,7 @@ from unittest.mock import AsyncMock
 
 import httpx
 import pytest
-from fastapi import FastAPI
+from fastapi import Depends, FastAPI
 from fastapi.testclient import TestClient
 from sqlalchemy import create_engine, delete, event, select
 from sqlalchemy.dialects.postgresql import JSONB
@@ -20,6 +21,7 @@ from sqlalchemy.orm import Session
 
 from app import database
 from app.api import auth as auth_api, items as items_api, youtube as api
+from app.api import crawl as crawl_api, jobs as jobs_api
 from app.database import Base, get_db
 from app.models.crawl_job import CrawlJob
 from app.models.item import Item
@@ -72,7 +74,7 @@ class AsyncSessionAdapter:
 
 
 NAMES = ("manager", "assigned", "unassigned", "other_manager", "admin", "linked_admin")
-ALLOWED = {"manager", "assigned"}
+ALLOWED = {"manager"}
 CHANNEL_ID = "UC" + "a" * 22
 NEW_PLAYLIST = "N" * 22
 
@@ -151,10 +153,9 @@ def env(tmp_path, monkeypatch):
         async with session_context() as db:
             yield db
 
-    async def actor():
+    async def actor(db=Depends(get_db)):
         # Actor selection only is overridden; every resource scope runs real SQL.
-        with Session(engine) as session:
-            return session.get(User, users[state.actor].id)
+        return await db.get(User, users[state.actor].id)
 
     def track(coroutine):
         try:
@@ -184,12 +185,15 @@ def env(tmp_path, monkeypatch):
     monkeypatch.setattr(youtube_jobs, "track", track)
     monkeypatch.setattr(database, "async_session", session_context)
     monkeypatch.setattr(youtube_jobs, "crawl_item_task", AsyncMock())
+    monkeypatch.setattr(crawl_api, "crawl_item_task", AsyncMock())
     state.external_check = AsyncMock(return_value=[{"status": "ok"}])
     monkeypatch.setattr(api, "check_external_keys", state.external_check)
     app = FastAPI()
     app.include_router(api.router, prefix="/api")
     app.include_router(items_api.router, prefix="/api")
     app.include_router(auth_api.router, prefix="/api")
+    app.include_router(crawl_api.router, prefix="/api")
+    app.include_router(jobs_api.router, prefix="/api")
     app.dependency_overrides[get_db] = override_db
     app.dependency_overrides[get_current_user] = actor
     state.app = app
@@ -226,7 +230,7 @@ def playlist_url(item):
 
 @pytest.mark.parametrize("actor,visible", [
     ("manager", ALLOWED), ("assigned", {"assigned"}), ("unassigned", {"unassigned"}),
-    ("admin", set(NAMES)),
+    ("admin", {"admin"}),
 ])
 def test_list_owner_scopes_and_own_key_counts(env, actor, visible):
     env.actor = actor
@@ -253,7 +257,7 @@ def test_explicit_owner_filter_intersects_manager_scope(env, owner):
 @pytest.mark.parametrize("actor,owner", [(a, o) for a in ("manager", "assigned", "admin") for o in NAMES])
 def test_detail_and_mutation_scopes(env, actor, owner):
     env.actor = actor
-    allowed = actor == "admin" or owner == actor or (actor == "manager" and owner == "assigned")
+    allowed = owner == actor
     path = f"/channels/{env.channels[owner].id}"
     response = request(env, "GET", path)
     assert response.status_code == (200 if allowed else 404), response.text
@@ -282,16 +286,16 @@ def test_list_order_groups_filters_and_pagination(env):
         session.commit()
     body = request(env, "GET").json()
     assert [row["id"] for row in body["items"]] == [
-        str(fixed_uuid(99)), str(env.channels["manager"].id), str(env.channels["assigned"].id)]
+        str(fixed_uuid(99)), str(env.channels["manager"].id)]
     page = request(env, "GET", params={"offset": 1, "limit": 1}).json()
-    assert page["total"] == 3 and [row["id"] for row in page["items"]] == [str(env.channels["manager"].id)]
-    expected_groups = [{"name": "Other", "count": 1}, {"name": "Shared", "count": 2}]
+    assert page["total"] == 2 and [row["id"] for row in page["items"]] == [str(env.channels["manager"].id)]
+    expected_groups = [{"name": "Other", "count": 1}, {"name": "Shared", "count": 1}]
     for params, expected in [
-        ({"filter": "changed"}, {str(fixed_uuid(99)), str(env.channels["assigned"].id)}),
-        ({"filter": "errors"}, {str(env.channels["assigned"].id)}),
+        ({"filter": "changed"}, {str(fixed_uuid(99))}),
+        ({"filter": "errors"}, set()),
         ({"group": "Other"}, {str(fixed_uuid(99))}),
         ({"group": "aLl"}, {row["id"] for row in body["items"]}),
-        ({"search": " Channel assigned "}, {str(env.channels["assigned"].id)}),
+        ({"search": " Channel assigned "}, set()),
         ({"search": "@unassigned"}, set()),
     ]:
         result = request(env, "GET", params=params)
@@ -440,15 +444,16 @@ def test_batch_refresh_is_atomic_scoped_grouped_by_owner_and_skips_claimed(env):
     assert env.scheduled == []
     assert all(row.status != "crawling" for row in rows(env, Channel))
     body = request(env, "POST", "/channels/refresh", json={}).json()
-    assert body["accepted"] == 2 and body["skipped"] == 0
+    assert body["accepted"] == 1 and body["skipped"] == 0
     assert {args["owner_id"] for _, args in env.scheduled} == {env.users[name].id for name in ALLOWED}
     repeat = request(env, "POST", "/channels/refresh", json={}).json()
-    assert repeat["accepted"] == 0 and repeat["skipped"] == 2 and len(env.scheduled) == 2
+    assert repeat["accepted"] == 0 and repeat["skipped"] == 1 and len(env.scheduled) == 1
     assert all(row.group == "Shared" for row in rows(env, Channel))
 
 
 @pytest.mark.parametrize("bad_kind", ["foreign", "track", "missing", "bad_host", "track_url", "credentials", "port"])
 def test_playlist_replace_rejects_mixed_input_atomically(env, bad_kind):
+    env.actor = "assigned"
     channel = env.channels["assigned"]
     payload = {"item_ids": [str(env.items["assigned"].id)], "urls": [f"spotify:playlist:{NEW_PLAYLIST}"]}
     if bad_kind == "foreign":
@@ -476,6 +481,7 @@ def test_playlist_replace_rejects_mixed_input_atomically(env, bad_kind):
 
 
 def test_playlist_reuse_preserves_fields_new_job_owner_and_replacement(env):
+    env.actor = "assigned"
     channel, item = env.channels["assigned"], env.items["assigned"]
     # Same Spotify identity belonging to another accessible owner must not be reused.
     with Session(env.engine) as session:
@@ -505,6 +511,7 @@ def test_playlist_reuse_preserves_fields_new_job_owner_and_replacement(env):
 
 
 def test_playlist_refresh_preserves_group_skips_crawling_commits_jobs(env):
+    env.actor = "assigned"
     channel = env.channels["assigned"]
     path = f"/channels/{channel.id}/playlists/refresh"
     response = request(env, "POST", path)
@@ -521,6 +528,7 @@ def test_playlist_refresh_preserves_group_skips_crawling_commits_jobs(env):
 
 
 def test_delete_channel_cascades_youtube_only_never_spotify_records(env):
+    env.actor = "assigned"
     channel = env.channels["assigned"]
     before = {model: ids(env, model) for model in (Item, MetricsSnapshot, RawResponse, CrawlJob, YouTubeApiKey)}
     response = request(env, "DELETE", f"/channels/{channel.id}")
@@ -535,8 +543,10 @@ def test_delete_channel_cascades_youtube_only_never_spotify_records(env):
 def test_delete_user_api_cascades_keys_channels_snapshots_links_not_other_owners(env):
     owner = "assigned"
     for target in ("assigned", "manager"):
+        env.actor = target
         assert request(env, "POST", "/groups", json={"name": "Persisted",
             "target_user_id": str(env.users[target].id)}).status_code == 200
+    env.actor = "manager"
     before_groups = ids(env, YouTubeChannelGroup)
     deleted_groups = {row.id for row in rows(env, YouTubeChannelGroup) if row.user_id == env.users[owner].id}
     before_channels = ids(env, Channel)
@@ -583,6 +593,7 @@ def test_direct_user_delete_uses_real_youtube_foreign_key_cascades(env):
 
 
 def test_item_delete_api_removes_all_linked_associations_keeps_channels_and_other_items(env):
+    env.actor = "assigned"
     item = env.items["assigned"]
     with Session(env.engine) as session:
         session.add(ChannelPlaylist(channel_id=env.channels["manager"].id, item_id=item.id))
@@ -704,6 +715,7 @@ def test_spotify_worker_uses_mocked_crawl(env):
 
 
 def test_post_create_to_worker_resolved_id_and_snapshot_regression(env, monkeypatch):
+    env.actor = "assigned"
     """Exercise actual POST parser, stored identity, scheduled args and worker."""
     response = request(env, "POST", json={
         "urls": [f"https://www.youtube.com/channel/{CHANNEL_ID}/videos", CHANNEL_ID],
@@ -747,6 +759,7 @@ def test_post_create_to_worker_resolved_id_and_snapshot_regression(env, monkeypa
 
 
 def test_durable_stale_recovery_commits_only_crawling_rows_and_allows_retry(env):
+    env.actor = "assigned"
     fresh_started = utc_now()
     with Session(env.engine) as session:
         row = session.get(Channel, env.channels["assigned"].id)
@@ -779,6 +792,7 @@ def test_durable_stale_recovery_commits_only_crawling_rows_and_allows_retry(env)
 
 
 def test_concurrent_refresh_claim_schedules_exactly_once(env):
+    env.actor = "assigned"
     barrier = Barrier(2)
     path = f"/channels/{env.channels['assigned'].id}/refresh"
 
@@ -852,6 +866,7 @@ def test_worker_batch_canonical_merge_applies_result_and_records_one_snapshot(en
 
 
 def test_create_through_real_youtube_client_mock_http_channels_list_id(env, monkeypatch):
+    env.actor = "assigned"
     """No parser/client/worker mocking: replace only the outbound HTTP transport."""
     calls = []
     original_client = httpx.AsyncClient
@@ -945,6 +960,7 @@ def test_superseded_attempt_cannot_complete_or_fail_new_claim(env, monkeypatch, 
 
 @pytest.mark.parametrize("other_pending", [False, True])
 def test_playlist_worker_cancel_cleanup_preserves_group_and_newer_job(env, monkeypatch, other_pending):
+    env.actor = "assigned"
     channel, item = env.channels["assigned"], env.items["assigned"]
     response = request(env, "POST", f"/channels/{channel.id}/playlists/refresh")
     assert response.status_code == 200 and response.json()["accepted"] == 1
@@ -1008,10 +1024,10 @@ def test_stale_spotify_recovery_only_marked_jobs_not_fresh_or_unrelated(env):
 
 
 @pytest.mark.parametrize("actor,target,allowed", [
-    ("manager", "manager", True), ("manager", "assigned", True),
+    ("manager", "manager", True), ("manager", "assigned", False),
     ("manager", "unassigned", False), ("manager", "linked_admin", False),
     ("assigned", "assigned", True), ("assigned", "manager", False),
-    ("unassigned", "unassigned", True), ("admin", "unassigned", True),
+    ("unassigned", "unassigned", True), ("admin", "unassigned", False), ("admin", "admin", True),
 ])
 def test_group_create_owner_scope_and_empty_reload(env, actor, target, allowed):
     env.actor = actor
@@ -1033,11 +1049,12 @@ def test_group_create_owner_scope_and_empty_reload(env, actor, target, allowed):
 
 def test_groups_duplicate_reuse_owner_separation_and_scope(env):
     for target in ("manager", "assigned"):
+        env.actor = target
         for _ in range(2):
             response = request(env, "POST", "/groups", json={"name": "Same",
                 "target_user_id": str(env.users[target].id)})
             assert response.status_code == 200, response.text
-    env.actor = "admin"
+    env.actor = "unassigned"
     assert request(env, "POST", "/groups", json={"name": "Secret unassigned",
         "target_user_id": str(env.users["unassigned"].id)}).status_code == 200
     assert request(env, "POST", "/groups", json={"name": "Same",
@@ -1047,13 +1064,12 @@ def test_groups_duplicate_reuse_owner_separation_and_scope(env):
     assert {row.user_id for row in stored if row.name == "Same"} == {
         env.users[name].id for name in ("manager", "assigned", "unassigned")}
     env.actor = "manager"
-    assert request(env, "GET").json()["groups"] == [{"name": "Same", "count": 0}, {"name": "Shared", "count": 2}]
+    assert request(env, "GET").json()["groups"] == [{"name": "Same", "count": 0}, {"name": "Shared", "count": 1}]
     assert request(env, "GET", params={"user_id": str(env.users["unassigned"].id)}).json()["groups"] == []
     env.actor = "assigned"
     assert request(env, "GET").json()["groups"] == [{"name": "Same", "count": 0}, {"name": "Shared", "count": 1}]
     env.actor = "admin"
-    assert request(env, "GET").json()["groups"] == [
-        {"name": "Same", "count": 0}, {"name": "Secret unassigned", "count": 0}, {"name": "Shared", "count": 6}]
+    assert request(env, "GET").json()["groups"] == [{"name": "Shared", "count": 1}]
 
 
 @pytest.mark.parametrize("name", [" All ", " ALL LINKS ", "aLl ChAnNeLs", " "])
@@ -1065,6 +1081,7 @@ def test_group_aggregate_labels_rejected_atomically(env, name):
 
 
 def test_channel_create_persists_group_and_aggregate_filters_ignore_label(env):
+    env.actor = "assigned"
     response = request(env, "POST", json={"urls": ["@group_persist"], "group": " Auto group ",
         "target_user_id": str(env.users["assigned"].id)})
     assert response.status_code == 200, response.text
@@ -1074,8 +1091,139 @@ def test_channel_create_persists_group_and_aggregate_filters_ignore_label(env):
     baseline = request(env, "GET").json()
     for label in (" All ", "ALL LINKS", " all channels "):
         body = request(env, "GET", params={"group": label}).json()
-        assert body["total"] == baseline["total"] == 3 and body["items"] == baseline["items"]
+        assert body["total"] == baseline["total"] == 2 and body["items"] == baseline["items"]
     assert request(env, "DELETE", f"/channels/{channel_id}").status_code == 200
     body = request(env, "GET", params={"user_id": str(env.users["assigned"].id)}).json()
     assert body["groups"] == [{"name": "Auto group", "count": 0}, {"name": "Shared", "count": 1}]
     assert len(rows(env, YouTubeChannelGroup)) == 1
+
+
+@pytest.mark.parametrize("actor", ["admin", "manager", "assigned"])
+@pytest.mark.parametrize("owner", NAMES)
+def test_spotify_http_owner_scope_denies_foreign_rows(env, actor, owner):
+    env.actor = actor
+    item = env.items[owner]
+    path = f"/api/items/playlist/{item.spotify_id}"
+    own = actor == owner
+    assert env.client.get(path).status_code == (200 if own else 404)
+    exported = env.client.post("/api/items/export", json={
+        "action": "listview-excel", "item_ids": [str(item.id)], "deep_fetch": False,
+    })
+    assert exported.status_code == (200 if own else 404), exported.text
+    if own:
+        assert exported.json()["count"] == 1
+        return
+    before = ids(env, Item), ids(env, CrawlJob), ids(env, RawResponse), ids(env, MetricsSnapshot)
+    assert env.client.delete(path).status_code == 404
+    assert env.client.delete(f"/api/items-by-id/{item.id}").status_code == 404
+    assert env.client.post("/api/items/move", json={
+        "item_ids": [str(item.id)], "group": "Denied",
+    }).status_code == 404
+    for batch in (False, True):
+        refresh = {"urls": [playlist_url(item)], "item_ids": [str(item.id)]} if batch else {
+            "url": playlist_url(item), "item_id": str(item.id),
+        }
+        endpoint = "/api/crawl/batch" if batch else "/api/crawl"
+        assert env.client.post(endpoint, json=refresh).status_code == 404
+        create = {"urls": [playlist_url(item)]} if batch else {"url": playlist_url(item)}
+        create.update(group="Denied", target_user_id=str(env.users[owner].id))
+        assert env.client.post(endpoint, json=create).status_code == 403
+    assert (ids(env, Item), ids(env, CrawlJob), ids(env, RawResponse), ids(env, MetricsSnapshot)) == before
+    assert env.scheduled == []
+
+
+@pytest.mark.parametrize("actor", ["admin", "manager", "assigned"])
+def test_spotify_own_http_crud_and_jobs(env, actor):
+    env.actor = actor
+    own = env.items[actor]
+    own_user = str(env.users[actor].id)
+    assert env.client.get("/api/items").json()["total"] == 1
+    assert env.client.get("/api/items/summary").json()["all_total"] == 1
+    moved = env.client.post("/api/items/move", json={
+        "item_ids": [str(own.id)], "user_id": own_user, "group": "Own moved",
+    })
+    assert moved.status_code == 200 and moved.json()["moved"] == 1
+    renamed = env.client.patch("/api/items/group", params={"old_group": "Own moved", "new_group": "Own renamed"})
+    assert renamed.status_code == 200 and renamed.json()["updated"] == 1
+    refresh = env.client.post("/api/crawl", json={"url": playlist_url(own), "item_id": str(own.id)})
+    assert refresh.status_code == 200, refresh.text
+    job_id = refresh.json()["job_id"]
+    assert env.client.get(f"/api/jobs/{job_id}").status_code == 200
+    assert env.client.post("/api/jobs/batch", json={"job_ids": [job_id]}).json()["jobs"][0]["id"] == job_id
+    new_url = "https://open.spotify.com/track/" + "Z" * 22
+    created = env.client.post("/api/crawl/batch", json={"urls": [new_url], "group": "Own new", "target_user_id": own_user})
+    assert created.status_code == 200 and created.json()["count"] == 1
+    with Session(env.engine) as session:
+        jobs = session.scalars(select(CrawlJob)).all()
+        assert len(jobs) == 2
+        assert all(job.user_id == env.users[actor].id for job in jobs)
+        assert all(session.get(Item, job.item_id).user_id == env.users[actor].id for job in jobs)
+    assert env.client.delete(f"/api/items-by-id/{own.id}").status_code == 200
+    assert env.client.delete("/api/items").json()["deleted"] == 1
+    assert ids(env, Item) == {env.items[name].id for name in NAMES if name != actor}
+    assert len(rows(env, RawResponse)) == len(NAMES) - 1
+
+
+@pytest.mark.parametrize("actor", ["admin", "manager"])
+def test_management_responses_redact_private_data_but_keep_account_access(env, actor):
+    env.actor = actor
+    with Session(env.engine) as session:
+        for user in session.scalars(select(User)):
+            user.custom_groups = json.dumps([f"private-{user.username}"])
+            user.ui_preferences = json.dumps({"row_order": [f"private-{user.username}"]})
+        session.commit()
+    listed = env.client.get("/api/auth/users")
+    assert listed.status_code == 200
+    visible = NAMES if actor == "admin" else ("manager", "assigned")
+    assert {row["username"] for row in listed.json()} == set(visible)
+    for row in listed.json():
+        assert row["role"] == env.users[row["username"]].role
+        assert row["display_name"] == env.users[row["username"]].display_name
+        assert row["custom_groups"] == ([f"private-{actor}"] if row["username"] == actor else [])
+        assert "ui_preferences" not in row
+    target = str(env.users["assigned"].id)
+    response = env.client.patch(f"/api/auth/users/{target}", json={"display_name": "Managed"})
+    assert response.status_code == 200 and response.json()["custom_groups"] == []
+    assert env.client.post(f"/api/auth/users/{target}/reset-password", json={"new_password": "pass"}).status_code == 200
+    assert env.client.get(f"/api/auth/users/{target}/groups").status_code == 403
+    assert env.client.put(f"/api/auth/users/{target}/groups", json={"groups": ["Denied"]}).status_code == 403
+    mine = env.client.get("/api/auth/me/preferences")
+    assert mine.status_code == 200 and mine.json()["preferences"]["row_order"] == [f"private-{actor}"]
+    saved = env.client.put("/api/auth/me/preferences", json={
+        "user_id": target, "preferences": {"row_order": ["own-new"]},
+    })
+    assert saved.status_code == 200
+    with Session(env.engine) as session:
+        foreign = session.get(User, env.users["assigned"].id)
+        assert json.loads(foreign.custom_groups) == ["private-assigned"]
+        assert json.loads(foreign.ui_preferences)["row_order"] == ["private-assigned"]
+    global_saved = env.client.put("/api/auth/admin/preferences", json={"playlist_clipboard_line_limit": 12})
+    assert global_saved.status_code == (200 if actor == "admin" else 403)
+    if actor == "admin":
+        assert env.client.get("/api/auth/me/preferences").json()["global_preferences"]["playlist_clipboard_line_limit"] == 12
+
+
+@pytest.mark.parametrize("actor", ["admin", "manager", "assigned"])
+def test_me_groups_profile_preferences_are_always_actor_owned(env, actor):
+    env.actor = actor
+    foreign = "unassigned"
+    target = str(env.users[foreign].id)
+    response = env.client.put("/api/auth/me/groups", json={
+        "groups": [" Own ", "Own", ""], "target_user_id": target,
+    })
+    assert response.status_code == 200 and response.json() == {"groups": ["Own"]}
+    assert env.client.get("/api/auth/me/groups").json() == {"groups": ["Own"]}
+    assert env.client.get("/api/auth/me").json()["custom_groups"] == ["Own"]
+    updated = env.client.patch("/api/auth/me", json={"display_name": "Own profile"})
+    assert updated.status_code == 200 and updated.json()["id"] == str(env.users[actor].id)
+    saved = env.client.put("/api/auth/me/preferences", json={
+        "preferences": {"row_order": ["Own row"]}, "target_user_id": target,
+    })
+    assert saved.status_code == 200
+    assert env.client.get("/api/auth/me/preferences").json()["preferences"]["row_order"] == ["Own row"]
+    with Session(env.engine) as session:
+        other = session.get(User, env.users[foreign].id)
+        assert not other.custom_groups and not other.ui_preferences
+        assert other.display_name == env.users[foreign].display_name
+    response = env.client.put("/api/auth/admin/preferences", json={"playlist_clipboard_line_limit": 15})
+    assert response.status_code == (200 if actor == "admin" else 403)

@@ -15,5 +15,5 @@ Read this after `AGENTS.md` and `docs/PROJECT_BRIEF.md`.
 ## Current High-Value Context
 
 - Large accounts can have hundreds of Spotify links; frontend must avoid rendering all expensive UI work in one blocking frame.
-- Admin user filtering must reset list/group scope immediately and ignore stale in-flight responses from the previous user.
+- Every data view uses the signed-in account only, including admin/manager. User management permissions remain separate; ignore stale responses from an earlier login.
 - The backend item list endpoint should keep latest metrics queries set-based and indexed rather than doing per-item lookups.

@@ -63,7 +63,7 @@ def _public_email(email: str | None) -> str | None:
     return email
 
 
-def _user_response(user: User) -> UserResponse:
+def _user_response(user: User, *, include_private: bool = True) -> UserResponse:
     try:
         custom_groups = json.loads(user.custom_groups) if user.custom_groups else []
     except (json.JSONDecodeError, TypeError):
@@ -83,7 +83,7 @@ def _user_response(user: User) -> UserResponse:
         created_at=user.created_at.isoformat() if user.created_at else None,
         last_login=user.last_login.isoformat() if user.last_login else None,
         avatar=user.avatar,
-        custom_groups=custom_groups,
+        custom_groups=custom_groups if include_private else [],
     )
 
 
@@ -237,7 +237,7 @@ async def list_users(
         select(User).where(user_scope_condition(admin)).order_by(User.created_at)
     )
     users = result.scalars().all()
-    return [_user_response(u) for u in users]
+    return [_user_response(u, include_private=u.id == admin.id) for u in users]
 
 
 @router.post("/users", response_model=UserResponse, status_code=201)
@@ -288,7 +288,7 @@ async def admin_create_user(
     )
     db.add(user)
     await db.flush()
-    return _user_response(user)
+    return _user_response(user, include_private=user.id == admin.id)
 
 
 # ---------------------------------------------------------------------------
@@ -572,7 +572,7 @@ async def admin_update_user(
         user.manager_id = next_manager_id
 
     await db.flush()
-    return _user_response(user)
+    return _user_response(user, include_private=user.id == admin.id)
 
 
 @router.post("/users/{user_id}/reset-password")
@@ -599,7 +599,7 @@ async def admin_get_user_groups(
     admin: User = Depends(get_manager_or_admin_user),
     db: AsyncSession = Depends(get_db),
 ):
-    """Get groups for self or an accessible user."""
+    """Get the actor's own groups; management rights do not grant data access."""
     user = await require_user_access(db, admin, user_id, management=False)
     try:
         groups = json.loads(user.custom_groups) if user.custom_groups else []
@@ -615,7 +615,7 @@ async def admin_save_user_groups(
     admin: User = Depends(get_manager_or_admin_user),
     db: AsyncSession = Depends(get_db),
 ):
-    """Save groups for self or an accessible user."""
+    """Save the actor's own groups."""
     user = await require_user_access(db, admin, user_id, management=False)
     groups = req.get("groups", [])
     if not isinstance(groups, list):

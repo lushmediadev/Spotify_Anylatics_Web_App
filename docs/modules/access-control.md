@@ -13,15 +13,16 @@
 - `backend/app/models/user.py`: nullable UUID `manager_id`, self FK with `SET NULL`.
 
 ## Invariants
-- Admin accesses all accounts; global preferences remain admin-only.
-- Manager accesses own resources and role=user accounts assigned via manager_id; account-management actions on own manager account use profile endpoints.
-- User accesses own resources only. Manager cannot elevate roles, reassign users, or access another manager/admin.
+- Resource data is own-account-only for all three roles: Spotify links/groups/jobs/exports and YouTube channels/groups/playlist associations/keys. No account filter or impersonation flow.
+- Account management remains separate: admin manages all accounts and global preferences; manager manages assigned role=user accounts. Own manager profile uses profile endpoints.
+- Manager cannot elevate roles, reassign users, or manage another manager/admin. Private group preferences of other accounts are not part of account-list/profile management responses.
 - Explicit null manager_id clears assignment; omitted manager_id preserves it.
 - Reassign users before deleting/demoting their manager. Prevent deleting/demoting/deactivating own admin or last active admin.
 - List/export/delete/refresh and job visibility share server-side ownership enforcement; old jobs resolve ownership through their item.
 
 ## Known Pitfalls
 - Frontend role cache is refreshed via `/auth/me` during bootstrap; UI visibility never substitutes for backend authorization.
+- `user_scope_condition` is an account-management predicate, not a resource data predicate. Resource endpoints use `owner_scope_condition`; `require_user_access` distinguishes data access from `management=True`.
 - Existing accounts receive null manager_id through an additive startup migration; no account is automatically reassigned.
 
 ## Verification

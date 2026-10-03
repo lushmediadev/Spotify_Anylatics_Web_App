@@ -575,15 +575,15 @@
             host.querySelector('[data-check]').addEventListener('click', () => run(true));
         } catch (_) { if (current()) host.textContent = 'Không thể tải keys của bạn. Mở lại settings để thử lại.'; }
     }
-    function setUserFilter(userId) {
-        const next = userId ? String(userId) : '';
+    function syncAccountScope() {
+        const next = String(state.getUser()?.id || '');
         if (state.userId === next) return;
         closeModal(); closeMenu(); state.userId = next;
         return changeScope(true);
     }
-    function show(options = {}) {
+    function show() {
         mount();
-        if (Object.prototype.hasOwnProperty.call(options, 'userId')) setUserFilter(options.userId);
+        syncAccountScope();
         state.visible = true; state.host.hidden = false;
         state.tools.hidden = false;
         renderRail();
@@ -616,5 +616,5 @@
     }
     document.addEventListener('pointerdown', event => { if (state.menu && !state.menu.contains(event.target)) closeMenu(); });
     document.addEventListener('focusin', event => { if (state.menu && !state.menu.contains(event.target)) closeMenu(); });
-    window.ChannelPlaylists = { init, show, hide, reload, showKeySettings, setUserFilter };
+    window.ChannelPlaylists = { init, show, hide, reload, showKeySettings, syncAccountScope };
 }());

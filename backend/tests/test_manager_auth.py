@@ -211,8 +211,8 @@ def test_manager_assigned_update_reset_groups_and_delete(accounts):
     assert response.is_active is False
     _run(auth_api.admin_reset_password(target_id, auth_api.AdminResetPasswordRequest(new_password="pass"), actor, db))
     assert verify_password("pass", target.password_hash)
-    assert _run(auth_api.admin_save_user_groups(target_id, {"groups": [" Jazz ", "Jazz", ""]}, actor, db)) == {"groups": ["Jazz"]}
-    assert _run(auth_api.admin_get_user_groups(target_id, actor, db)) == {"groups": ["Jazz"]}
+    _expect_status(403, auth_api.admin_save_user_groups(target_id, {"groups": ["Jazz"]}, actor, db))
+    _expect_status(403, auth_api.admin_get_user_groups(target_id, actor, db))
     assert _run(auth_api.admin_delete_user(target_id, actor, db))["ok"]
     assert db.session.get(User, target.id) is None
     assert {query.table.name for query in db.dependent_queries if not query.is_select} == {"items", "crawl_jobs"}

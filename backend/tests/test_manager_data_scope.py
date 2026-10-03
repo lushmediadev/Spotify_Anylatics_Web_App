@@ -61,8 +61,8 @@ class AsyncSessionAdapter:
         self.session.delete(instance)
 
 
-ALLOWED = ("manager", "assigned", "assigned_two")
-FORBIDDEN = ("unassigned", "other_manager", "admin", "linked_manager", "linked_admin")
+ALLOWED = ("manager",)
+FORBIDDEN = ("assigned", "assigned_two", "unassigned", "other_manager", "admin", "linked_manager", "linked_admin")
 
 
 @pytest.fixture
@@ -151,7 +151,7 @@ def url(item):
 
 @pytest.mark.parametrize("actor,names", [
     ("manager", ALLOWED), ("assigned", ("assigned",)),
-    ("admin", ALLOWED + FORBIDDEN + ("legacy",)),
+    ("admin", ("admin",)),
 ])
 def test_list_and_summary_scope(scope_db, actor, names):
     response = call(scope_db, items_api.list_items, actor=actor)
@@ -161,7 +161,7 @@ def test_list_and_summary_scope(scope_db, actor, names):
     assert summary.total == summary.all_total == len(names)
     assert [(group.name, group.count) for group in summary.groups] == [("shared", len(names))]
     if actor == "manager":
-        assert (summary.active, summary.errors, summary.crawling) == (1, 1, 1)
+        assert (summary.active, summary.errors, summary.crawling) == (1, 0, 0)
 
 
 @pytest.mark.parametrize("owner", ALLOWED + FORBIDDEN)
@@ -177,8 +177,7 @@ def test_explicit_list_summary_filter_intersects_manager_scope(scope_db, owner):
 
 def test_list_pagination_and_search_do_not_leak(scope_db):
     page = call(scope_db, items_api.list_items, limit=1, offset=1)
-    assert page.total == 3 and len(page.items) == 1
-    assert page.items[0].id in ids(scope_db, ALLOWED)
+    assert page.total == 1 and page.items == []
     for owner in FORBIDDEN:
         result = call(scope_db, items_api.list_items, search=scope_db.items[owner].spotify_id)
         assert result.total == 0 and result.items == []
@@ -195,21 +194,20 @@ def test_get_item_scope(scope_db, owner):
 
 
 @pytest.mark.parametrize("endpoint", [items_api.get_item, items_api.delete_item])
-def test_link_duplicates_require_explicit_owner(scope_db, endpoint):
+def test_link_duplicates_cannot_expand_own_scope(scope_db, endpoint):
     own = scope_db.items["manager"]
     assigned = scope_db.items["assigned"]
     assigned.spotify_id = own.spotify_id
     scope_db.session.commit()
     before = remaining_ids(scope_db)
     args = dict(item_type="track", spotify_id=own.spotify_id)
-    denied(scope_db, endpoint, status=(409,), **args)
-    assert remaining_ids(scope_db) == before
-    response = call(scope_db, endpoint, user_id=str(scope_db.users["assigned"].id), **args)
+    denied(scope_db, endpoint, user_id=str(scope_db.users["assigned"].id), **args)
+    response = call(scope_db, endpoint, **args)
     if endpoint is items_api.get_item:
-        assert response.id == str(assigned.id)
+        assert response.id == str(own.id)
     else:
         assert response["deleted"] == 1
-        assert remaining_ids(scope_db) == before - {str(assigned.id)}
+        assert remaining_ids(scope_db) == before - {str(own.id)}
         assert scope_db.session.scalar(select(RawResponse).where(RawResponse.spotify_id == own.spotify_id))
 
 
@@ -229,7 +227,7 @@ def test_move_mixed_ids_only_changes_scoped_rows(scope_db):
     response = call(scope_db, items_api.move_items_group, payload=ItemMoveRequest(
         item_ids=[item.id for item in scope_db.items.values()], group="moved",
     ))
-    assert response["moved"] == 3
+    assert response["moved"] == 1
     scope_db.session.expire_all()
     for name, item in scope_db.items.items():
         assert item.group == ("moved" if name in ALLOWED else "shared")
@@ -250,7 +248,7 @@ def test_move_explicit_owner_intersects_scope(scope_db, owner):
         assert item.group == ("moved" if name == owner and owner in ALLOWED else "shared")
 
 
-@pytest.mark.parametrize("owner", [None, "assigned", *FORBIDDEN])
+@pytest.mark.parametrize("owner", [None, *FORBIDDEN])
 def test_rename_defaults_to_own_and_explicit_owner_intersects_scope(scope_db, owner):
     args = dict(old_group="shared", new_group="renamed")
     if owner is not None:
@@ -295,7 +293,7 @@ def test_delete_scope_and_dependent_rows(scope_db, endpoint, owner):
         assert scope_db.session.scalar(select(MetricsSnapshot).where(MetricsSnapshot.item_id == item_id)) is not None
 
 
-@pytest.mark.parametrize("owner", [None, "assigned", *FORBIDDEN])
+@pytest.mark.parametrize("owner", [None, *FORBIDDEN])
 def test_clear_scope_and_explicit_owner(scope_db, owner):
     before = remaining_ids(scope_db)
     args = dict(group="shared")
@@ -379,17 +377,17 @@ def test_refresh_explicit_target_must_match_item_owner(scope_db, batch):
     req = CrawlBatchRequest(urls=[url(item)], item_ids=[item.id], **args) if batch else CrawlRequest(
         url=url(item), item_id=item.id, **args,
     )
-    denied(scope_db, crawl_api.crawl_batch if batch else crawl_api.crawl, status=(400,), req=req)
+    denied(scope_db, crawl_api.crawl_batch if batch else crawl_api.crawl, status=(403,), req=req)
     assert scope_db.session.scalars(select(CrawlJob)).all() == []
     assert scope_db.scheduled == []
 
 
 def test_batch_refresh_rolls_back_on_out_of_scope_row(scope_db):
-    allowed = scope_db.items["assigned"]
+    allowed = scope_db.items["manager"]
     forbidden = scope_db.items["unassigned"]
     req = CrawlBatchRequest(urls=[url(allowed), url(forbidden)], item_ids=[allowed.id, forbidden.id])
     denied(scope_db, crawl_api.crawl_batch, status=(404,), req=req)
-    assert allowed.status == "error" and forbidden.status == "active"
+    assert allowed.status == "active" and forbidden.status == "active"
     assert scope_db.session.scalars(select(CrawlJob)).all() == []
     assert scope_db.scheduled == []
 
@@ -400,7 +398,7 @@ def seed_jobs(state):
         # Legacy jobs may record the actor rather than canonical item owner.
         actor_id = state.users["unassigned"].id if name in ALLOWED else state.users["manager"].id
         jobs[name] = CrawlJob(item_id=item.id, user_id=actor_id, spotify_url=url(item), result={"owner": name})
-    for owner in ("manager", "assigned", *FORBIDDEN):
+    for owner in ALLOWED + FORBIDDEN:
         jobs[f"standalone_{owner}"] = CrawlJob(
             item_id=None, user_id=state.users[owner].id,
             spotify_url="https://open.spotify.com/track/standalone", result={"owner": owner},
@@ -414,10 +412,7 @@ def seed_jobs(state):
 @pytest.mark.parametrize("actor", ["manager", "assigned", "admin"])
 def test_jobs_canonical_item_owner_and_standalone_fallback(scope_db, actor):
     jobs = seed_jobs(scope_db)
-    names = set(jobs) if actor == "admin" else (
-        set(ALLOWED) | {"standalone_manager", "standalone_assigned"} if actor == "manager"
-        else {"assigned", "standalone_assigned"}
-    )
+    names = {actor, f"standalone_{actor}"}
     requested = list(reversed(list(jobs.values())))
     response = call(scope_db, jobs_api.get_jobs_batch, actor=actor, req=JobBatchRequest(
         job_ids=["invalid", *[str(job.id) for job in requested], str(requested[0].id)],
@@ -432,8 +427,8 @@ def test_jobs_canonical_item_owner_and_standalone_fallback(scope_db, actor):
             denied(scope_db, jobs_api.get_job, actor=actor, status=(404,), job_id=str(job.id))
 
 
-@pytest.mark.parametrize("actor,owner", [("assigned", "assigned"), ("admin", "unassigned"), ("admin", "legacy")])
-def test_refresh_user_admin_compatibility_and_legacy_job_owner(scope_db, actor, owner):
+@pytest.mark.parametrize("actor,owner", [("assigned", "assigned"), ("admin", "admin"), ("manager", "manager")])
+def test_refresh_all_roles_preserve_own_job_owner(scope_db, actor, owner):
     item = scope_db.items[owner]
     target = item.user_id if actor == "admin" and item.user_id is not None else None
     response = call(scope_db, crawl_api.crawl, actor=actor, req=CrawlRequest(
@@ -471,7 +466,7 @@ def test_manager_batch_refresh_has_no_per_item_user_lookup(scope_db):
     finally:
         event.remove(engine, "before_cursor_execute", capture)
     assert response.count == len(selected)
-    # SQL subqueries against users are expected; standalone User ORM loads are not.
+    # Ownership checks must not introduce per-item User ORM loads.
     assert not [sql for sql in statements if sql.lstrip().lower().startswith("select users.")]
     assert len(statements) == len(selected)
     assert len(scope_db.scheduled) == len(selected)
@@ -482,9 +477,9 @@ def test_manager_batch_refresh_has_no_per_item_user_lookup(scope_db):
 
 @pytest.mark.parametrize("batch", [False, True])
 def test_manager_duplicate_crawl_is_owner_specific(scope_db, batch):
-    existing = scope_db.items["assigned"]
+    existing = scope_db.items["manager"]
     endpoint = crawl_api.crawl_batch if batch else crawl_api.crawl
-    args = dict(group="new", target_user_id=scope_db.users["assigned"].id)
+    args = dict(group="new", target_user_id=scope_db.users["manager"].id)
     req = CrawlBatchRequest(urls=[url(existing)], **args) if batch else CrawlRequest(url=url(existing), **args)
     response = call(scope_db, endpoint, req=req)
     if batch:
@@ -495,12 +490,8 @@ def test_manager_duplicate_crawl_is_owner_specific(scope_db, batch):
     assert scope_db.scheduled == []
     args["target_user_id"] = scope_db.users["assigned_two"].id
     req = CrawlBatchRequest(urls=[url(existing)], **args) if batch else CrawlRequest(url=url(existing), **args)
-    response = call(scope_db, endpoint, req=req)
-    job_id = response.job_ids[0] if batch else response.job_id
-    job = scope_db.session.get(CrawlJob, uuid.UUID(job_id))
-    new_item = scope_db.session.get(Item, job.item_id)
-    assert new_item.id != existing.id and new_item.spotify_id == existing.spotify_id
-    assert job.user_id == new_item.user_id == scope_db.users["assigned_two"].id
+    denied(scope_db, endpoint, status=(403,), req=req)
+    assert scope_db.session.scalars(select(CrawlJob)).all() == []
 
 
 @pytest.mark.parametrize("batch", [False, True])
@@ -518,72 +509,108 @@ def test_jobs_invalid_id_is_400(scope_db):
 
 
 @pytest.mark.parametrize("endpoint", [items_api.get_item, items_api.delete_item])
-def test_admin_default_duplicate_link_remains_409(scope_db, endpoint):
+def test_admin_default_duplicate_link_only_affects_own(scope_db, endpoint):
     own = scope_db.items["admin"]
     scope_db.items["unassigned"].spotify_id = own.spotify_id
     scope_db.session.commit()
     before = remaining_ids(scope_db)
-    denied(scope_db, endpoint, actor="admin", status=(409,), item_type="track", spotify_id=own.spotify_id)
-    assert remaining_ids(scope_db) == before
+    response = call(scope_db, endpoint, actor="admin", item_type="track", spotify_id=own.spotify_id)
+    if endpoint is items_api.get_item:
+        assert response.id == str(own.id)
+        assert remaining_ids(scope_db) == before
+    else:
+        assert response["deleted"] == 1
+        assert remaining_ids(scope_db) == before - {str(own.id)}
 
 
-def test_admin_default_move_is_unrestricted_including_legacy(scope_db):
+def test_admin_default_move_only_own_excluding_legacy(scope_db):
     response = call(scope_db, items_api.move_items_group, actor="admin", payload=ItemMoveRequest(
         item_ids=[item.id for item in scope_db.items.values()], group="changed",
     ))
-    assert response["moved"] == len(scope_db.items)
+    assert response["moved"] == 1
     scope_db.session.expire_all()
-    assert all(item.group == "changed" for item in scope_db.items.values())
+    assert all(item.group == ("changed" if name == "admin" else "shared")
+               for name, item in scope_db.items.items())
 
 
-def test_admin_default_rename_only_own_and_legacy(scope_db):
+def test_admin_default_rename_only_own_excluding_legacy(scope_db):
     response = call(scope_db, items_api.rename_group, actor="admin", old_group="shared", new_group="changed")
-    assert response["updated"] == 2
+    assert response["updated"] == 1
     scope_db.session.expire_all()
     for name, item in scope_db.items.items():
-        assert item.group == ("changed" if name in ("admin", "legacy") else "shared")
+        assert item.group == ("changed" if name == "admin" else "shared")
 
 
-def test_admin_default_clear_is_unrestricted_including_legacy(scope_db):
+def test_admin_default_clear_only_own_excluding_legacy(scope_db):
+    before = remaining_ids(scope_db)
     response = call(scope_db, items_api.clear_items, actor="admin")
-    assert response["deleted"] == len(scope_db.items)
-    assert remaining_ids(scope_db) == set()
-    assert scope_db.session.scalars(select(MetricsSnapshot)).all() == []
-    assert scope_db.session.scalars(select(RawResponse)).all() == []
+    assert response["deleted"] == 1
+    assert remaining_ids(scope_db) == before - ids(scope_db, ("admin",))
+    assert len(scope_db.session.scalars(select(MetricsSnapshot)).all()) == len(before) - 1
+    assert len(scope_db.session.scalars(select(RawResponse)).all()) == len(before) - 1
 
 
-def test_admin_export_all_owners_and_legacy(scope_db):
+def test_admin_export_denies_foreign_and_legacy(scope_db):
     selected = list(scope_db.items.values())
-    response = call(scope_db, items_api.export_items, actor="admin", payload=items_api.ItemExportRequest(
+    denied(scope_db, items_api.export_items, actor="admin", status=(404,), payload=items_api.ItemExportRequest(
         action="track-offline", item_ids=[str(item.id) for item in selected],
     ))
-    assert response["count"] == len(selected)
-    assert [row[1] for row in response["rows"]] == [url(item) for item in selected]
+    response = call(scope_db, items_api.export_items, actor="admin", payload=items_api.ItemExportRequest(
+        action="track-offline", item_ids=[str(scope_db.items["admin"].id)],
+    ))
+    assert response["count"] == 1
 
 
 @pytest.mark.parametrize("batch", [False, True])
-def test_admin_refresh_without_target_resolves_item_owner(scope_db, batch):
+def test_admin_refresh_without_target_denies_foreign_owner(scope_db, batch):
     item = scope_db.items["assigned"]
     req = CrawlBatchRequest(urls=[url(item)], item_ids=[item.id]) if batch else CrawlRequest(
         url=url(item), item_id=item.id,
     )
-    response = call(scope_db, crawl_api.crawl_batch if batch else crawl_api.crawl, actor="admin", req=req)
-    job_id = response.job_ids[0] if batch else response.job_id
-    job = scope_db.session.get(CrawlJob, uuid.UUID(job_id))
-    assert job.item_id == item.id and job.user_id == item.user_id
-    assert len(scope_db.scheduled) == 1
+    denied(scope_db, crawl_api.crawl_batch if batch else crawl_api.crawl, actor="admin", status=(404,), req=req)
+    assert scope_db.scheduled == []
 
 
 @pytest.mark.parametrize("batch", [False, True])
-def test_admin_new_target_persists_canonical_job_owner(scope_db, batch):
+def test_admin_new_foreign_target_is_denied(scope_db, batch):
     target = scope_db.users["unassigned"]
     args = dict(group="new", target_user_id=target.id)
     new_url = "https://open.spotify.com/track/adminnew00000000000001"
     req = CrawlBatchRequest(urls=[new_url], **args) if batch else CrawlRequest(url=new_url, **args)
-    response = call(scope_db, crawl_api.crawl_batch if batch else crawl_api.crawl, actor="admin", req=req)
-    job_id = response.job_ids[0] if batch else response.job_id
-    job = scope_db.session.get(CrawlJob, uuid.UUID(job_id))
+    denied(scope_db, crawl_api.crawl_batch if batch else crawl_api.crawl, actor="admin", status=(403,), req=req)
+    assert scope_db.session.scalars(select(CrawlJob)).all() == []
+    assert scope_db.scheduled == []
+
+
+@pytest.mark.parametrize("actor", ["admin", "manager", "assigned"])
+def test_jobs_reassignment_revokes_creator_access(scope_db, actor):
+    item = scope_db.items[actor]
+    job = CrawlJob(item_id=item.id, user_id=scope_db.users[actor].id,
+                   spotify_url=url(item), result={"private": actor})
+    scope_db.session.add(job)
+    scope_db.session.commit()
+    assert call(scope_db, jobs_api.get_job, actor=actor, job_id=str(job.id)).id == str(job.id)
+    item.user_id = scope_db.users["unassigned"].id
+    scope_db.session.commit()
+    denied(scope_db, jobs_api.get_job, actor=actor, status=(404,), job_id=str(job.id))
+    assert call(scope_db, jobs_api.get_jobs_batch, actor=actor,
+                req=JobBatchRequest(job_ids=[str(job.id)])).jobs == []
+    assert call(scope_db, jobs_api.get_job, actor="unassigned", job_id=str(job.id)).id == str(job.id)
+
+
+def test_admin_null_owner_item_is_not_dedupe_or_refresh_target(scope_db):
+    legacy = scope_db.items["legacy"]
+    assert asyncio.run(crawl_api._find_existing_owned_item(
+        scope_db.db, scope_db.users["admin"], scope_db.users["admin"].id,
+        legacy.item_type, legacy.spotify_id,
+    )) is None
+    denied(scope_db, crawl_api.crawl, actor="admin", status=(404,), req=CrawlRequest(
+        url=url(legacy), item_id=legacy.id,
+    ))
+    response = call(scope_db, crawl_api.crawl, actor="admin", req=CrawlRequest(
+        url=url(legacy), group="Own",
+    ))
+    job = scope_db.session.get(CrawlJob, uuid.UUID(response.job_id))
     item = scope_db.session.get(Item, job.item_id)
-    assert item.user_id == job.user_id == target.id
-    assert call(scope_db, jobs_api.get_job, actor="unassigned", job_id=job_id).id == job_id
-    denied(scope_db, jobs_api.get_job, status=(404,), job_id=job_id)
+    assert item.id != legacy.id and item.user_id == scope_db.users["admin"].id
+    assert legacy.user_id is None

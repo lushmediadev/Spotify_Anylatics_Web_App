@@ -4,7 +4,7 @@ import asyncio
 import uuid
 
 from fastapi import APIRouter, Depends, HTTPException
-from sqlalchemy import or_, select
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import get_db
@@ -72,11 +72,9 @@ async def _find_existing_owned_item(
         Item.item_type == item_type,
     )
 
-    if current_user.role == "admin" and target_user_id == current_user.id:
-        # Legacy admin rows may still have null user_id.
-        query = query.where(or_(Item.user_id == target_user_id, Item.user_id.is_(None)))
-    else:
-        query = query.where(Item.user_id == target_user_id)
+    query = query.where(
+        owner_scope_condition(current_user, Item.user_id), Item.user_id == target_user_id,
+    )
 
     result = await db.execute(query.order_by(Item.updated_at.desc()))
     return result.scalars().first()

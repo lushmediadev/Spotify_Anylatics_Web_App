@@ -158,7 +158,7 @@ def test_item_summary_returns_counts_and_group_totals():
         response = await items_api.item_summary(
             db=FakeDB(),
             current_user=current_user,
-            user_id=str(uuid.uuid4()),
+            user_id=str(current_user.id),
             group="Jazz",
             search="focus",
         )

@@ -2,6 +2,7 @@
 
 | Decision | Reason | Impact | Date |
 | --- | --- | --- | --- |
+| Separate own-account resource access from role-based account administration | User removes the admin/manager account filter and requires logging into the actual account to inspect its data. | No ownership/schema migration; foreign data targets are denied while existing account-management and admin-global-settings permissions remain. Supersedes the earlier assigned-manager resource scope and cross-user filter decisions. | 2026-10-03 |
 | Reuse the original dashboard shell/components for Channel & Playlist | User rejects a separate toolbar, tiny table rows and visible pagination. | Shared topbar/group rail/hero/KPI/row classes; first filtered channel banner; right-click edits; complete scrollable group list. | 2026-10-03 |
 | Show named groups only for Spotify and Channel & Playlist | User removed both aggregate navigation entries. | Auto-select the first group after owner change; group discovery may still query aggregate counts internally. Deleting a Spotify group moves surviving links to named Ungrouped, not a hidden aggregate. | 2026-10-02 |
 | Integrate YouTube channels through additive APIs and references to existing Spotify playlists | Monitor channel view changes alongside playlist metrics without duplicated crawlers or deleting shared playlist records on unlink. | Per-owner keys; many-to-many channel-playlist links; standalone YTM remains unchanged. | 2026-10-02 |

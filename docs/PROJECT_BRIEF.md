@@ -35,4 +35,4 @@ SpotiCheck tracks public Spotify metrics for Artist, Track, Album, and Playlist 
 - Keep API payload keys backward compatible unless there is a migration plan.
 - After changing `frontend/app.js` or CSS, bump cache query params in `frontend/index.html`.
 - `final3.html` is a design reference only, not runtime source.
-- Do not treat group ownership labels as purely visual; admin/manager/user scope affects data access and sidebar counts.
+- All roles see and operate only their own resource data. Role-based account management is separate; ownership is enforced server-side.

@@ -2066,7 +2066,6 @@ select,
 select.settings-input,
 select.modal-input,
 select.modal-input-group,
-#admin-user-filter,
 #admin-edit-role {
   appearance: none;
   -webkit-appearance: none;
@@ -2093,7 +2092,6 @@ select.modal-input-group,
 select:focus,
 select.settings-input:focus,
 select.modal-input:focus,
-#admin-user-filter:focus,
 #admin-edit-role:focus {
   border-color: #1db954;
   background-color: var(--surface-0);
@@ -2165,7 +2163,6 @@ input:-webkit-autofill:focus {
 
 /* Keep light dropdown options across browsers */
 select option,
-#admin-user-filter option,
 #admin-edit-role option,
 #modal-group-select option {
   background-color: var(--surface-1) !important;

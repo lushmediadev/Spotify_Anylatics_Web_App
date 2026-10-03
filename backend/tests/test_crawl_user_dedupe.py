@@ -126,7 +126,7 @@ def test_crawl_rejects_new_link_without_group():
     asyncio.run(run())
 
 
-def test_admin_can_add_same_link_for_different_target_users():
+def test_admin_dedupe_query_always_intersects_own_scope():
     async def run():
         admin_user = SimpleNamespace(id=uuid.uuid4(), role="admin")
         user_one_id = uuid.uuid4()
@@ -137,7 +137,7 @@ def test_admin_can_add_same_link_for_different_target_users():
                 self.queries = []
 
             async def execute(self, query):
-                self.queries.append(str(query))
+                self.queries.append(query.compile())
 
                 class _ScalarResult:
                     def first(self_nonlocal):
@@ -167,9 +167,11 @@ def test_admin_can_add_same_link_for_different_target_users():
         )
 
         assert len(db.queries) == 2
-        assert "items.user_id = :user_id_1" in db.queries[0]
-        assert "items.user_id IS NULL" not in db.queries[0]
-        assert "items.user_id = :user_id_1" in db.queries[1]
-        assert "items.user_id IS NULL" not in db.queries[1]
+        for query, target in zip(db.queries, (user_one_id, user_two_id)):
+            assert "items.user_id = :user_id_1" in str(query)
+            assert "items.user_id = :user_id_2" in str(query)
+            assert "items.user_id IS NULL" not in str(query)
+            assert query.params["user_id_1"] == admin_user.id
+            assert query.params["user_id_2"] == target
 
     asyncio.run(run())

@@ -252,7 +252,6 @@ function setupAuthUI() {
             badge.innerHTML = '<span class="inline-flex items-center gap-1.5 text-[11px] font-bold uppercase tracking-[0.12em] text-primary"><span class="material-icons-round text-sm">admin_panel_settings</span>' + getRoleLabel(user.role) + ' Mode</span>';
             groupPanel.insertBefore(badge, groupPanel.firstChild);
         }
-        setupAdminUserFilter();
         // Add Users nav item for admin
         const nav = document.querySelector('#sidebar nav');
         if (nav && !document.getElementById('nav-users')) {
@@ -266,7 +265,6 @@ function setupAuthUI() {
             const settingsNav = document.getElementById('nav-settings');
             if (settingsNav) nav.insertBefore(usersLink, settingsNav);
         }
-        prefetchAdminUsers();
     }
 }
 
@@ -289,7 +287,6 @@ const state = {
     batchRefresh: null,
     pollTimer: null,
     apiOnline: false,
-    adminFilterUserId: null,
     adminUserList: [],
     adminUsersCacheTs: 0,
     adminUsersPromise: null,
@@ -1741,93 +1738,40 @@ function getGroupsFromUserRecord(userRecord) {
 }
 
 function getOwnerCustomGroups(ownerUserId) {
-    const ownerId = ownerUserId ? String(ownerUserId) : '';
-    const currentUser = getAuthUser();
-    if (canManageUsers(currentUser) && ownerId) {
-        const user = (state.adminUserList || []).find((u) => String(u.id || u._id || '') === ownerId);
-        return getGroupsFromUserRecord(user);
-    }
+    const ownId = String(getAuthUser()?.id || '');
+    if (ownerUserId && String(ownerUserId) !== ownId) return [];
     return (state.customGroups || []).map(normalizeStoredGroupName).filter(Boolean);
 }
 
 function setOwnerCustomGroups(ownerUserId, groups) {
-    const ownerId = ownerUserId ? String(ownerUserId) : '';
+    const ownId = String(getAuthUser()?.id || '');
+    if (!ownId || (ownerUserId && String(ownerUserId) !== ownId)) return [];
     const cleaned = Array.from(new Set((groups || []).map(normalizeStoredGroupName).filter(Boolean)));
-    if (ownerId) {
-        (state.adminUserList || []).forEach((u) => {
-            if (String(u.id || u._id || '') === ownerId) {
-                u.custom_groups = cleaned.slice();
-            }
-        });
-        _adminUsersCache = (_adminUsersCache || []).map((u) => {
-            if (String(u.id || u._id || '') !== ownerId) return u;
-            return { ...u, custom_groups: cleaned.slice() };
-        });
-        const currentUser = getAuthUser();
-        if (currentUser && String(currentUser.id || '') === ownerId) {
-            state.customGroups = cleaned.slice();
-            localStorage.setItem(getUserGroupStorageKey(), JSON.stringify(cleaned));
-        }
-    }
-    if (isAdminAllUsersMode() && ownerId) {
-        return cleaned;
-    }
-    state.customGroups = cleaned.slice();
+    state.customGroups = cleaned;
+    localStorage.setItem(getUserGroupStorageKey(), JSON.stringify(cleaned));
     return cleaned;
 }
 
 async function syncGroupsFromServer(targetUserId) {
     try {
-        var token = getAuthToken();
-        if (!token) return;
-        const requestedTargetUserId = targetUserId ? String(targetUserId) : null;
-        var url = CONFIG.API_BASE;
-        if (requestedTargetUserId) {
-            url += '/auth/users/' + requestedTargetUserId + '/groups';
-        } else {
-            url += '/auth/me/groups';
-        }
-        var res = await fetch(url, {
+        const token = getAuthToken();
+        const ownId = String(getAuthUser()?.id || '');
+        if (!token || !ownId || (targetUserId && String(targetUserId) !== ownId)) return;
+        const res = await fetch(CONFIG.API_BASE + '/auth/me/groups', {
             headers: { 'Authorization': 'Bearer ' + token },
         });
-        if (!res.ok) {
-            console.warn('[Groups Sync] Server returned', res.status);
-            return;
-        }
-        var data = await res.json();
-        const currentUser = getAuthUser();
-        if (
-            canManageUsers(currentUser)
-            && requestedTargetUserId
-            && String(state.adminFilterUserId || '') !== requestedTargetUserId
-        ) {
-            return;
-        }
-        var serverGroups = (data.groups || []).map(normalizeStoredGroupName).filter(Boolean);
-
-        if (requestedTargetUserId) {
-            // Admin viewing another user's groups
-            setOwnerCustomGroups(requestedTargetUserId, serverGroups);
-            state.customGroups = serverGroups.slice();
+        if (!res.ok) return;
+        const data = await res.json();
+        if (String(getAuthUser()?.id || '') !== ownId) return;
+        const serverGroups = (data.groups || []).map(normalizeStoredGroupName).filter(Boolean);
+        const localGroups = (state.customGroups || []).map(normalizeStoredGroupName).filter(Boolean);
+        if (!serverGroups.length && localGroups.length) {
+            state.customGroups = localGroups;
+            await saveGroupsToServer(localGroups);
         } else {
-            // Own groups â€” server is source of truth
-            // But if server is empty and local has groups, push local to server (first sync)
-            var localGroups = (state.customGroups || []).map(normalizeStoredGroupName).filter(Boolean);
-            if (serverGroups.length === 0 && localGroups.length > 0) {
-                // First time sync: upload local groups to server
-                state.customGroups = localGroups;
-                await saveGroupsToServer(localGroups);
-            } else {
-                // Server has data â€” use server as source of truth
-                state.customGroups = serverGroups;
-            }
-            if (currentUser?.id) {
-                setOwnerCustomGroups(String(currentUser.id), state.customGroups || []);
-            }
-            localStorage.setItem(getUserGroupStorageKey(), JSON.stringify(state.customGroups));
+            setOwnerCustomGroups(ownId, serverGroups);
         }
         syncGroupUI(true);
-        console.log('[Groups Sync] Synced', state.customGroups.length, 'groups for', requestedTargetUserId || 'self');
     } catch (err) {
         console.warn('[Groups Sync] Error:', err.message);
     }
@@ -1835,39 +1779,18 @@ async function syncGroupsFromServer(targetUserId) {
 
 async function saveGroupsToServer(groups, targetUserId) {
     try {
-        var token = getAuthToken();
-        if (!token) return;
-        var url = CONFIG.API_BASE;
-        // If admin is filtering a specific user, save to that user
-        var uid = targetUserId || state.adminFilterUserId;
-        var currentUser = getAuthUser();
-        if (uid && canManageUsers(currentUser) && uid !== currentUser.id) {
-            url += '/auth/users/' + uid + '/groups';
-        } else {
-            url += '/auth/me/groups';
-        }
-        const res = await fetch(url, {
+        const token = getAuthToken();
+        const ownId = String(getAuthUser()?.id || '');
+        if (!token || !ownId || (targetUserId && String(targetUserId) !== ownId)) return;
+        const res = await fetch(CONFIG.API_BASE + '/auth/me/groups', {
             method: 'PUT',
             headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + token },
             body: JSON.stringify({ groups: groups || state.customGroups }),
         });
-        if (!res.ok) {
-            throw new Error(`HTTP ${res.status}`);
-        }
+        if (!res.ok) throw new Error('HTTP ' + res.status);
         const payload = await res.json().catch(() => null);
-        if (payload && Array.isArray(payload.groups)) {
-            const synced = payload.groups.map(normalizeStoredGroupName).filter(Boolean);
-            if (uid) {
-                setOwnerCustomGroups(String(uid), synced);
-            } else {
-                const meId = currentUser?.id ? String(currentUser.id) : null;
-                if (meId) {
-                    setOwnerCustomGroups(meId, synced);
-                } else {
-                    state.customGroups = synced;
-                }
-            }
-        }
+        if (String(getAuthUser()?.id || '') !== ownId) return;
+        if (payload && Array.isArray(payload.groups)) setOwnerCustomGroups(ownId, payload.groups);
     } catch (err) {
         console.warn('[Groups Sync] Failed to save groups:', err.message);
     }
@@ -1880,16 +1803,7 @@ function saveCustomGroups() {
             .filter(Boolean)
     ));
     state.customGroups = cleaned;
-    var currentUser = getAuthUser();
-    if (canManageUsers(currentUser) && isAdminAllUsersMode() && currentUser.id) {
-        setOwnerCustomGroups(currentUser.id, cleaned);
-    }
-    // If admin is filtering another user, don't save to own localStorage
-    var filteringOther = state.adminFilterUserId && canManageUsers(currentUser) && state.adminFilterUserId !== currentUser.id;
-    if (!filteringOther) {
-        localStorage.setItem(getUserGroupStorageKey(), JSON.stringify(cleaned));
-    }
-    // Sync to server in background (will auto-target filtered user if admin)
+    localStorage.setItem(getUserGroupStorageKey(), JSON.stringify(cleaned));
     saveGroupsToServer(cleaned);
 }
 
@@ -2558,18 +2472,12 @@ function getCurrentUserLabel() {
 function getAdminTargetUserId() {
     const currentUser = getAuthUser();
     if (!canManageUsers(currentUser)) return null;
-    if (state.adminFilterUserId) {
-        return String(state.adminFilterUserId);
-    }
     return currentUser?.id ? String(currentUser.id) : null;
 }
 
 function getScopedGroupOwnerUserId() {
     const currentUser = getAuthUser();
     if (!currentUser?.id) return null;
-    if (canManageUsers(currentUser) && state.adminFilterUserId) {
-        return String(state.adminFilterUserId);
-    }
     return String(currentUser.id);
 }
 
@@ -2591,9 +2499,7 @@ function getAdminGroupDisplayName(groupName, ownerUserId = null) {
     }
 
     let ownerLabel = '';
-    if (state.adminFilterUserId) {
-        ownerLabel = getAdminUserLabelById(state.adminFilterUserId) || getCurrentUserLabel();
-    } else if (ownerUserId) {
+    if (ownerUserId) {
         ownerLabel = getAdminUserLabelById(ownerUserId) || getCurrentUserLabel();
     } else if ((state.customGroups || []).some((name) => normalizeStoredGroupName(name) === normalizeStoredGroupName(groupName))) {
         ownerLabel = getCurrentUserLabel();
@@ -2608,8 +2514,7 @@ function getAdminGroupDisplayName(groupName, ownerUserId = null) {
 function canManageGroupEntry(groupEntry) {
     if (!groupEntry || groupEntry.id === ALL_GROUP_ID) return false;
     const currentUser = getAuthUser();
-    if (currentUser?.role === 'admin') return true;
-    return true;
+    return Boolean(currentUser?.id && (!groupEntry.ownerUserId || String(groupEntry.ownerUserId) === String(currentUser.id)));
 }
 
 function rebuildGroups() {
@@ -2735,7 +2640,6 @@ function rebuildGroups() {
         remapped = state.groups.find((g) => {
             if (g.id === ALL_GROUP_ID) return false;
             if (normalizeGroupName(g.name).toLowerCase() !== previousName.toLowerCase()) return false;
-            if (state.adminFilterUserId) return true;
             if (previousOwner && g.ownerUserId) {
                 return String(g.ownerUserId) === previousOwner;
             }
@@ -2925,9 +2829,6 @@ function resolveSelectedGroupContext() {
     if (entry && entry.id !== ALL_GROUP_ID) {
         var nameFromEntry = normalizeStoredGroupName(entry.name);
         if (nameFromEntry) resolvedGroup = nameFromEntry;
-        if (canManageUsers(currentUser) && entry.ownerUserId) {
-            resolvedTargetUserId = String(entry.ownerUserId);
-        }
     }
 
     if (!resolvedGroup) {
@@ -2935,9 +2836,6 @@ function resolveSelectedGroupContext() {
         var parsedName = normalizeStoredGroupName(parsed ? parsed.name : '');
         if (parsedName && parsedName.toLowerCase() !== ALL_GROUP_ID) {
             resolvedGroup = parsedName;
-            if (canManageUsers(currentUser) && parsed?.ownerUserId) {
-                resolvedTargetUserId = String(parsed.ownerUserId);
-            }
         }
     }
 
@@ -3524,7 +3422,7 @@ function startRenameGroupFlow(rawGroupId) {
     const target = state.groups.find((g) => normalizeGroupName(g.id).toLowerCase() === groupId.toLowerCase());
     if (!target) return;
     if (!canManageGroupEntry(target)) {
-        showToast('Select that user in Filter by User to rename this group', 'info');
+        showToast('You can only rename your own groups', 'info');
         return;
     }
 
@@ -3550,7 +3448,8 @@ async function syncGroupItemsToServer(oldName, newName, ownerUserId = null, oldN
     const oldGroup = normalizeGroupName(oldName);
     if (!oldGroup) return Promise.resolve();
     const nextGroup = normalizeGroupName(newName);
-    const targetUserId = ownerUserId ? String(ownerUserId) : null;
+    const targetUserId = getScopedGroupOwnerUserId();
+    if (ownerUserId && String(ownerUserId) !== targetUserId) return;
     const candidates = Array.from(new Set([
         oldGroup,
         ...((Array.isArray(oldNameVariants) ? oldNameVariants : []).map((v) => normalizeGroupName(v)).filter(Boolean)),
@@ -3580,7 +3479,7 @@ function handleRenameGroup(rawGroupId, rawName, opts = {}) {
         return;
     }
     if (!canManageGroupEntry(target)) {
-        showToast('Select that user in Filter by User to rename this group', 'info');
+        showToast('You can only rename your own groups', 'info');
         state.renamingGroupId = null;
         renderGroups();
         return;
@@ -6423,120 +6322,6 @@ function getDemoData() {
     ];
 }
 
-async function setupAdminUserFilter() {
-    const user = getAuthUser();
-    if (!canManageUsers(user)) return;
-
-    try {
-        const users = await _fetchAdminUsers({ preferCache: true });
-        state.adminUserList = Array.isArray(users) ? users.slice() : [];
-        const currentUserId = String(user.id || '');
-        const hasSelectedUser = state.adminUserList.some((entry) => String(entry.id || entry._id || '') === String(state.adminFilterUserId || ''));
-        if (!hasSelectedUser) {
-            state.adminFilterUserId = currentUserId || null;
-        }
-        rebuildAdminUserFilterOptions();
-        if (state.items.length) {
-            rebuildGroups();
-            updateGroupHeader();
-            renderGroups();
-        }
-    } catch {
-        return;
-    }
-
-    const groupPanel = document.getElementById('group-panel');
-    if (!groupPanel || document.getElementById('admin-user-filter')) return;
-
-    const filterDiv = document.createElement('div');
-    filterDiv.className = 'px-5 py-2 border-b border-white/5';
-    filterDiv.id = 'admin-user-filter-wrap';
-    var filterLabel = document.createElement('label');
-    filterLabel.className = 'block text-[11px] font-bold uppercase tracking-[0.12em] text-secondary-text mb-2';
-    filterLabel.textContent = 'Filter by User';
-    filterDiv.appendChild(filterLabel);
-
-    var filterOptions = [];
-    for (var fi = 0; fi < state.adminUserList.length; fi++) {
-        var fu = state.adminUserList[fi];
-        filterOptions.push({value: fu.id || fu._id || '', label: fu.display_name || fu.username || String(fu.id)});
-    }
-    var filterDropdown = createCustomDropdown({
-        id: 'admin-user-filter',
-        options: filterOptions,
-        selected: state.adminFilterUserId || (user.id ? String(user.id) : ''),
-        onChange: handleAdminFilterChange
-    });
-    filterDiv.appendChild(filterDropdown);
-
-    // Insert after admin badge (if present), before the group search area
-    const adminBadge = document.getElementById('admin-badge');
-    if (adminBadge && adminBadge.nextSibling) {
-        groupPanel.insertBefore(filterDiv, adminBadge.nextSibling);
-    } else {
-        groupPanel.insertBefore(filterDiv, groupPanel.firstChild);
-    }
-
-}
-
-function rebuildAdminUserFilterOptions() {
-    const filterWrap = document.getElementById('admin-user-filter-dropdown');
-    if (!filterWrap) return;
-    const options = [];
-    (state.adminUserList || []).forEach((user) => {
-        options.push({
-            value: user.id || user._id || '',
-            label: user.display_name || user.username || String(user.id || user._id || ''),
-        });
-    });
-    updateCustomDropdownOptions('admin-user-filter-dropdown', options, state.adminFilterUserId || '');
-}
-
-function handleAdminFilterChange(val) {
-    const currentUser = getAuthUser();
-    const selectedUserId = val || (currentUser?.id ? String(currentUser.id) : null);
-    state.adminFilterUserId = selectedUserId;
-    state.activeGroup = ALL_GROUP_ID;
-    if (state.currentView === 'channels') {
-        state.dataLoadRequestId++;
-        state.items = [];
-        state.filteredItems = [];
-        state.itemSummary = null;
-        state.customGroups = selectedUserId ? getOwnerCustomGroups(selectedUserId) : [];
-        state.groups = [];
-        resetVirtualList(0, {});
-        window.ChannelPlaylists?.setUserFilter(selectedUserId);
-        return;
-    }
-    if (state.currentView && state.currentView !== 'linkchecker') return;
-    state.groupSearchQuery = '';
-    clearRowSelection();
-    clearGroupSelection();
-    state.items = [];
-    state.filteredItems = [];
-    state.draggingRowKeys = [];
-    state.dragOverRowKey = null;
-    state.contextMenuAnchorSelectionKey = null;
-    state.itemClipboard = { keys: [], mode: null };
-    state.customGroups = selectedUserId ? getOwnerCustomGroups(selectedUserId) : [];
-    state.itemSummary = null;
-    resetVirtualList(0, {});
-    state.groups = [];
-    rebuildGroups();
-    state.lastGroupRenderSignature = '';
-    syncGroupUI(true);
-
-    var pageTitle = document.getElementById('page-title');
-    var breadcrumb = document.getElementById('breadcrumb-group');
-    var selectedUser = state.adminUserList.find(function(u) { return String(u.id || u._id) === selectedUserId; });
-    var username = (selectedUser && (selectedUser.display_name || selectedUser.username)) || selectedUserId;
-    if (pageTitle) pageTitle.textContent = getActiveGroupName();
-    if (breadcrumb) breadcrumb.textContent = getActiveGroupName();
-
-    showInstantListOrLoading(getBackendListParams(), { preserveScroll: false });
-    syncGroupsFromServer(selectedUserId || null);
-    loadData({ preserveScroll: false, force: true });
-}
 
 async function loadVirtualPage(offset, opts = {}) {
     const normalizedOffset = Math.max(0, Math.floor(Number(offset || 0) / CONFIG.LIST_PAGE_SIZE) * CONFIG.LIST_PAGE_SIZE);
@@ -6619,10 +6404,6 @@ async function loadData(opts = {}) {
     try {
         const currentUser = getAuthUser();
         let params = {};
-        if (canManageUsers(currentUser)) {
-            await _fetchAdminUsers({ preferCache: Boolean(state.adminFilterUserId) });
-            if (requestId !== state.dataLoadRequestId) return;
-        }
         params = getBackendListParams();
         // Discover named groups without displaying an aggregate item page.
         if (state.activeGroup === ALL_GROUP_ID) {
@@ -6701,7 +6482,7 @@ async function runBackgroundSync(opts = {}) {
 
     state.remoteSyncInFlight = true;
     try {
-        await syncGroupsFromServer(state.adminFilterUserId || null);
+        await syncGroupsFromServer();
         await loadData({ preserveScroll: true });
     } catch (err) {
         console.warn('[Background Sync] Failed:', err.message);
@@ -6868,7 +6649,7 @@ function switchToView(view) {
     if (groupPanel) {
         setElementDisplay(groupPanel, ['linkchecker', 'channels'].includes(view) ? null : 'none');
         Array.from(groupPanel.children).forEach((child) => {
-            if (child.id !== 'admin-badge' && child.id !== 'admin-user-filter-wrap') {
+            if (child.id !== 'admin-badge') {
                 setElementDisplay(child, ['channel-group-rail', 'channel-group-tools'].includes(child.id)
                     ? (view === 'channels' ? null : 'none')
                     : (view === 'linkchecker' ? null : 'none'));
@@ -6906,7 +6687,7 @@ function switchToView(view) {
         if (breadcrumbParent) breadcrumbParent.textContent = 'YouTube';
         if (breadcrumb) breadcrumb.textContent = 'Channel & Playlist';
         if (pageTitle) pageTitle.textContent = 'Channel & Playlist';
-        window.ChannelPlaylists?.show({ userId: state.adminFilterUserId || getAuthUser()?.id });
+        window.ChannelPlaylists?.show();
     } else if (view === 'users') {
         setElementDisplay(adminPanel, 'block');
         if (breadcrumbParent) breadcrumbParent.textContent = 'Admin';
@@ -7239,16 +7020,6 @@ function renderAdminUsersLoading() {
     container.innerHTML = '<div class="p-5 rounded-xl border border-white/10 text-sm text-secondary-text" style="background:#1a1d21">Loading users...</div>';
 }
 
-function prefetchAdminUsers() {
-    var user = getAuthUser();
-    if (!canManageUsers(user)) return;
-    _fetchAdminUsers({ preferCache: true })
-        .then(function(users) {
-            state.adminUserList = Array.isArray(users) ? users.slice() : [];
-            rebuildAdminUserFilterOptions();
-        })
-        .catch(function() {});
-}
 
 async function _fetchAdminUsers(opts) {
     opts = opts || {};
@@ -7272,7 +7043,6 @@ async function _fetchAdminUsers(opts) {
         _adminUsersCache = Array.isArray(data) ? data : (data.users || []);
         state.adminUserList = _adminUsersCache.slice();
         state.adminUsersCacheTs = Date.now();
-        rebuildAdminUserFilterOptions();
         return _adminUsersCache;
     })
     .finally(function() {
@@ -7474,9 +7244,6 @@ async function submitAdminCreateUser() {
         showToast('User ' + username + ' created', 'success');
         closeAdminCreateModal();
         await loadAdminUsers({ force: true });
-        var filterWrap = document.getElementById('admin-user-filter-wrap');
-        if (filterWrap) filterWrap.remove();
-        await setupAdminUserFilter();
     } catch (err) {
         statusEl.textContent = err.message;
         statusEl.style.display = '';
@@ -7521,9 +7288,6 @@ async function saveAdminEditUser() {
         }
         closeAdminEditModal();
         await loadAdminUsers({ force: true });
-        var filterWrap = document.getElementById('admin-user-filter-wrap');
-        if (filterWrap) filterWrap.remove();
-        await setupAdminUserFilter();
     } catch (err) {
         statusEl.textContent = err.message;
         statusEl.style.display = '';
@@ -7659,9 +7423,6 @@ async function adminDeleteUser(userId, username) {
         if (!res.ok) throw new Error(data.detail || 'Failed to delete user');
         showToast('User ' + username + ' deleted permanently', 'success');
         await loadAdminUsers({ force: true });
-        var filterWrap = document.getElementById('admin-user-filter-wrap');
-        if (filterWrap) filterWrap.remove();
-        await setupAdminUserFilter();
     } catch (err) {
         showToast(err.message, 'error');
     }
@@ -8406,7 +8167,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         // Update hero image after data is rendered
         setTimeout(updateHeroImage, 100);
         // Sync groups from server
-        syncGroupsFromServer(state.adminFilterUserId || null);
+        syncGroupsFromServer();
         // Keep remote updates (from other users/tabs) in sync without manual refresh.
         startBackgroundSync();
     });

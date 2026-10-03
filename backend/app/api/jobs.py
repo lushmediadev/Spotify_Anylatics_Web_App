@@ -17,8 +17,6 @@ router = APIRouter()
 
 
 def _job_scope_condition(current_user: User):
-    if current_user.role == "admin":
-        return owner_scope_condition(current_user, CrawlJob.user_id)
     # Older jobs store the initiator, not necessarily the item's owner.
     # Resolve ownership in SQL so reassignment immediately revokes access.
     owned_item = select(Item.id).where(

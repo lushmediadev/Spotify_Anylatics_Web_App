@@ -1,5 +1,11 @@
 # Changelog
 
+### 2026-10-03 - Own-account data only
+- Removed: admin/manager account filter and cross-account frontend data targets; group preferences use own-profile routes.
+- Changed: resource authorization is own-account-only for admin, manager and user. Role-based account management and admin global settings remain separate.
+- Migration: no row reassignment or schema change; API routes/payload fields remain compatible, but cross-account resource access is denied.
+- Verification: 480 backend and 53 frontend/browser tests passed; foreign admin/assigned-manager resource targets are denied, account management still works, and private group preferences are redacted from other-account management responses. VPS has no unowned Spotify rows.
+
 ### 2026-10-03 - Compact combined channel/playlist rows
 - Removed: repeated playlist column headers and User / Updated cells in the combined workspace.
 - Changed: playlist count sits beside CHANNEL instead of the group subtitle; channel/playlist rows use 76px minimum height with 44px covers and compact column headers.

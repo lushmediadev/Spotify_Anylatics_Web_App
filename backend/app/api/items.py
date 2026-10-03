@@ -1045,7 +1045,7 @@ async def list_items(
     type: str | None = Query(None, description="Filter by item type"),
     group: str | None = Query(None, description="Filter by group"),
     status: str | None = Query(None, description="Filter by status"),
-    user_id: str | None = Query(None, description="Filter by accessible user"),
+    user_id: str | None = Query(None, description="Optional own account ID; other IDs return no items"),
     search: str | None = Query(None, description="Search by title, owner, group, or Spotify ID"),
     sort: str | None = Query(None, description="Sort key"),
     sort_direction: str | None = Query(None, description="Sort direction"),
@@ -1231,14 +1231,7 @@ async def rename_group(
             raise HTTPException(status_code=400, detail="Invalid user_id") from exc
 
     query = select(Item).where(Item.group.is_not(None))
-    if current_user.role == "admin":
-        if str(target_user_id) == str(current_user.id):
-            # Legacy admin rows may still have null user_id.
-            query = query.where(or_(Item.user_id == target_user_id, Item.user_id.is_(None)))
-        else:
-            query = query.where(Item.user_id == target_user_id)
-    else:
-        query = _apply_item_scope(query, current_user, target_user_id)
+    query = _apply_item_scope(query, current_user, target_user_id)
 
     items = (await db.execute(query)).scalars().all()
     updated = 0

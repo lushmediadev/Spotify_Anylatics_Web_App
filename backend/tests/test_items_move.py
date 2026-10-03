@@ -73,10 +73,10 @@ def test_user_moves_own_items():
     asyncio.run(run())
 
 
-def test_admin_can_move_any_user_items():
+def test_admin_moves_own_items():
     async def run():
         admin = SimpleNamespace(id=uuid.uuid4(), role="admin")
-        target_user = uuid.uuid4()
+        target_user = admin.id
         item = make_item(uuid.uuid4(), target_user, "source")
         session = FakeSession([item])
         response = await items_api.move_items_group(

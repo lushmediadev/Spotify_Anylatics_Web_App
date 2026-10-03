@@ -71,8 +71,9 @@ test('ChannelPlaylists isolated browser behavior', async t => {
                 if (requestPath === '/youtube/keys/check') return { results: window.keyResults };
                 return { accepted: 1, skipped: 0 };
             };
+            window.actor = { id: 'owner' };
             ChannelPlaylists.init({
-                getUser: () => ({ id: 'actor' }),
+                getUser: () => window.actor,
                 onGroupChanged: name => { (window.groupChanges ||= []).push(name); },
                 onItemChanged: () => { window.itemChangeCount = (window.itemChangeCount || 0) + 1; },
                 request: (requestPath, options) => {
@@ -107,6 +108,20 @@ test('ChannelPlaylists isolated browser behavior', async t => {
             const keyCalls = await page.evaluate(() => window.calls.filter(call => call.path.startsWith('/youtube/keys')));
             assert.ok(keyCalls.every(call => !call.path.includes('?')));
             assert.equal(JSON.parse(keyCalls.find(call => call.path.endsWith('/check')).body).api_keys, 'SECRET');
+        } finally { await page.close(); }
+    });
+
+    await t.test('legacy foreign account options cannot change the signed-in data scope', async () => {
+        const page = await fixture();
+        try {
+            await page.evaluate(async () => {
+                await ChannelPlaylists.show({ userId: 'foreign-account' });
+                await ChannelPlaylists.syncAccountScope('foreign-account');
+            });
+            const ids = await page.evaluate(() => window.calls.filter(call => call.path.startsWith('/youtube/channels?')).map(call => new URL(call.path, 'https://local').searchParams.get('user_id')));
+            assert.ok(ids.length > 0 && ids.every(id => id === 'owner'));
+            assert.equal(await page.evaluate(() => typeof ChannelPlaylists.setUserFilter), 'undefined');
+            assert.equal(await page.locator('[data-chp-channel="c1"]').count(), 1);
         } finally { await page.close(); }
     });
 
@@ -163,18 +178,22 @@ test('ChannelPlaylists isolated browser behavior', async t => {
                     if (requestPath.includes('user_id=failed')) return new Promise((_, reject) => { window.failSlow = reject; });
                     return original(requestPath);
                 };
-                window.oldLoad = ChannelPlaylists.show({ userId: 'slow' });
+                window.actor.id = 'slow';
+                window.oldLoad = ChannelPlaylists.show();
                 await Promise.resolve(); await Promise.resolve();
-                await ChannelPlaylists.setUserFilter('owner');
+                window.actor.id = 'owner';
+                await ChannelPlaylists.syncAccountScope();
                 window.finishSlow({ items: [{ id: 'stale', name: 'STALE', playlists: [] }], total: 1, groups: [] });
                 await window.oldLoad;
             });
             assert.equal(await page.locator('[data-chp-channel="c1"]').count(), 1);
             assert.equal(await page.locator('[data-chp-channel="stale"]').count(), 0);
             await page.evaluate(async () => {
-                window.failedLoad = ChannelPlaylists.setUserFilter('failed');
+                window.actor.id = 'failed';
+                window.failedLoad = ChannelPlaylists.syncAccountScope();
                 await Promise.resolve(); await Promise.resolve();
-                await ChannelPlaylists.setUserFilter('owner');
+                window.actor.id = 'owner';
+                await ChannelPlaylists.syncAccountScope();
                 window.failSlow(new Error('STALE ERROR')); await window.failedLoad;
             });
             assert.doesNotMatch(await page.locator('.chp-status').textContent(), /STALE ERROR/);
@@ -307,7 +326,7 @@ test('ChannelPlaylists isolated browser behavior', async t => {
             assert.ok(!calls.some(call => call.method === 'DELETE' && call.path.startsWith('/items')));
             await page.locator('.chp-channel').click({ button: 'right' });
             await page.locator('[data-menu="edit"]').click();
-            await page.evaluate(() => ChannelPlaylists.setUserFilter('new-owner'));
+            await page.evaluate(() => { window.actor.id = 'new-owner'; return ChannelPlaylists.syncAccountScope(); });
             assert.equal(await page.locator('.chp-dialog').count(), 0);
         } finally { await page.close(); }
     });
@@ -554,7 +573,8 @@ test('ChannelPlaylists isolated browser behavior', async t => {
             });
             await page.waitForFunction(() => !!window.finishOldPage);
             await page.evaluate(async () => {
-                await ChannelPlaylists.setUserFilter('new-owner');
+                window.actor.id = 'new-owner';
+                await ChannelPlaylists.syncAccountScope();
                 window.finishOldPage({ items: [{ id: 'old-last', name: 'STALE', playlists: [] }], total: 101 });
                 await window.oldPoll;
             });
