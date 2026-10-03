@@ -1,5 +1,6 @@
 """Loopback-only UI fixture. No production credentials or external API writes."""
 import json
+import argparse
 from datetime import datetime, timezone
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
@@ -12,6 +13,13 @@ ITEMS = [{"id": f"22222222-2222-4222-8222-{i:012d}", "spotify_id": "37i9dQZF1DWV
 CHANNELS = [{"id": f"33333333-3333-4333-8333-{i:012d}", "user_id": USER["id"], "query_type": "channel", "query": "UC_x5XG1OV2P6uZZ5FSM9Ttw", "youtube_id": "UC_x5XG1OV2P6uZZ5FSM9Ttw", "name": name, "image": None, "banner": None, "youtube_url": "https://www.youtube.com/channel/UC_x5XG1OV2P6uZZ5FSM9Ttw", "view_count": 21293069+i, "view_count_delta": 1129620, "delta_days": 50, "status": "active", "error_message": None, "group": "Jazz Channels", "created_at": NOW, "last_checked": NOW, "playlists": ITEMS[:2] if i == 0 else []} for i, name in enumerate(["Jazz Radio Channel", "Cozy Jazz Vibes"])]
 KEYS = ""
 GROUPS = {"Jazz Channels"}
+CHANNELS[0].update({
+    "image": "https://yt3.ggpht.com/vgjeI6bGloHkTjzYvvYFiJsymYX6X2IA6LlP_dVFL7Fa4kocWrgHvLxXmX5M2gwzcQeMBT2z=s800-c-k-c0x00ffffff-no-rj",
+    "banner": "https://yt3.googleusercontent.com/trO9SyI6tvFVEVOeZ2ISUtETSwro_2emwuvF0D-HCFMcPMUH0ZGxBHFz1zeL_Wi-sA9X2mGt3g=w1707-fcrop64=1,00005a57ffffa5a8-k-c0xffffffff-no-nd-rj",
+})
+for item in ITEMS:
+    item["image"] = "https://image-cdn-ak.spotifycdn.com/image/ab67706c0000da841b8aa5219683fc248f7cbe49"
+CHANNEL_TEMPLATE = dict(CHANNELS[0])
 
 class Handler(SimpleHTTPRequestHandler):
     def __init__(self, *args, **kwargs):
@@ -42,7 +50,9 @@ class Handler(SimpleHTTPRequestHandler):
             if query.get("group"):
                 rows = [r for r in rows if r["group"] == query["group"][0]]
             groups = [{"name": name, "count": sum(r["group"] == name for r in CHANNELS)} for name in sorted(GROUPS)]
-            return self.send_json({"items": rows, "total": len(rows), "groups": groups, "key_count": int(bool(KEYS)), "has_keys": bool(KEYS)})
+            offset = max(0, int(query.get("offset", [0])[0]))
+            limit = min(500, max(1, int(query.get("limit", [50])[0])))
+            return self.send_json({"items": rows[offset:offset+limit], "total": len(rows), "groups": groups, "key_count": int(bool(KEYS)), "has_keys": bool(KEYS)})
         self.send_json({})
 
     def do_POST(self):
@@ -54,7 +64,7 @@ class Handler(SimpleHTTPRequestHandler):
             GROUPS.add(body["name"])
             return self.send_json({"name": body["name"], "count": 0})
         if route == "/api/youtube/channels":
-            row = {**CHANNELS[0], "id": f"preview-{len(CHANNELS)}", "name": body["urls"][0], "group": body["group"], "playlists": []}
+            row = {**CHANNEL_TEMPLATE, "id": f"preview-{len(CHANNELS)}", "name": body["urls"][0], "group": body["group"], "playlists": []}
             CHANNELS.append(row)
             GROUPS.add(body["group"])
             return self.send_json({"accepted": 1, "skipped": 0, "items": [row]})
@@ -74,4 +84,11 @@ class Handler(SimpleHTTPRequestHandler):
         self.send_json({})
 
 if __name__ == "__main__":
-    ThreadingHTTPServer(("127.0.0.1", 8010), Handler).serve_forever()
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--port", type=int, default=8010)
+    parser.add_argument("--empty", action="store_true")
+    args = parser.parse_args()
+    if args.empty:
+        CHANNELS.clear()
+        GROUPS.clear()
+    ThreadingHTTPServer(("127.0.0.1", args.port), Handler).serve_forever()

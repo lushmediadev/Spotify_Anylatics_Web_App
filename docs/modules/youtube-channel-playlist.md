@@ -31,6 +31,8 @@
 - Keys must enable YouTube Data API v3 and permit backend requests; browser-referrer-only keys will fail on the VPS.
 - Legacy `/c/` URLs cannot be reliably resolved by `channels.list`; use a channel ID or @handle.
 - UI polling reads stored state; it does not call Google repeatedly. Explicit refresh performs a crawl.
+- List requests may be paged internally, but the UI has a single scrollable group list without Prev/Next. Ignore stale responses after changing owner/group.
+- Header/group controls mount into shared shell hosts. Keep Spotify background updates out of those hosts while the channel view is active.
 - Never include API key strings in logs, fixtures, screenshots, Git, or deployment documentation.
 
 ## Related Decisions

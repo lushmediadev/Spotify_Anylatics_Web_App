@@ -22,9 +22,27 @@ test("YouTube page reuses the shell and leaves own profile accessible", () => {
   assert.match(indexHtml, /id="channels-panel"/);
   assert.match(indexHtml, /id="youtube-key-settings"/);
   assert.match(indexHtml, /id="account-panel"/);
+  assert.match(indexHtml, /id="channel-header-tools"/);
+  assert.match(indexHtml, /id="channel-group-tools"/);
   assert.ok(indexHtml.indexOf('src="channels.js?') < indexHtml.indexOf('src="app.js?'));
   assert.match(appJs, /profileWrap\.onclick = \(\) => switchToView\('account'\)/);
   assert.match(appJs, /exportHost\.appendChild\(exportPanel\)/);
+  assert.match(appJs, /renderUserCell: renderOwnerUpdatedCell/);
+  assert.match(appJs, /renderPlaylistOwnerCell,/);
+});
+
+test("Spotify background group sync never overwrites the channel header", () => {
+  const values = { 'page-title': { textContent: 'YouTube Group' }, 'breadcrumb-group': { textContent: 'YouTube Group' } };
+  const context = vm.createContext({ state: { currentView: 'channels' },
+    getActiveGroupName: () => 'Spotify Group', document: { getElementById: id => values[id] } });
+  const start = appJs.indexOf('function updateGroupHeader()');
+  vm.runInContext(appJs.slice(start, appJs.indexOf('function clearRowSelection()', start)), context);
+  context.updateGroupHeader();
+  assert.equal(values['page-title'].textContent, 'YouTube Group');
+  assert.equal(values['breadcrumb-group'].textContent, 'YouTube Group');
+  context.state.currentView = 'linkchecker';
+  context.updateGroupHeader();
+  assert.equal(values['page-title'].textContent, 'Spotify Group');
 });
 
 test("channel owner filter does not trigger Spotify list loads", () => {

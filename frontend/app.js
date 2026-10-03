@@ -1959,6 +1959,7 @@ function isItemOwnedByUser(item, ownerUserId) {
 }
 
 function updateGroupHeader() {
+    if (state.currentView && state.currentView !== 'linkchecker') return;
     const name = getActiveGroupName();
     const breadcrumb = document.getElementById('breadcrumb-group');
     const pageTitle = document.getElementById('page-title');
@@ -6833,6 +6834,8 @@ function switchToView(view) {
     setElementDisplay(accountPanel, 'none');
     setElementDisplay(channelsPanel, 'none');
     window.ChannelPlaylists?.hide();
+    setElementDisplay(document.getElementById('spotify-header-tools'), view === 'linkchecker' ? null : 'none');
+    setElementDisplay(document.getElementById('channel-header-tools'), view === 'channels' ? 'flex' : 'none');
     setElementDisplay(adminPanel, 'none');
 
     // 2) Update sidebar nav active state
@@ -6859,13 +6862,14 @@ function switchToView(view) {
 
     // 4) Show the correct panel and load its data
     state.currentView = view;
+    document.body.classList.toggle('channels-view', view === 'channels');
     updateAddLinkAvailability();
     const groupPanel = document.getElementById('group-panel');
     if (groupPanel) {
         setElementDisplay(groupPanel, ['linkchecker', 'channels'].includes(view) ? null : 'none');
         Array.from(groupPanel.children).forEach((child) => {
             if (child.id !== 'admin-badge' && child.id !== 'admin-user-filter-wrap') {
-                setElementDisplay(child, child.id === 'channel-group-rail'
+                setElementDisplay(child, ['channel-group-rail', 'channel-group-tools'].includes(child.id)
                     ? (view === 'channels' ? null : 'none')
                     : (view === 'linkchecker' ? null : 'none'));
             }
@@ -8173,6 +8177,18 @@ document.addEventListener('DOMContentLoaded', async () => {
     window.ChannelPlaylists?.init({
         request: (path, options) => api._fetch(path, options),
         getUser: getAuthUser,
+        formatChecked: timeAgo,
+        formatUpdatedAt,
+        renderUserCell: renderOwnerUpdatedCell,
+        renderPlaylistOwnerCell,
+        onGroupChanged: (name) => {
+            if (state.currentView !== 'channels') return;
+            const title = name || 'Channel & Playlist';
+            const breadcrumb = document.getElementById('breadcrumb-group');
+            const pageTitle = document.getElementById('page-title');
+            if (breadcrumb) breadcrumb.textContent = title;
+            if (pageTitle) pageTitle.textContent = title;
+        },
         onItemChanged: () => {
             state.listScopeCache?.clear();
             state.itemSummary = null;

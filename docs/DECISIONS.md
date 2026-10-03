@@ -2,6 +2,7 @@
 
 | Decision | Reason | Impact | Date |
 | --- | --- | --- | --- |
+| Reuse the original dashboard shell/components for Channel & Playlist | User rejects a separate toolbar, tiny table rows and visible pagination. | Shared topbar/group rail/hero/KPI/row classes; first filtered channel banner; right-click edits; complete scrollable group list. | 2026-10-03 |
 | Show named groups only for Spotify and Channel & Playlist | User removed both aggregate navigation entries. | Auto-select the first group after owner change; group discovery may still query aggregate counts internally. Deleting a Spotify group moves surviving links to named Ungrouped, not a hidden aggregate. | 2026-10-02 |
 | Integrate YouTube channels through additive APIs and references to existing Spotify playlists | Monitor channel view changes alongside playlist metrics without duplicated crawlers or deleting shared playlist records on unlink. | Per-owner keys; many-to-many channel-playlist links; standalone YTM remains unchanged. | 2026-10-02 |
 | Choose FastAPI + Playwright + httpx | This stack fits Spotify internal API crawling and fallback browser automation. | High | 2026-03-06 |

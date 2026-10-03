@@ -61,5 +61,9 @@
 - Search/filter tasks should stay behavioral unless a visual change is explicitly required
 - New UI work should inherit the existing palette, spacing rhythm, and typography rather than introduce a separate design language
 - Channel & Playlist uses the shared shell and channel group rail: a flat channel summary followed by visible playlist rows, with collapse-all as an optional control.
+- Channel search/refresh/add belong in the existing topbar, never in a second toolbar below it. Group search and creation belong in the left group rail, including the empty-group state.
+- Channel workspace reuses `.playlist-hero`, `.hero-kpi`, list typography, covers, status dots and metric badges. Its hero takes the first filtered YouTube channel banner using the YTM cover URL logic.
+- Channel edits are right-click/keyboard context-menu actions, not row Edit buttons. No visible page controls; backend paging is internal and must load the complete selected group.
+- Spotify background sync cannot update another view's header/title/controls.
 - Both Spotify and channel rails contain named groups and New Group only, without All Links/All Channels entries. Opening a page selects its first available group before rendering rows; no-group state offers group creation, not an aggregate list.
 - Settings hosts per-account YouTube API keys and admin-only global clipboard settings. Own profile/password remain accessible through the sidebar avatar.

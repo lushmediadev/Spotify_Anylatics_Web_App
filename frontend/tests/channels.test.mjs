@@ -7,6 +7,7 @@ import test from 'node:test';
 const require = createRequire(import.meta.url);
 const source = await readFile(new URL('../channels.js', import.meta.url), 'utf8');
 const css = await readFile(new URL('../channels.css', import.meta.url), 'utf8');
+const sharedCss = await readFile(new URL('../style.css', import.meta.url), 'utf8');
 
 function loadPlaywright() {
     const candidates = ['playwright', process.env.PLAYWRIGHT_MODULE_PATH];
@@ -34,9 +35,9 @@ test('ChannelPlaylists isolated browser behavior', async t => {
 
     async function fixture() {
         const page = await browser.newPage({ viewport: { width: 997, height: 900 } });
-        await page.setContent('<div id="channel-group-rail"></div><div id="channels-panel"></div>' +
+        await page.setContent('<html data-theme="light"><head><meta charset="UTF-8"></head><body><header class="topbar"><div><h1 id="page-title"></h1><span id="breadcrumb-group"></span></div><div id="channel-header-tools"></div></header><aside id="group-panel"><div id="channel-group-tools" class="p-5 pb-3"></div><div id="channel-group-rail"></div></aside><div id="channels-panel"></div>' +
             '<div id="youtube-key-settings"></div><button id="nav-settings">Settings</button>');
-        await page.addStyleTag({ content: css });
+        await page.addStyleTag({ content: sharedCss + css + '\n.flex{display:flex}.items-center{align-items:center}.gap-4{gap:16px}.px-4{padding-left:16px;padding-right:16px}.py-3{padding-top:12px;padding-bottom:12px}.px-5{padding-left:20px;padding-right:20px}.py-8{padding-top:32px;padding-bottom:32px}.text-right{text-align:right}.relative{position:relative}.absolute{position:absolute}.topbar{height:auto;flex-wrap:wrap}body{display:block;overflow:auto}@media(max-width:767px){#group-panel{display:none}}' });
         await page.evaluate(() => {
             window.polls = new Map();
             let timerId = 0;
@@ -59,7 +60,12 @@ test('ChannelPlaylists isolated browser behavior', async t => {
             };
             window.keyResults = [{ index: 0, valid: false, error_code: 'invalid_key', error_message: 'SECRET' }];
             window.handleRequest = async requestPath => {
-                if (requestPath.startsWith('/youtube/channels?')) return structuredClone(window.data);
+                if (requestPath.startsWith('/youtube/channels?')) {
+                    const params = new URL(requestPath, 'https://local').searchParams;
+                    const data = structuredClone(window.data);
+                    data.items = data.items.slice(Number(params.get('offset')), Number(params.get('offset')) + Number(params.get('limit')));
+                    return data;
+                }
                 if (requestPath.startsWith('/items?')) return { items: window.data.items[0].playlists, total: 1 };
                 if (requestPath === '/youtube/keys') return { api_keys: 'SECRET' };
                 if (requestPath === '/youtube/keys/check') return { results: window.keyResults };
@@ -67,6 +73,7 @@ test('ChannelPlaylists isolated browser behavior', async t => {
             };
             ChannelPlaylists.init({
                 getUser: () => ({ id: 'actor' }),
+                onGroupChanged: name => { (window.groupChanges ||= []).push(name); },
                 onItemChanged: () => { window.itemChangeCount = (window.itemChangeCount || 0) + 1; },
                 request: (requestPath, options) => {
                     window.calls.push({ path: requestPath, ...options });
@@ -135,10 +142,10 @@ test('ChannelPlaylists isolated browser behavior', async t => {
             assert.equal(call.method, 'POST');
             assert.deepEqual(JSON.parse(call.body), { name: 'Nhóm mới', target_user_id: 'owner' });
             assert.equal(await page.locator('[data-chp-group="Nhóm mới"]').getAttribute('aria-pressed'), 'true');
-            assert.equal(await page.locator('[data-chp-group="Nhóm mới"] .chp-muted').textContent(), '0');
+            assert.equal(await page.locator('[data-chp-group="Nhóm mới"] .group-count').textContent(), '0');
             await page.evaluate(() => ChannelPlaylists.reload());
             assert.equal(await page.locator('[data-chp-group="Nhóm mới"]').getAttribute('aria-pressed'), 'true');
-            assert.equal(await page.locator('[data-chp-group="Nhóm mới"] .chp-muted').textContent(), '0');
+            assert.equal(await page.locator('[data-chp-group="Nhóm mới"] .group-count').textContent(), '0');
             await page.setViewportSize({ width: 600, height: 900 });
             assert.equal(await page.locator('.chp-new-group-toolbar').isVisible(), true);
             await page.locator('.chp-new-group-toolbar').click();
@@ -216,7 +223,9 @@ test('ChannelPlaylists isolated browser behavior', async t => {
             assert.equal(await page.locator('[data-chp-group]').count(), 0);
             assert.equal(await page.locator('.chp-groups').isDisabled(), true);
             assert.equal(await page.locator('.chp-groups option').isDisabled(), true);
-            assert.equal(await page.locator('.chp-list [data-chp-action="new-group"]').isVisible(), true);
+            assert.equal(await page.locator('.chp-list [data-chp-action="new-group"]').count(), 0);
+            assert.equal(await page.locator('#channel-group-rail [data-chp-action="new-group"]').isVisible(), true);
+            assert.equal(await page.locator('[data-chp-action="add"]').isDisabled(), true);
             assert.equal(await page.evaluate(() => window.calls.length), 1);
             await page.evaluate(() => ChannelPlaylists.reload());
             assert.equal(await page.evaluate(() => window.calls.length), 2);
@@ -228,7 +237,8 @@ test('ChannelPlaylists isolated browser behavior', async t => {
         try {
             await page.evaluate(() => ChannelPlaylists.show({ userId: 'owner' }));
             assert.equal(await page.locator('.chp-children').isVisible(), true);
-            await page.locator('.chp-edit').click();
+            await page.locator('.chp-channel').click({ button: 'right' });
+            await page.locator('[data-menu="edit"]').click();
             await page.waitForSelector('.chp-pick');
             await page.locator('[name="urls"]').fill('https://open.spotify.com/playlist/draft');
             const count = await page.evaluate(() => window.calls.length);
@@ -281,7 +291,8 @@ test('ChannelPlaylists isolated browser behavior', async t => {
         const page = await fixture();
         try {
             await page.evaluate(() => ChannelPlaylists.show({ userId: 'owner' }));
-            await page.locator('.chp-edit').click(); await page.waitForSelector('.chp-pick');
+            await page.locator('.chp-channel').click({ button: 'right' });
+            await page.locator('[data-menu="edit"]').click(); await page.waitForSelector('.chp-pick');
             await page.locator('[name="playlist"]').uncheck();
             await page.locator('[name="urls"]').fill('https://open.spotify.com/playlist/new');
             await page.getByRole('button', { name: 'Lưu liên kết' }).click();
@@ -294,7 +305,8 @@ test('ChannelPlaylists isolated browser behavior', async t => {
                 item_ids: [], urls: ['https://open.spotify.com/playlist/new'],
             });
             assert.ok(!calls.some(call => call.method === 'DELETE' && call.path.startsWith('/items')));
-            await page.locator('.chp-edit').click();
+            await page.locator('.chp-channel').click({ button: 'right' });
+            await page.locator('[data-menu="edit"]').click();
             await page.evaluate(() => ChannelPlaylists.setUserFilter('new-owner'));
             assert.equal(await page.locator('.chp-dialog').count(), 0);
         } finally { await page.close(); }
@@ -316,6 +328,229 @@ test('ChannelPlaylists isolated browser behavior', async t => {
             await page.locator('[data-chp-action="refresh-all"]').click();
             await page.waitForFunction(() => document.querySelector('.chp-status').textContent.includes('Không có kênh để refresh'));
             assert.equal(await page.evaluate(() => window.calls.filter(call => call.method === 'POST').length), 0);
+        } finally { await page.close(); }
+    });
+
+    await t.test('shared shell hosts, hero and row typography match Spotify, without table or row edit buttons', async () => {
+        const page = await fixture();
+        try {
+            await page.setViewportSize({ width: 1920, height: 1080 });
+            await page.evaluate(() => ChannelPlaylists.show({ userId: 'owner' }));
+            assert.equal(await page.locator('#channels-panel > .playlist-hero').count(), 1);
+            assert.equal(await page.locator('#channels-panel .chp-search, #channels-panel [data-chp-action="add"], table, .chp-toolbar, .chp-pagination, .chp-edit, .chp-more').count(), 0);
+            assert.equal(await page.locator('#channel-header-tools .search-pill').count(), 1);
+            assert.equal(await page.locator('#channel-header-tools .btn-ghost[data-chp-action="refresh-all"]').count(), 1);
+            assert.equal(await page.locator('#channel-header-tools .btn-accent[data-chp-action="add"]').count(), 1);
+            assert.equal(await page.locator('#channel-group-tools input').count(), 1);
+            assert.equal(await page.locator('#channel-group-rail .group-item .material-icons-round').textContent(), 'folder');
+            assert.equal(await page.locator('#channel-group-rail .group-item-selected .group-count').textContent(), '1');
+            assert.equal(await page.locator('.chp-mobile-groups').isVisible(), false);
+            assert.equal(await page.locator('.playlist-hero').evaluate(node => getComputedStyle(node).minHeight), '230px');
+            assert.equal(await page.locator('.playlist-hero h2').evaluate(node => getComputedStyle(node).fontSize), '52px');
+            assert.deepEqual(await page.locator('.chp-channel .list-asset-title').evaluate(node => [getComputedStyle(node).fontSize, getComputedStyle(node).fontWeight]), ['15px', '700']);
+            assert.equal(await page.locator('.chp-channel .list-cover-image').evaluate(node => getComputedStyle(node).width), '70px');
+            assert.equal(await page.locator('.chp-children .list-cover-image').evaluate(node => getComputedStyle(node).width), '70px');
+            assert.equal(await page.locator('.chp-channel .status-dot.active').count(), 1);
+            assert.equal(await page.locator('.chp-children .list-columns-head').textContent().then(text => text.replace(/\s+/g, ' ').trim()), 'STTAsset DetailsUser / UpdatedPlaylist OwnerSavesTrack CountChecked');
+        } finally { await page.close(); }
+    });
+
+    await t.test('all pages commit atomically, over 50 channels have no visible pagination', async () => {
+        const page = await fixture();
+        try {
+            await page.evaluate(async () => {
+                await ChannelPlaylists.show({ userId: 'owner' });
+                window.data.items = Array.from({ length: 137 }, (_, index) => ({ ...window.data.items[0], id: `channel-${index}`, name: `Channel ${index}`, playlists: [] }));
+                window.data.total = 137;
+                window.data.groups[0].count = 137;
+                const original = window.handleRequest;
+                window.handleRequest = (path, options) => {
+                    if (path.includes('offset=100')) return new Promise(resolve => { window.finishPage = () => original(path, options).then(resolve); });
+                    return original(path, options);
+                };
+                window.pendingPages = ChannelPlaylists.reload();
+            });
+            await page.waitForFunction(() => !!window.finishPage);
+            assert.equal(await page.locator('[data-chp-channel]').count(), 1);
+            await page.evaluate(async () => { window.finishPage(); await window.pendingPages; });
+            assert.equal(await page.locator('[data-chp-channel]').count(), 137);
+            assert.equal(await page.locator('[data-chp-channel="channel-136"] .stt-cell').textContent(), '137');
+            assert.equal(await page.locator('[data-chp-kpi="Channels"]').textContent(), '137');
+            assert.equal(await page.locator('[data-chp-action="prev"], [data-chp-action="next"], .chp-pagination').count(), 0);
+            await page.evaluate(() => {
+                const original = window.handleRequest;
+                window.handleRequest = (path, options) => path.includes('offset=100') ? { ...structuredClone(window.data), items: window.data.items.slice(100) } : original(path, options);
+            });
+            await page.locator('[data-chp-action="refresh-all"]').click();
+            await page.waitForFunction(() => window.calls.some(call => call.path === '/youtube/channels/refresh'));
+            assert.equal(await page.evaluate(() => JSON.parse(window.calls.find(call => call.path === '/youtube/channels/refresh').body).channel_ids.length), 137);
+        } finally { await page.close(); }
+    });
+
+    await t.test('first filtered channel banner only, group KPIs stay complete and focused polls update hero', async () => {
+        const page = await fixture();
+        try {
+            await page.evaluate(async () => {
+                window.data.items[0].banner = 'https://example.com/first-banner.jpg';
+                window.data.items[0].image = 'https://example.com/avatar.jpg';
+                window.data.items.push({ ...window.data.items[0], id: 'c2', name: 'Second', banner: 'https://example.com/second-banner.jpg', playlists: [] });
+                window.data.total = 2;
+                const original = window.handleRequest;
+                window.handleRequest = (path, options) => {
+                    if (path.startsWith('/youtube/channels?') && new URL(path, 'https://local').searchParams.get('search')) return { ...structuredClone(window.data), items: [window.data.items[1]], total: 1 };
+                    return original(path, options);
+                };
+                await ChannelPlaylists.show({ userId: 'owner' });
+            });
+            assert.match(await page.locator('.playlist-hero').evaluate(node => node.style.getPropertyValue('--hero-image')), /first-banner/);
+            await page.locator('.chp-search').fill('Second');
+            await page.waitForFunction(() => document.querySelectorAll('[data-chp-channel]').length === 1 && !!document.querySelector('[data-chp-channel="c2"]'));
+            assert.match(await page.locator('.playlist-hero').evaluate(node => node.style.getPropertyValue('--hero-image')), /second-banner/);
+            assert.equal(await page.locator('[data-chp-kpi="Channels"]').textContent(), '2');
+            await page.evaluate(async () => {
+                document.querySelector('.chp-channel').focus();
+                window.originalFocus = document.activeElement;
+                window.data.items[1].banner = null;
+                await ChannelPlaylists.reload(true);
+            });
+            assert.equal(await page.locator('.playlist-hero').evaluate(node => node.style.getPropertyValue('--hero-image')), '');
+            assert.equal(await page.evaluate(() => document.activeElement === window.originalFocus && window.originalFocus.isConnected), true);
+            assert.equal(await page.locator('.playlist-hero').evaluate(node => getComputedStyle(node, '::before').backgroundImage), 'none');
+        } finally { await page.close(); }
+    });
+
+    await t.test('selection, keyboard-only edit menu, checked filters and collapse remain local UI semantics', async () => {
+        const page = await fixture();
+        try {
+            await page.evaluate(() => ChannelPlaylists.show({ userId: 'owner' }));
+            await page.locator('.chp-channel .stt-cell').click();
+            assert.equal(await page.locator('.chp-channel').getAttribute('aria-selected'), 'true');
+            assert.equal(await page.locator('[data-chp-kpi="Selected"]').textContent(), '1');
+            assert.equal(await page.locator('[data-menu="edit"]').count(), 0);
+            await page.locator('.chp-channel').focus();
+            await page.keyboard.press('Shift+F10');
+            assert.equal(await page.locator('.row-context-menu .row-context-item[data-menu="edit"]').isVisible(), true);
+            await page.locator('[data-menu="collapse"]').click();
+            assert.equal(await page.locator('.chp-children').isVisible(), false);
+            await page.locator('.chp-channel').click({ button: 'right' });
+            await page.locator('[data-menu="expand"]').click();
+            assert.equal(await page.locator('.chp-children').isVisible(), true);
+            await page.locator('[data-chp-action="filter"]').click();
+            await page.locator('[data-filter="changed"]').click();
+            await page.waitForFunction(() => window.calls.some(call => call.path.includes('filter=changed')));
+            assert.equal(await page.locator('[data-chp-kpi="Selected"]').textContent(), '0');
+            await page.locator('.chp-channel').click({ button: 'right' });
+            assert.equal(await page.locator('[data-filter="changed"]').getAttribute('aria-checked'), 'true');
+            await page.locator('[data-filter="errors"]').click();
+            await page.waitForFunction(() => window.calls.some(call => call.path.includes('filter=errors')));
+            assert.equal(await page.evaluate(() => window.calls.filter(call => call.method !== 'GET').length), 0);
+        } finally { await page.close(); }
+    });
+
+    await t.test('YouTube bare banner crop matches YTM and existing crops are never appended twice', async () => {
+        const page = await fixture();
+        try {
+            await page.evaluate(async () => {
+                window.data.items[0].banner = 'https://yt3.googleusercontent.com/banner-id';
+                await ChannelPlaylists.show({ userId: 'owner' });
+            });
+            const cropped = await page.locator('.playlist-hero').evaluate(node => node.style.getPropertyValue('--hero-image'));
+            assert.equal(cropped, 'url("https://yt3.googleusercontent.com/banner-id=w1707-fcrop64=1,00005a57ffffa5a8-k-c0xffffffff-no-nd-rj")');
+            await page.evaluate(async () => {
+                window.data.items[0].banner += '=w1707-fcrop64=1,00005a57ffffa5a8-k-c0xffffffff-no-nd-rj';
+                await ChannelPlaylists.reload();
+            });
+            assert.equal(await page.locator('.playlist-hero').evaluate(node => node.style.getPropertyValue('--hero-image')), cropped);
+            await page.evaluate(async () => {
+                window.data.items[0].banner = 'https://yt3.googleusercontent.com/banner-id=w1280';
+                await ChannelPlaylists.reload();
+            });
+            assert.equal(await page.locator('.playlist-hero').evaluate(node => node.style.getPropertyValue('--hero-image')), 'url("https://yt3.googleusercontent.com/banner-id=w1280")');
+        } finally { await page.close(); }
+    });
+
+    await t.test('optional shell time helpers format Checked and Updated without changing timestamps or contracts', async () => {
+        const page = await fixture();
+        try {
+            await page.evaluate(async () => {
+                window.data.items[0].last_checked = '2026-10-02T10:30:00';
+                window.data.items[0].playlists[0].last_checked = '2026-10-02T10:30:00';
+                ChannelPlaylists.init({ getUser: () => ({ id: 'actor' }), request: window.handleRequest,
+                    formatChecked: value => value ? 'Just now' : '-', formatUpdatedAt: value => value ? '02/10/2026' : '-' });
+                await ChannelPlaylists.show({ userId: 'owner' });
+            });
+            assert.equal(await page.locator('.chp-channel .list-checked-text').textContent(), 'Just now');
+            assert.match(await page.locator('.chp-channel .list-checked-text').getAttribute('title'), /17:30/);
+            assert.equal(await page.locator('.chp-channel .checked-status').textContent(), 'Active');
+            assert.match(await page.locator('.chp-playlist-grid .list-asset-subtitle').textContent(), /02\/10\/2026/);
+        } finally { await page.close(); }
+    });
+
+    await t.test('390px channel topbar grows with controls, never clips or overlaps hero; Spotify is untouched', async () => {
+        const page = await fixture();
+        try {
+            await page.setViewportSize({ width: 390, height: 844 });
+            // Reproduce shell utility sizing instead of the forgiving isolated fixture header.
+            await page.addStyleTag({ content: '.topbar{display:flex;height:80px;align-items:center;justify-content:space-between;padding:0 32px;flex-wrap:nowrap}.px-6{padding-left:24px;padding-right:24px}.py-2{padding-top:8px;padding-bottom:8px}body{margin:0}' });
+            await page.evaluate(async () => {
+                document.body.classList.add('channels-view');
+                document.querySelector('#page-title').textContent = 'Channel & Playlist';
+                await ChannelPlaylists.show({ userId: 'owner' });
+            });
+            const geometry = await page.evaluate(() => {
+                const header = document.querySelector('.topbar').getBoundingClientRect();
+                const hero = document.querySelector('.playlist-hero').getBoundingClientRect();
+                const controls = [...document.querySelectorAll('.chp-search, #channel-header-tools > button, .chp-mobile-groups')].filter(node => getComputedStyle(node).display !== 'none').map(node => {
+                    const rect = node.getBoundingClientRect();
+                    return { left: rect.left, right: rect.right, top: rect.top, bottom: rect.bottom };
+                });
+                return { header: { height: header.height, bottom: header.bottom }, heroTop: hero.top, controls,
+                    direction: getComputedStyle(document.querySelector('.topbar')).flexDirection,
+                    warningFont: getComputedStyle(document.querySelector('.chp-key-warning')).fontSize };
+            });
+            assert.equal(geometry.direction, 'column');
+            assert.ok(geometry.header.height > 80);
+            assert.equal(geometry.warningFont, '14px');
+            assert.ok(geometry.heroTop >= geometry.header.bottom);
+            assert.ok(geometry.controls.every(rect => rect.left >= 0 && rect.right <= 390 && rect.top >= 0 && rect.bottom <= geometry.header.bottom));
+            await page.evaluate(() => document.body.classList.remove('channels-view'));
+            assert.deepEqual(await page.locator('.topbar').evaluate(node => [getComputedStyle(node).height, getComputedStyle(node).flexDirection]), ['80px', 'row']);
+            await page.evaluate(() => document.body.classList.add('channels-view'));
+            await page.setViewportSize({ width: 1440, height: 900 });
+            assert.deepEqual(await page.locator('.topbar').evaluate(node => [getComputedStyle(node).height, getComputedStyle(node).flexDirection]), ['80px', 'row']);
+            assert.equal(await page.locator('.chp-mobile-groups').isVisible(), false);
+        } finally { await page.close(); }
+    });
+
+    await t.test('stale second page owner poll and hidden callbacks cannot overwrite the active group', async () => {
+        const page = await fixture();
+        try {
+            await page.evaluate(async () => {
+                await ChannelPlaylists.show({ userId: 'owner' });
+                const original = window.handleRequest;
+                window.handleRequest = (path, options) => {
+                    if (path.includes('user_id=owner') && path.includes('offset=100')) return new Promise(resolve => { window.finishOldPage = resolve; });
+                    if (path.includes('user_id=owner')) return { ...structuredClone(window.data), items: Array.from({ length: 100 }, (_, index) => ({ ...window.data.items[0], id: `old-${index}` })), total: 101 };
+                    return original(path, options);
+                };
+                window.oldPoll = ChannelPlaylists.reload(true);
+            });
+            await page.waitForFunction(() => !!window.finishOldPage);
+            await page.evaluate(async () => {
+                await ChannelPlaylists.setUserFilter('new-owner');
+                window.finishOldPage({ items: [{ id: 'old-last', name: 'STALE', playlists: [] }], total: 101 });
+                await window.oldPoll;
+            });
+            assert.equal(await page.locator('[data-chp-channel]').count(), 1);
+            assert.equal(await page.locator('[data-chp-channel="c1"]').count(), 1);
+            await page.evaluate(async () => {
+                ChannelPlaylists.hide();
+                window.hiddenCallbackCount = window.groupChanges.length;
+                await ChannelPlaylists.reload();
+            });
+            assert.equal(await page.evaluate(() => window.groupChanges.length === window.hiddenCallbackCount), true);
+            assert.equal(await page.locator('#channel-header-tools').isVisible(), false);
+            assert.equal(await page.locator('#channel-group-tools').isVisible(), false);
         } finally { await page.close(); }
     });
 });

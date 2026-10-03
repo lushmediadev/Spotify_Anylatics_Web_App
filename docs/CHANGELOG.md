@@ -1,5 +1,11 @@
 # Changelog
 
+### 2026-10-03 - Align Channel & Playlist with the original dashboard
+- Changed: channel tools move into the shared topbar, group controls stay in the left rail, and the workspace reuses the original hero/KPI/row typography and status/metric components.
+- Fixed: Spotify background group synchronization no longer overwrites another view's title; channel hero selects the first filtered channel banner using YouTube Manager logic.
+- Removed: row Edit buttons and visible pagination. Edit remains in the right-click/keyboard context menu; API paging remains internal to complete group loading.
+- Verification: no backend diff; 443 backend and 50 frontend/browser tests passed. Checked shared shell/hero/row styling, right-click editor, empty groups, more than 50 channels, stale owner responses and 390px mobile layout; header no longer overlaps hero. Avatar/owner/time formatting reuses Spotify helpers.
+
 ### 2026-10-02 - YouTube channels and group-only navigation
 - Added: owner-scoped YouTube API keys/check/rotation, public channel view snapshots, persisted empty channel groups and shared Spotify playlist associations.
 - UI: Channel & Playlist matches existing light visual, shows playlists by default, supports Edit, grouped search/filter and refresh; profile remains accessible from avatar and global clipboard setting is preserved.
