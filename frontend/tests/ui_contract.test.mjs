@@ -9,6 +9,13 @@ const appJs = fs.readFileSync(path.join(root, "app.js"), "utf8");
 const indexHtml = fs.readFileSync(path.join(root, "index.html"), "utf8");
 const styleCss = fs.readFileSync(path.join(root, "style.css"), "utf8");
 
+test("sidebar omits the unused Dashboard tab and preserves working navigation", () => {
+  assert.doesNotMatch(indexHtml, /id="nav-dashboard"|data-tooltip="Dashboard"/);
+  for (const id of ['nav-links', 'nav-channels', 'nav-settings']) {
+    assert.ok(indexHtml.includes(`id="${id}"`));
+  }
+});
+
 test("channel timestamps interpret naive backend values as UTC and show Vietnam time", () => {
   const source = fs.readFileSync(path.join(root, 'channels.js'), 'utf8');
   const context = vm.createContext({});
