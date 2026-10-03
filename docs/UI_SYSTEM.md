@@ -67,6 +67,7 @@
 - Channel edits are right-click/keyboard context-menu actions, not row Edit buttons. No visible page controls; backend paging is internal and must load the complete selected group.
 - Playlist context actions have matching icons. Unlink removes only the channel association; permanent app-link deletion is separate and explicitly warns about removal from Link Checker and every linked channel.
 - Edit playlists includes Spotify group/search filters and cover thumbnails. Filtering never drops checked selections outside the current visible results.
+- Picker groups include own account custom groups and all-type Spotify summary groups, not just groups containing playlists. Empty/non-playlist groups remain selectable and show an empty playlist result. Channel context menus prioritize Edit playlists before Add Channel for single-row selection.
 - Edit playlists visual is scoped to `.chp-playlist-editor`: shared light surfaces, 14px inputs, bold list titles, monochrome checkboxes and icon actions. Only its body scrolls so Save/Cancel stay visible on short/mobile screens.
 - Spotify background sync cannot update another view's header/title/controls.
 - No account filter in the group rail. Spotify and Channel & Playlist always use the signed-in account; role badge and authorized Users management remain available.

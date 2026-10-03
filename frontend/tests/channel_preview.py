@@ -40,6 +40,7 @@ class Handler(SimpleHTTPRequestHandler):
             return super().do_GET()
         if route == "/api/auth/me": return self.send_json(USER)
         if route == "/api/auth/users": return self.send_json([USER])
+        if route == "/api/auth/me/groups": return self.send_json({"groups": ["Jazz", "Jazz-Tracks", "Album", "Tracks", "BluesEditor-Playlist", "BluesEditor-Track", "LofiEditor-Playlist"]})
         if route == "/api/auth/me/preferences": return self.send_json({"preferences": {}, "global_preferences": {"playlist_clipboard_line_limit": 200}})
         if route == "/api/health": return self.send_json({"status": "ok"})
         if route == "/api/items/summary": return self.send_json({"total": 3, "all_total": 3, "active": 3, "errors": 0, "crawling": 0, "groups": [{"name": "Jazz", "count": 3}]})

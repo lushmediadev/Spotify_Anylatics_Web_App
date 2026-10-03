@@ -70,6 +70,8 @@ test('ChannelPlaylists isolated browser behavior', async t => {
                     return data;
                 }
                 if (requestPath.startsWith('/items?')) return { items: window.data.items[0].playlists, total: 1 };
+                if (requestPath === '/auth/me/groups') return { groups: ['Empty Album', 'Empty Playlist', 'all'] };
+                if (requestPath === '/items/summary') return { groups: [{ name: 'Track Only', count: 57 }] };
                 if (requestPath === '/youtube/keys') return { api_keys: 'SECRET' };
                 if (requestPath === '/youtube/keys/check') return { results: window.keyResults };
                 return { accepted: 1, skipped: 0 };
@@ -679,9 +681,16 @@ test('ChannelPlaylists isolated browser behavior', async t => {
             });
             await page.evaluate(() => ChannelPlaylists.show());
             await page.locator('.chp-channel').click({ button: 'right' });
+            assert.equal(await page.locator('.chp-menu [data-menu]').first().getAttribute('data-menu'), 'edit');
             await page.locator('[data-menu="edit"]').click();
             await page.waitForSelector('.chp-pick');
             assert.equal(await page.locator('.chp-pick-cover').count(), 3);
+            assert.deepEqual(await page.locator('[name="picker_group"] option').allTextContents(),
+                ['Tất cả nhóm', 'Empty Album', 'Empty Playlist', 'Jazz', 'Lofi', 'Track Only']);
+            await page.getByLabel('Nhóm playlist', { exact: true }).selectOption('group:Empty Playlist');
+            assert.equal(await page.locator('[name="playlist"]').count(), 0);
+            assert.match(await page.locator('.chp-picker-count').textContent(), /Đã chọn 1/);
+            await page.getByLabel('Nhóm playlist', { exact: true }).selectOption('');
             const visual = await page.locator('.chp-playlist-editor').evaluate(editor => {
                 const style = selector => getComputedStyle(editor.querySelector(selector));
                 return { radius: style('[name="picker_group"]').borderRadius,

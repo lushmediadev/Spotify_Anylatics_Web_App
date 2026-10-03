@@ -703,7 +703,7 @@
         if (!item) return;
         if (!state.selected.has(id)) selectChannel(id);
         state.focusKind = 'channels';
-        const actions = [['add', 'add', 'Add Channel'], ...(state.selected.size === 1 ? [['edit', 'edit', 'Edit playlists']] : []), ['refresh', 'refresh', 'Refresh kênh'], ['playlists', 'refresh', 'Refresh playlists'], ['move', 'drive_file_move', 'Move To Group'], ['copy', 'content_copy', 'Copy Links'], ['export', 'download', 'Export List CSV'], ['clear', 'delete', 'Clear Group'], ['toggle', 'unfold_more', 'Mở / thu playlists'], ['expand', 'unfold_more', 'Mở tất cả'], ['collapse', 'unfold_less', 'Thu tất cả'], ['delete', 'delete', 'Xóa kênh']];
+        const actions = [...(state.selected.size === 1 ? [['edit', 'edit', 'Edit playlists']] : []), ['add', 'add', 'Add Channel'], ['refresh', 'refresh', 'Refresh kênh'], ['playlists', 'refresh', 'Refresh playlists'], ['move', 'drive_file_move', 'Move To Group'], ['copy', 'content_copy', 'Copy Links'], ['export', 'download', 'Export List CSV'], ['clear', 'delete', 'Clear Group'], ['toggle', 'unfold_more', 'Mở / thu playlists'], ['expand', 'unfold_more', 'Mở tất cả'], ['collapse', 'unfold_less', 'Thu tất cả'], ['delete', 'delete', 'Xóa kênh']];
         const menu = createMenu(actions.map(([action, icon, label]) => `<button type="button" role="menuitem" class="row-context-item ${action === 'delete' ? 'row-context-danger' : ''}" data-menu="${action}"><span class="material-icons-round">${icon}</span>${label}</button>`).join('') + '<div class="row-context-separator"></div>' + filterItems(), x, y);
         bindFilter(menu);
         menu.addEventListener('click', event => {
@@ -978,6 +978,11 @@
         const button = modal.node.querySelector('[type="submit"]'); button.disabled = true;
         try {
             if (!item.user_id) throw new Error('Kênh không có user_id; không thể tải playlist đúng chủ sở hữu.');
+            const accountGroups = await api('/auth/me/groups', 'GET', undefined, modal.controller.signal);
+            if (state.modal !== modal) return;
+            const summary = await api('/items/summary', 'GET', undefined, modal.controller.signal);
+            if (state.modal !== modal) return;
+            if (!Array.isArray(accountGroups?.groups) || !Array.isArray(summary?.groups)) throw new Error('Không thể tải đầy đủ nhóm Spotify. Vui lòng mở lại Edit playlists.');
             for (let offset = 0; ; offset += 500) {
                 const params = new URLSearchParams({ type: 'playlist', user_id: item.user_id, limit: '500', offset: String(offset) });
                 const data = await api(`/items?${params}`, 'GET', undefined, modal.controller.signal);
@@ -989,7 +994,8 @@
             const groupSelect = modal.node.querySelector('[name="picker_group"]');
             const searchInput = modal.node.querySelector('[name="picker_search"]');
             const all = [...selected.values()];
-            const groups = [...new Set(all.map(playlist => playlist.group || ''))].sort((a, b) => a.localeCompare(b, 'vi'));
+            const groups = [...new Set([...accountGroups.groups, ...summary.groups.map(group => group.name), ...all.map(playlist => playlist.group || '')]
+                .filter(name => typeof name === 'string' && name.toLowerCase() !== 'all'))].sort((a, b) => a.localeCompare(b, 'vi'));
             groupSelect.innerHTML = '<option value="">Tất cả nhóm</option>' + groups.map(name => `<option value="${escapeHtml('group:' + name)}">${escapeHtml(name || 'Chưa phân nhóm')}</option>`).join('');
             const normalize = value => String(value || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/đ/g, 'd').replace(/Đ/g, 'D').toLowerCase();
             function renderPicker() {

@@ -1,5 +1,10 @@
 # Changelog
 
+### 2026-10-03 - Complete playlist picker groups
+- Fixed: group filter merges own custom groups, all-type item summary groups and playlist groups; empty groups and track/album-only groups no longer disappear.
+- Changed: single-channel context menu puts Edit playlists before Add Channel. Existing visual, ownership and playlist-only selection remain unchanged.
+- Verification: 522 backend and 70 frontend/browser tests passed; covers full group options, empty-group filtering, retained hidden selections and edit-first menu order. Local fixture smoke verified.
+
 ### 2026-10-03 - Playlist editor visual parity
 - Updated: existing picker layout uses shared light surfaces, typography, rounded inputs, monochrome checkboxes, compact cover rows and icon buttons. Styling is scoped to the editor; filtering, selection and save contracts remain unchanged.
 - Short-screen fix: scroll only the dialog body so Cancel/Save remain visible.
