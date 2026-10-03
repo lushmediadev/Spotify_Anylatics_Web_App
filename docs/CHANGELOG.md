@@ -5,6 +5,7 @@
 - UI: group and row drag/drop, multi-selection, group rename/delete/clear, channel move, clipboard shortcuts and playlist-specific context actions reuse existing visual patterns.
 - Safety: unlink/delete operations preserve original Spotify records; playlist exports reuse existing global clipboard limits and formatters.
 - Verification: 522 backend and 67 frontend/browser tests passed; covers real dragTo, multi-selection, filtered hidden rows, sorting/resize, polling races, failed-order rollback, own scope and atomic group/channel operations. Additive preference table leaves existing tracking records untouched.
+- Deployment: `899137e` pushed/pulled through GitHub; app-only VPS rebuild healthy and new preference table verified. Authenticated public APIs/assets and real PostgreSQL order/paging/move/rename/Ungrouped/clear/delete tests passed, with fixture writes rolled back. Caddy unchanged. Backup: `/opt/spoticheck/backups/postgres/pre-channel-interactions-20261003-055523.sql.gz`; rollback image: `spoticheck-rollback:pre-channel-interactions`.
 
 ### 2026-10-03 - Own-account data only
 - Removed: admin/manager account filter and cross-account frontend data targets; group preferences use own-profile routes.
