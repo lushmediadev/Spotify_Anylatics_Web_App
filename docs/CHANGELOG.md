@@ -1,5 +1,11 @@
 # Changelog
 
+### 2026-10-03 - Channel interaction parity
+- Added: persisted per-account group/channel/attached-playlist order and group/channel batch management; compatible additive APIs with strict own-resource validation.
+- UI: group and row drag/drop, multi-selection, group rename/delete/clear, channel move, clipboard shortcuts and playlist-specific context actions reuse existing visual patterns.
+- Safety: unlink/delete operations preserve original Spotify records; playlist exports reuse existing global clipboard limits and formatters.
+- Verification: 522 backend and 67 frontend/browser tests passed; covers real dragTo, multi-selection, filtered hidden rows, sorting/resize, polling races, failed-order rollback, own scope and atomic group/channel operations. Additive preference table leaves existing tracking records untouched.
+
 ### 2026-10-03 - Own-account data only
 - Removed: admin/manager account filter and cross-account frontend data targets; group preferences use own-profile routes.
 - Changed: resource authorization is own-account-only for admin, manager and user. Role-based account management and admin global settings remain separate.

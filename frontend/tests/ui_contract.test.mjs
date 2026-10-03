@@ -9,6 +9,27 @@ const appJs = fs.readFileSync(path.join(root, "app.js"), "utf8");
 const indexHtml = fs.readFileSync(path.join(root, "index.html"), "utf8");
 const styleCss = fs.readFileSync(path.join(root, "style.css"), "utf8");
 
+test("channel playlist actions reuse Spotify exporters and refresh exactly selected owned items", async () => {
+  const calls = [];
+  const context = vm.createContext({ Map, Error, state: { exportInProgress: false, listScopeCache: new Map() },
+    getAuthUser: () => ({ id: 'own' }), getItemSpotifyUrl: item => item.spotify_url,
+    api: { crawlBatch: async (...args) => calls.push(args) }, showToast: () => {},
+    copySelectedLinksToClipboard: async items => calls.push(items),
+    runServerExport: async (...args) => { calls.push(args); return true; },
+  });
+  const start = appJs.indexOf('async function runChannelPlaylistAction(');
+  vm.runInContext(appJs.slice(start, appJs.indexOf('function exportChannelRows(', start)), context);
+  const own = { id: 'p1', user_id: 'own', type: 'playlist', spotify_url: 'https://open.spotify.com/playlist/p1' };
+  const foreign = { ...own, id: 'foreign', user_id: 'other' };
+  await context.runChannelPlaylistAction('fetch-selected', [own, foreign, own]);
+  assert.deepEqual(Array.from(calls[0][3]), ['p1']);
+  assert.equal(calls[0][2], 'own');
+  calls.length = 0;
+  await context.runChannelPlaylistAction('clipboard-auto', [own]);
+  assert.equal(calls[0][0], 'clipboard-playlist-type3');
+  await assert.rejects(() => context.runChannelPlaylistAction('fetch-selected', [foreign]), /owned/);
+});
+
 test("channels is the first navigation item and the default landing view", () => {
   assert.ok(indexHtml.indexOf('id="nav-channels"') < indexHtml.indexOf('id="nav-links"'));
   assert.match(appJs, /state\.currentView = 'channels'/);

@@ -8,6 +8,7 @@ Canonical detail lives in `docs/DECISIONS.md`. This file lists active decisions 
 | Palette | Use YouTube Manager light grayscale tokens; retain the green Spotify logo. | `docs/UI_SYSTEM.md` |
 | Roles | Admin, manager, user; manager scope follows assigned user accounts. | `docs/modules/access-control.md` |
 | YouTube integration | Owner-scoped API keys and channel-playlist references, without duplicating Spotify metrics or migrating old YTM automatically. | `docs/modules/youtube-channel-playlist.md` |
+| Workspace interactions | Persist channel/group/association order independently of Spotify list order; unlink never deletes the Spotify Item. | `docs/modules/youtube-channel-playlist.md` |
 | User scope | Every role accesses its own resource data only; managing accounts does not grant access to their links/channels/groups. | `docs/modules/access-control.md` |
 | Link ownership | Deduplicate Spotify links per user, not globally. | `docs/DECISIONS.md` |
 | Clipboard export | Admin controls one global playlist clipboard line limit, persisted in `app_settings`. | `docs/DECISIONS.md` |

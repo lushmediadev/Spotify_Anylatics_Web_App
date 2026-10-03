@@ -2,7 +2,7 @@
 
 import uuid
 from datetime import datetime
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, ConfigDict
 from app.schemas.item import ItemResponse, ItemGroupSummary
 
 
@@ -23,6 +23,44 @@ class ChannelCreateRequest(BaseModel):
 class ChannelGroupRequest(BaseModel):
     name: str = Field(min_length=1, max_length=128)
     target_user_id: uuid.UUID | None = None
+
+
+class WorkspacePreferenceResponse(BaseModel):
+    group_order: list[str] = Field(default_factory=list)
+    channel_orders: dict[str, list[str]] = Field(default_factory=dict)
+    playlist_orders: dict[str, list[str]] = Field(default_factory=dict)
+
+
+class WorkspacePreferenceRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    group_order: list[str] | None = Field(default=None, max_length=5000)
+    channel_orders: dict[str, list[str]] | None = None
+    playlist_orders: dict[str, list[str]] | None = None
+
+
+class ChannelBatchRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    channel_ids: list[uuid.UUID] = Field(max_length=500)
+
+
+class ChannelMoveRequest(ChannelBatchRequest):
+    group: str = Field(min_length=1, max_length=128)
+
+
+class ChannelGroupRenameRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    old_name: str = Field(min_length=1, max_length=128)
+    new_name: str = Field(min_length=1, max_length=128)
+
+
+class ChannelGroupsDeleteRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    names: list[str] = Field(min_length=1, max_length=500)
+
+
+class ChannelGroupClearRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    name: str = Field(min_length=1, max_length=128)
 
 
 class ChannelRefreshRequest(BaseModel):

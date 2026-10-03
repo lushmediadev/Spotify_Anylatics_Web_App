@@ -9,7 +9,12 @@
         controller: null, timer: null, debounce: null, modal: null, menu: null,
         loading: false, pendingRender: false, settingsGeneration: 0, rail: null, hasKeys: true, bulkBusy: false,
         tools: null, groupTools: null, groupSearch: '', groupItems: [], selected: new Set(), onGroupChanged: null,
-        formatChecked: null, formatUpdatedAt: null, renderUserCell: null, renderPlaylistOwnerCell: null
+        formatChecked: null, formatUpdatedAt: null, renderUserCell: null, renderPlaylistOwnerCell: null,
+        preferences: { group_order: [], channel_orders: {}, playlist_orders: {} }, preferencesLoaded: false,
+        preferenceQueue: Promise.resolve(), writePending: 0, scope: 0, drag: null, scrollFrame: null,
+        groupSelected: new Set(), playlistSelected: new Set(), focusKind: 'channels', anchors: {}, cut: null,
+        runPlaylistAction: null, copyLinks: null, previewImage: null, exportChannels: null, sort: null,
+        widths: null, resize: null
     };
     const escapeHtml = value => String(value ?? '').replace(/[&<>"']/g, ch => ({
         '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
@@ -80,13 +85,17 @@
             <div class="chp-key-warning" hidden></div><div class="chp-status" role="status" aria-live="polite"></div><div class="chp-list" aria-label="Danh sách kênh"></div>`;
         host.addEventListener('click', panelClick);
         host.addEventListener('contextmenu', event => {
+            const playlist = event.target.closest('[data-chp-playlist]');
+            if (playlist) { event.preventDefault(); openPlaylistMenu(playlist, event.clientX, event.clientY); return; }
             const row = event.target.closest('[data-chp-channel]');
-            if (!row) return;
+            if (!row) { event.preventDefault(); actionMenu([['add', 'Add Channel'], ['clear', 'Clear Group']], event.clientX, event.clientY, action => action === 'add' ? openAdd() : clearGroup()); return; }
             event.preventDefault();
             openMenu(row.dataset.chpChannel, event.clientX, event.clientY);
         });
         host.addEventListener('keydown', event => {
             if (event.key !== 'ContextMenu' && !(event.shiftKey && event.key === 'F10')) return;
+            const playlist = event.target.closest('[data-chp-playlist]');
+            if (playlist) { event.preventDefault(); const rect = playlist.getBoundingClientRect(); openPlaylistMenu(playlist, rect.left + 40, rect.bottom); return; }
             const row = event.target.closest('[data-chp-channel]');
             if (!row) return;
             event.preventDefault();
@@ -101,23 +110,60 @@
         });
         state.tools.querySelector('.chp-groups').addEventListener('change', event => { state.group = event.target.value; changeScope(); });
         host.addEventListener('click', event => {
+            if (event.target.matches('.list-cover-image') && state.previewImage && event.target.src) { state.previewImage(event.target.src); return; }
             if (event.target.closest('a, button, input, select')) return;
+            const playlist = event.target.closest('[data-chp-playlist]');
+            if (playlist) { selectRows('playlist', playlist.dataset.chpPlaylist, event); playlist.focus(); return; }
             const row = event.target.closest('[data-chp-channel]');
-            if (row) selectChannel(row.dataset.chpChannel);
+            if (row) { selectChannel(row.dataset.chpChannel, event); row.focus(); }
         });
         host.addEventListener('keydown', event => {
             if (event.target.matches('[data-chp-channel]') && [' ', 'Enter'].includes(event.key)) {
-                event.preventDefault(); selectChannel(event.target.dataset.chpChannel);
+                event.preventDefault(); selectChannel(event.target.dataset.chpChannel, event);
             }
         });
         host.addEventListener('focusout', () => setTimeout(flushRender, 0));
+        host.addEventListener('pointerdown', startResize);
+        host.addEventListener('dblclick', event => {
+            if (!event.target.closest('[data-chp-resize]')) return;
+            event.preventDefault(); event.stopImmediatePropagation(); state.widths = null; applyWidths(); saveWidths();
+        });
+        bindDrag(host);
     }
-    function selectChannel(id) {
-        if (state.selected.has(id)) state.selected.delete(id); else state.selected.add(id);
+    function selectChannel(id, event = {}) { selectRows('channels', id, event); }
+    function visibleIds(kind) {
+        if (kind === 'groups') return state.groups.filter(group => group.name.toLocaleLowerCase().includes(state.groupSearch.toLocaleLowerCase())).map(group => group.name);
+        if (kind === 'playlist') return state.items.filter(item => !state.collapsed.has(item.id)).flatMap(item => (item.playlists || []).map(playlist => playlistKey(item.id, playlist.id)));
+        return state.items.map(item => item.id);
+    }
+    const playlistKey = (parent, id) => `${parent}:${id}`;
+    function selection(kind) { return kind === 'groups' ? state.groupSelected : kind === 'playlist' ? state.playlistSelected : state.selected; }
+    function selectRows(kind, id, event = {}) {
+        const selected = selection(kind), ids = visibleIds(kind);
+        if (!ids.includes(id)) return;
+        state.focusKind = kind;
+        if (event.shiftKey && ids.includes(state.anchors[kind])) {
+            if (!event.ctrlKey && !event.metaKey) selected.clear();
+            const a = ids.indexOf(state.anchors[kind]), b = ids.indexOf(id);
+            ids.slice(Math.min(a, b), Math.max(a, b) + 1).forEach(value => selected.add(value));
+        } else {
+            if (!event.ctrlKey && !event.metaKey) selected.clear();
+            if ((event.ctrlKey || event.metaKey) && selected.has(id)) selected.delete(id); else selected.add(id);
+            state.anchors[kind] = id;
+        }
+        paintSelection();
+    }
+    function paintSelection() {
+        if (!state.host) return;
         for (const row of state.host.querySelectorAll('[data-chp-channel]')) {
             const selected = state.selected.has(row.dataset.chpChannel);
             row.classList.toggle('row-selected', selected); row.setAttribute('aria-selected', String(selected));
         }
+        for (const row of state.host.querySelectorAll('[data-chp-playlist]')) {
+            const selected = state.playlistSelected.has(row.dataset.chpPlaylist);
+            row.classList.toggle('row-selected', selected); row.setAttribute('aria-selected', String(selected));
+        }
+        for (const row of state.rail?.querySelectorAll('[data-chp-group]') || []) row.classList.toggle('chp-group-multi', state.groupSelected.has(row.dataset.chpGroup));
         updateHero();
     }
     function toCssImageUrl(value) {
@@ -158,8 +204,9 @@
         const colors = { active: 'text-primary', error: 'text-red-500', pending: 'text-yellow-500', crawling: 'text-blue-400' };
         return `<div class="checked-stack"><span class="list-checked-text text-secondary-text" title="${escapeHtml(date(checkedAt))}">${escapeHtml(state.formatChecked ? state.formatChecked(checkedAt) : date(checkedAt))}</span><span class="checked-status ${colors[status]}"><span class="status-dot status-indicator ${status}"></span><span>${escapeHtml(labels[status])}</span></span>${error ? `<span class="list-asset-error chp-error">${escapeHtml(error)}</span>` : ''}${settings}</div>`;
     }
-    function playlistRow(item, index) {
-        return `<div class="custom-grid-row chp-playlist-grid px-4 py-3 bg-white/5 rounded-lg border border-transparent transition-colors group">
+    function playlistRow(item, index, parent) {
+        const key = playlistKey(parent, item.id);
+        return `<div data-chp-playlist="${escapeHtml(key)}" data-chp-parent="${escapeHtml(parent)}" data-chp-item="${escapeHtml(item.id)}" draggable="true" tabindex="0" aria-selected="${state.playlistSelected.has(key)}" class="custom-grid-row chp-playlist-grid px-4 py-3 bg-white/5 rounded-lg border border-transparent transition-colors group ${state.playlistSelected.has(key) ? 'row-selected' : ''}">
             <div class="meta-cell stt-cell text-secondary-text">${index + 1}</div>
             <div class="list-asset-cell flex items-center gap-4">${image(item.image)}<div><span class="list-type-badge badge-playlist">playlist</span><h3 class="list-asset-title">${link(item.spotify_url || `https://open.spotify.com/playlist/${encodeURIComponent(item.spotify_id || '')}`, playlistTitle(item))}</h3><div class="list-asset-meta"><p class="list-asset-uri text-secondary-text">spotify:playlist:${escapeHtml(item.spotify_id || '')}</p></div></div></div>
             ${state.renderPlaylistOwnerCell ? state.renderPlaylistOwnerCell(item) : `<div class="meta-cell playlist-owner-cell">${link(item.owner_url, item.owner_name || '-')}</div>`}
@@ -173,16 +220,17 @@
     function channelRow(item, index) {
         const collapsed = state.collapsed.has(item.id);
         const url = item.youtube_url || (item.youtube_id ? `https://www.youtube.com/channel/${encodeURIComponent(item.youtube_id)}` : item.query);
-        return `<section data-chp-block="${escapeHtml(item.id)}"><div class="list-grid"><div class="custom-grid-row chp-grid chp-channel px-4 py-3 bg-white/5 rounded-lg border border-transparent transition-colors group ${state.selected.has(item.id) ? 'row-selected' : ''}" data-chp-channel="${escapeHtml(item.id)}" tabindex="0" aria-selected="${state.selected.has(item.id)}">
+        return `<section data-chp-block="${escapeHtml(item.id)}"><div class="list-grid"><div class="custom-grid-row chp-grid chp-channel px-4 py-3 bg-white/5 rounded-lg border border-transparent transition-colors group ${state.selected.has(item.id) ? 'row-selected' : ''}" data-chp-channel="${escapeHtml(item.id)}" draggable="true" tabindex="0" aria-selected="${state.selected.has(item.id)}">
             <div class="meta-cell stt-cell text-secondary-text">${index + 1}</div><div class="list-asset-cell flex items-center gap-4">${image(item.image)}<div><div class="chp-channel-labels"><span class="list-type-badge">channel</span><span class="chp-playlist-count text-secondary-text">${(item.playlists || []).length} playlists</span></div><h3 class="list-asset-title">${link(url, item.name || item.query || 'Kênh YouTube')}</h3><div class="list-asset-meta"><p class="list-asset-uri text-secondary-text">${escapeHtml(item.youtube_id || item.query || '')}</p></div></div></div>
             <div class="meta-cell chp-owner-empty" aria-hidden="true"></div><div class="meta-cell"><span class="metric-main">${number(item.view_count)}</span></div><div class="meta-cell">${metricDelta(item.view_count_delta, item.delta_days) || '<span class="metric-empty">-</span>'}</div><div class="meta-cell text-right">${checked(item)}</div></div></div>
-            <div class="chp-children"${collapsed ? ' hidden' : ''} aria-label="Playlists của ${escapeHtml(item.name || item.query)}"><div class="list-grid">${(item.playlists || []).map(playlistRow).join('') || '<p class="chp-empty">Chưa liên kết playlist. Nhấp chuột phải vào kênh để chọn Edit playlists.</p>'}</div></div></section>`;
+            <div class="chp-children"${collapsed ? ' hidden' : ''} aria-label="Playlists của ${escapeHtml(item.name || item.query)}"><div class="list-grid">${(item.playlists || []).map((playlist, position) => playlistRow(playlist, position, item.id)).join('') || '<p class="chp-empty">Chưa liên kết playlist. Nhấp chuột phải vào kênh để chọn Edit playlists.</p>'}</div></div></section>`;
     }
     function listHead(labels, grid, filter = false) {
-        return `<div class="list-head pt-0 pb-0"><div class="list-columns-head custom-grid-row ${grid} px-4 py-3 text-[13px] font-medium">${labels.map((label, index) => `<div class="meta-cell head-cell" data-col-key="${index === 0 ? 'stt' : index === 1 ? 'asset' : label === 'Checked' ? 'checked' : ''}"><span class="head-cell-label">${label}</span>${filter && label === 'Checked' ? `<div class="metric-sort-controls checked-sort-controls"><button type="button" class="metric-sort-mode-toggle ${state.filter !== 'all' ? 'is-active' : ''}" data-chp-action="filter" aria-label="Lọc trạng thái kênh" aria-haspopup="menu"><span class="metric-sort-triangle">▼</span></button></div>` : ''}</div>`).join('')}</div></div>`;
+        const keys = ['', 'name', '', 'view_count', 'view_count_delta', 'last_checked'];
+        return `<div class="list-head pt-0 pb-0"><div class="list-columns-head custom-grid-row ${grid} px-4 py-3 text-[13px] font-medium">${labels.map((label, index) => `<div class="meta-cell head-cell" data-col-key="${index === 0 ? 'stt' : index === 1 ? 'asset' : label === 'Checked' ? 'checked' : ''}"><span class="head-cell-label">${label}</span>${keys[index] ? `<button type="button" class="metric-sort-mode-toggle ${state.sort?.key === keys[index] ? 'is-active' : ''}" data-chp-sort="${keys[index]}" aria-label="Sắp xếp ${label}" title="Tăng dần / giảm dần / thứ tự thủ công"><span class="metric-sort-triangle">${state.sort?.key === keys[index] && state.sort.direction === 1 ? '▲' : '▼'}</span></button>` : ''}${filter && label === 'Checked' ? `<div class="metric-sort-controls checked-sort-controls"><button type="button" class="metric-sort-mode-toggle ${state.filter !== 'all' ? 'is-active' : ''}" data-chp-action="filter" aria-label="Lọc trạng thái kênh" aria-haspopup="menu"><span class="metric-sort-triangle">▼</span></button></div>` : ''}<span class="column-resize-handle" data-chp-resize="${index}" role="separator" aria-orientation="vertical" aria-label="Đổi độ rộng ${label}" title="Kéo để đổi độ rộng; nhấp đúp để đặt lại"></span></div>`).join('')}</div></div>`;
     }
     function flushRender() {
-        if (!state.visible || state.modal || state.menu) return;
+        if (!state.visible || state.modal || state.menu || state.drag || state.resize) { state.pendingRender = true; return; }
         updateHero();
         notifyGroup();
         const list = state.host?.querySelector('.chp-list');
@@ -215,8 +263,18 @@
                 if (event.target.closest('[data-chp-action="new-group"]')) { openNewGroup(); return; }
                 const button = event.target.closest('[data-chp-group]');
                 if (!button) return;
-                state.group = button.dataset.chpGroup; changeScope();
+                const name = button.dataset.chpGroup;
+                selectRows('groups', name, event);
+                if (event.ctrlKey || event.metaKey || event.shiftKey) return;
+                state.group = name; changeScope();
             });
+            rail.addEventListener('dblclick', event => { const name = event.target.closest('[data-chp-group]')?.dataset.chpGroup; if (name) renameGroup(name); });
+            rail.addEventListener('contextmenu', event => {
+                event.preventDefault(); const name = event.target.closest('[data-chp-group]')?.dataset.chpGroup;
+                if (name && !state.groupSelected.has(name)) selectRows('groups', name);
+                openGroupMenu(name, event.clientX, event.clientY);
+            });
+            bindDrag(rail);
             rail.addEventListener('focusout', () => setTimeout(flushRender, 0));
         }
         const tools = document.getElementById('channel-group-tools');
@@ -241,6 +299,7 @@
         const html = [...groups].filter(([name]) => name.toLocaleLowerCase().includes(state.groupSearch.toLocaleLowerCase())).map(([name, count]) => `<button type="button" class="group-item ${state.group === name ? 'group-item-selected' : ''} w-full flex items-center justify-between px-3 py-3 rounded-lg transition-colors text-secondary-text hover:text-white hover:bg-white/5" data-chp-group="${escapeHtml(name)}" aria-pressed="${state.group === name}"><div class="flex items-center gap-3 min-w-0"><span class="material-icons-round text-secondary-text text-sm">folder</span><span class="font-medium truncate">${escapeHtml(name)}</span></div><div class="group-item-actions flex items-center gap-2"><span class="group-count text-xs font-bold ${state.group === name ? 'bg-primary/20 text-primary' : 'bg-white/10 text-secondary-text'} px-2 py-0.5 rounded-full">${number(count)}</span></div></button>`).join('');
         const content = `<div class="chp-group-list space-y-1">${html}</div><button type="button" class="chp-new-group w-full flex items-center gap-3 px-3 py-3 rounded-lg text-secondary-text hover:text-primary transition-colors mt-4 cursor-pointer" data-chp-action="new-group"><span class="material-icons-round text-sm">add</span><span class="font-medium">New Group</span></button>`;
         if (rail.innerHTML !== content) rail.innerHTML = content;
+        for (const row of rail.querySelectorAll('[data-chp-group]')) { row.draggable = true; row.classList.toggle('chp-group-multi', state.groupSelected.has(row.dataset.chpGroup)); }
     }
     function invalidate() {
         state.generation++;
@@ -248,16 +307,18 @@
         state.loading = false;
     }
     function changeScope(resetGroup = false) {
+        state.scope++; stopDrag();
         clearTimeout(state.debounce);
         invalidate();
-        if (resetGroup) { state.group = ''; state.groups = []; state.collapsed.clear(); }
+        if (resetGroup) { state.group = ''; state.groups = []; state.collapsed.clear(); state.preferencesLoaded = false; state.preferences = { group_order: [], channel_orders: {}, playlist_orders: {} }; state.groupSelected.clear(); state.cut = null; }
         state.offset = 0;
         state.items = []; state.groupItems = []; state.selected.clear(); state.total = 0;
+        state.playlistSelected.clear(); state.anchors = { groups: state.anchors.groups };
         flushRender();
         return reload();
     }
     async function reload(quiet = false) {
-        if (!state.visible || !state.host || (quiet && (state.loading || state.bulkBusy || state.modal || state.menu))) return;
+        if (!state.visible || !state.host || state.drag || state.resize || (quiet && (state.loading || state.bulkBusy || state.modal || state.menu || state.writePending))) return;
         invalidate();
         const generation = state.generation;
         const controller = new AbortController();
@@ -268,7 +329,14 @@
             const data = await api(query(), 'GET', undefined, controller.signal);
             if (generation !== state.generation || !state.visible) return;
             if (!Array.isArray(data?.items)) throw new Error('Phản hồi danh sách kênh không hợp lệ.');
+            if (!state.writePending || !state.preferencesLoaded) {
+                const prefs = await api('/youtube/preferences', 'GET', undefined, controller.signal);
+                if (generation !== state.generation || !state.visible) return;
+                state.preferences = { group_order: prefs.group_order || [], channel_orders: prefs.channel_orders || {}, playlist_orders: prefs.playlist_orders || {} }; state.preferencesLoaded = true;
+            }
             state.groups = (data.groups || []).filter(group => typeof group.name === 'string' && group.name.trim() && group.name.toLowerCase() !== 'all');
+            state.groups = ordered(state.groups, state.preferences.group_order, group => group.name);
+            state.groupSelected = new Set([...state.groupSelected].filter(name => state.groups.some(group => group.name === name)));
             state.hasKeys = data.has_keys !== false;
             if (!state.groups.length) {
                 state.group = ''; state.offset = 0; state.items = []; state.groupItems = []; state.selected.clear(); state.total = 0;
@@ -290,9 +358,12 @@
             }
             if (generation !== state.generation || !state.visible) return;
             // Commit once: no truncated first page or stale owner data reaches the DOM.
-            state.items = items; state.groupItems = groupItems; state.total = items.length;
+            state.items = ordered(items, state.preferences.channel_orders[state.group]); state.groupItems = ordered(groupItems, state.preferences.channel_orders[state.group]); state.total = items.length;
+            for (const item of [...state.items, ...state.groupItems]) item.playlists = ordered((item.playlists || []).filter(playlist => !playlist.user_id || String(playlist.user_id) === state.userId), state.preferences.playlist_orders[item.id]);
             const ids = new Set(items.map(item => item.id));
             state.selected = new Set([...state.selected].filter(id => ids.has(id)));
+            state.playlistSelected = new Set([...state.playlistSelected].filter(id => visibleIds('playlist').includes(id)));
+            applySort();
             flushRender();
             if (!quiet || state.host.querySelector('.chp-status').classList.contains('chp-error')) message('');
         } catch (error) {
@@ -305,7 +376,7 @@
         while (true) {
             if (generation !== state.generation || !state.visible || signal.aborted) return null;
             if (!Array.isArray(data?.items)) throw new Error('Phản hồi danh sách kênh không hợp lệ.');
-            for (const item of data.items) merged.set(item.id, item);
+            for (const item of data.items) if (String(item.user_id) === state.userId) merged.set(item.id, item);
             offset += data.items.length;
             if (offset >= Number(data.total) || (!data.total && data.items.length < PAGE_SIZE)) break;
             if (!data.items.length) throw new Error('Danh sách kênh chưa tải đủ. Vui lòng thử lại.');
@@ -339,7 +410,7 @@
             for (let offset = 0; ; offset += PAGE_SIZE) {
                 const data = await api(query(offset));
                 if (generation !== state.generation || !state.visible) return;
-                for (const item of data.items || []) { ids.add(item.id); if (item.playlists?.length) linked.add(item.id); }
+                for (const item of data.items || []) { if (String(item.user_id) !== state.userId) continue; ids.add(item.id); if (item.playlists?.length) linked.add(item.id); }
                 if (!data.items?.length || offset + data.items.length >= data.total) break;
             }
             const all = [...ids];
@@ -357,6 +428,11 @@
         finally { state.bulkBusy = false; if (button.isConnected) button.disabled = false; }
     }
     function panelClick(event) {
+        const sort = event.target.closest('[data-chp-sort]')?.dataset.chpSort;
+        if (sort) {
+            state.sort = state.sort?.key === sort ? state.sort.direction === 1 ? { key: sort, direction: -1 } : null : { key: sort, direction: 1 };
+            applySort(); redrawOrder(); return;
+        }
         const button = event.target.closest('[data-chp-action]');
         if (!button || button.disabled) return;
         const action = button.dataset.chpAction;
@@ -409,20 +485,215 @@
         });
     }
     function openFilterMenu(x, y) { bindFilter(createMenu(filterItems(), x, y)); }
+    function ordered(rows, ids = [], key = row => row.id) {
+        const positions = new Map(ids.map((id, index) => [id, index]));
+        return [...rows].sort((a, b) => (positions.get(key(a)) ?? ids.length) - (positions.get(key(b)) ?? ids.length));
+    }
+    function applySort() {
+        const manual = state.preferences.channel_orders[state.group];
+        state.items = ordered(state.items, manual?.length ? manual : state.groupItems.map(item => item.id));
+        if (!state.sort) return;
+        const { key, direction } = state.sort;
+        state.items.sort((a, b) => direction * (key === 'name' ? String(a.name || a.query || '').localeCompare(String(b.name || b.query || ''), 'vi') : key === 'last_checked' ? (Date.parse(a[key]) || 0) - (Date.parse(b[key]) || 0) : (Number(a[key]) || 0) - (Number(b[key]) || 0)));
+    }
+    function redrawOrder() {
+        const focus = document.activeElement;
+        const attribute = ['data-chp-channel', 'data-chp-playlist', 'data-chp-group', 'data-chp-sort'].find(name => focus?.hasAttribute(name));
+        const value = attribute && focus.getAttribute(attribute);
+        if (attribute || state.host?.querySelector('.chp-list')?.contains(focus)) focus.blur();
+        flushRender();
+        if (attribute) [...document.querySelectorAll(`[${attribute}]`)].find(node => node.getAttribute(attribute) === value)?.focus({ preventScroll: true });
+    }
+    function persistPreferences(patch) {
+        const scope = state.scope, owner = state.userId;
+        invalidate();
+        for (const [field, value] of Object.entries(patch)) state.preferences[field] = field === 'group_order' ? value : { ...state.preferences[field], ...value };
+        state.writePending++;
+        const current = () => scope === state.scope && owner === state.userId && owner === String(state.getUser()?.id || '') && state.visible;
+        const job = state.preferenceQueue.then(async () => {
+            if (!current()) return;
+            await api('/youtube/preferences', 'PUT', patch);
+        }).catch(async error => {
+            if (!current()) return;
+            state.preferencesLoaded = false;
+            await reload();
+            if (current()) redrawOrder();
+            if (current()) message(errorText(error), true);
+        }).finally(() => { state.writePending--; });
+        state.preferenceQueue = job;
+        return job;
+    }
+    function selectedChannels() { return state.items.filter(item => state.selected.has(item.id) && String(item.user_id) === state.userId); }
+    function selectedPlaylists() {
+        return state.items.flatMap(channel => (channel.playlists || []).filter(item => state.playlistSelected.has(playlistKey(channel.id, item.id))).map(item => ({ channel, item })));
+    }
+    async function copyText(text) {
+        if (!text) return;
+        if (state.copyLinks) return state.copyLinks(text);
+        if (navigator.clipboard?.writeText) { try { return await navigator.clipboard.writeText(text); } catch (_) { /* Local HTTP can require the selection-based fallback. */ } }
+        const input = document.createElement('textarea'), focus = document.activeElement;
+        input.value = text; input.style.position = 'fixed'; input.style.opacity = '0'; document.body.appendChild(input); input.select();
+        try { if (!document.execCommand('copy')) throw new Error('Không thể sao chép liên kết.'); }
+        finally { input.remove(); focus?.focus(); }
+    }
+    const channelUrl = item => item.youtube_url || (item.youtube_id ? `https://www.youtube.com/channel/${encodeURIComponent(item.youtube_id)}` : item.query);
+    function copyChannels(items = selectedChannels()) { return copyText(items.map(channelUrl).filter(value => /^https?:\/\//i.test(value || '')).join('\n')); }
+    function runAction(action) {
+        const items = [...new Map(selectedPlaylists().map(({ item }) => [item.id, item])).values()];
+        if (!items.length) return;
+        if (!state.runPlaylistAction) { message('Chức năng playlist chưa được kết nối với ứng dụng.', true); return; }
+        const scope = state.scope;
+        Promise.resolve().then(() => { if (scope === state.scope && state.userId === String(state.getUser()?.id || '')) return state.runPlaylistAction(action, items); }).then(() => {
+            if (scope === state.scope && action === 'fetch-selected') { notifyItems(); return reload(); }
+        }).catch(error => { if (scope === state.scope) message(errorText(error), true); });
+    }
+    function actionMenu(actions, x, y, run) {
+        const menu = createMenu(actions.map(([action, label]) => `<button type="button" role="menuitem" class="row-context-item" data-command="${escapeHtml(action)}">${escapeHtml(label)}</button>`).join(''), x, y);
+        menu.addEventListener('click', event => {
+            const action = event.target.closest('[data-command]')?.dataset.command;
+            if (!action) return;
+            closeMenu(); Promise.resolve().then(() => run(action)).catch(error => message(errorText(error), true));
+        });
+        return menu;
+    }
+    function renameGroup(name) {
+        const scope = state.scope;
+        dialog('Đổi tên nhóm', `<label>Tên nhóm<input name="name" required maxlength="128" value="${escapeHtml(name)}"></label>`, 'Lưu', async node => {
+            const new_name = node.querySelector('[name="name"]').value.trim();
+            if (!new_name || new_name.toLowerCase() === 'all') throw new Error('Nhập tên nhóm thực tế.');
+            await api('/youtube/groups', 'PATCH', { old_name: name, new_name });
+            if (scope !== state.scope) return;
+            state.preferencesLoaded = false;
+            state.groupSelected.delete(name); state.groupSelected.add(new_name);
+            if (state.group === name) state.group = new_name;
+        });
+    }
+    function deleteGroups() {
+        const names = visibleIds('groups').filter(name => state.groupSelected.has(name));
+        if (!names.length) return;
+        const scope = state.scope;
+        dialog('Xóa nhóm', `<p>Xóa ${names.length} nhóm đã chọn? Kênh được chuyển vào Ungrouped, Spotify Item vẫn được giữ nguyên.</p>`, 'Xóa nhóm', async () => {
+            for (let offset = 0; offset < names.length; offset += 500) {
+                if (scope !== state.scope) return;
+                await api('/youtube/groups/delete', 'POST', { names: names.slice(offset, offset + 500) });
+            }
+            if (scope === state.scope) { state.groupSelected.clear(); state.preferencesLoaded = false; }
+        });
+    }
+    function openGroupMenu(name, x, y) {
+        const actions = [['new', 'New Group']];
+        if (name) actions.push(['rename', 'Đổi tên nhóm'], ['delete', 'Xóa nhóm đã chọn']);
+        if (name === state.group) actions.push(['clear', 'Clear Group']);
+        actionMenu(actions, x, y, action => {
+            if (action === 'new') openNewGroup();
+            if (action === 'rename') renameGroup(name);
+            if (action === 'delete') deleteGroups();
+            if (action === 'clear') clearGroup();
+        });
+    }
+    function clearGroup() {
+        const name = state.group;
+        if (!name || !state.groupItems.length) return;
+        dialog('Clear Group', `<p>Xóa toàn bộ ${state.groupItems.length} kênh YouTube trong ${escapeHtml(name)}? Nhóm và Spotify Item vẫn được giữ nguyên.</p>`, 'Xóa kênh', () => api('/youtube/groups/clear', 'POST', { name }));
+    }
+    function deleteChannels(items = selectedChannels()) {
+        const ids = items.filter(item => String(item.user_id) === state.userId).map(item => item.id);
+        if (!ids.length) return;
+        const scope = state.scope;
+        dialog('Xóa kênh', `<p>Xóa ${ids.length} kênh YouTube? Các Spotify Item đã liên kết vẫn được giữ nguyên.</p>`, 'Xóa kênh', async () => {
+            for (let offset = 0; offset < ids.length; offset += 500) {
+                if (scope !== state.scope) return;
+                await api('/youtube/channels/delete', 'POST', { channel_ids: ids.slice(offset, offset + 500) });
+            }
+        });
+    }
+    async function moveChannels(ids, group, owner = state.userId) {
+        if (!ids.length || owner !== state.userId || owner !== String(state.getUser()?.id || '') || !state.groups.some(row => row.name === group)) return;
+        const scope = state.scope;
+        invalidate();
+        state.writePending++;
+        try {
+            for (let offset = 0; offset < ids.length; offset += 500) {
+                if (scope !== state.scope || owner !== String(state.getUser()?.id || '')) return;
+                await api('/youtube/channels/move', 'POST', { channel_ids: ids.slice(offset, offset + 500), group });
+            }
+            if (scope !== state.scope || owner !== state.userId) return;
+            state.cut = null; state.preferencesLoaded = false;
+            await reload();
+        } catch (error) { if (scope === state.scope) { await reload(); message(errorText(error), true); } }
+        finally { state.writePending--; }
+    }
+    function unlinkPlaylists() {
+        const pairs = selectedPlaylists();
+        if (!pairs.length) return;
+        const channels = new Map();
+        for (const { channel, item } of pairs) {
+            if (!channels.has(channel.id)) channels.set(channel.id, { channel, ids: new Set() });
+            channels.get(channel.id).ids.add(item.id);
+        }
+        const scope = state.scope;
+        dialog('Gỡ liên kết playlist', `<p>Gỡ ${pairs.length} liên kết đã chọn? Spotify Item không bị xóa.</p>`, 'Gỡ liên kết', async () => {
+            for (const [id, { channel, ids }] of channels) {
+                if (scope !== state.scope) return;
+                const item_ids = (channel.playlists || []).filter(item => !ids.has(item.id)).map(item => item.id);
+                if (item_ids.length > 500) throw new Error('Tối đa 500 playlist trong mỗi lần lưu liên kết.');
+                await api(`/youtube/channels/${encodeURIComponent(id)}/playlists`, 'PUT', { item_ids, urls: [] });
+            }
+            notifyItems(); state.playlistSelected.clear();
+        });
+    }
+    function openPlaylistMenu(row, x, y) {
+        if (!state.playlistSelected.has(row.dataset.chpPlaylist)) selectRows('playlist', row.dataset.chpPlaylist);
+        state.focusKind = 'playlist';
+        actionMenu([['copy-selected-links', 'Copy Link'], ['fetch-selected', 'Refresh playlists đã chọn'], ['unlink', 'Gỡ liên kết đã chọn'], ['clipboard-auto', 'Clipboard Playlist'], ['txt-playlist-type3', 'Export TXT'], ['export-listview-excel', 'Export Excel']], x, y, action => action === 'unlink' ? unlinkPlaylists() : runAction(action));
+    }
+    function moveMenu(x, y) {
+        const ids = selectedChannels().map(item => item.id);
+        actionMenu(state.groups.map(group => [group.name, group.name]), x, y, group => moveChannels(ids, group));
+    }
+    async function refreshSelectedChannels() {
+        const ids = selectedChannels().map(item => item.id), scope = state.scope;
+        if (!ids.length || state.bulkBusy) return;
+        invalidate(); state.bulkBusy = true;
+        try {
+            for (let offset = 0; offset < ids.length; offset += 500) {
+                if (scope !== state.scope) return;
+                await api('/youtube/channels/refresh', 'POST', { channel_ids: ids.slice(offset, offset + 500) });
+            }
+            if (scope === state.scope) { await reload(); message(`Đã yêu cầu refresh ${ids.length} kênh.`); }
+        } catch (error) { if (scope === state.scope) message(errorText(error), true); }
+        finally { state.bulkBusy = false; }
+    }
+    async function exportChannelList() {
+        const items = selectedChannels().length ? selectedChannels() : state.items;
+        if (state.exportChannels) return state.exportChannels(items);
+        const cell = value => `"${String(value ?? '').replace(/^[=+@\-\t\r]/, "'$&").replace(/"/g, '""')}"`;
+        const content = [['Channel', 'URL', 'View', 'Delta', 'Checked'], ...items.map(item => [item.name || item.query, channelUrl(item), item.view_count, item.view_count_delta, item.last_checked])].map(row => row.map(cell).join(',')).join('\r\n');
+        const url = URL.createObjectURL(new Blob(['\uFEFF', content], { type: 'text/csv;charset=utf-8' }));
+        const anchor = document.createElement('a'); anchor.href = url; anchor.download = 'youtube-channels.csv'; anchor.click(); setTimeout(() => URL.revokeObjectURL(url), 1000);
+    }
     function openMenu(id, x, y) {
         closeMenu();
         const item = state.items.find(row => row.id === id);
         if (!item) return;
-        const menu = createMenu([['edit', 'edit', 'Edit playlists'], ['refresh', 'refresh', 'Refresh kênh'], ['playlists', 'refresh', 'Refresh playlists'], ['toggle', 'unfold_more', 'Mở / thu playlists'], ['expand', 'unfold_more', 'Mở tất cả'], ['collapse', 'unfold_less', 'Thu tất cả'], ['delete', 'delete', 'Xóa kênh']].map(([action, icon, label]) => `<button type="button" role="menuitem" class="row-context-item ${action === 'delete' ? 'row-context-danger' : ''}" data-menu="${action}"><span class="material-icons-round">${icon}</span>${label}</button>`).join('') + '<div class="row-context-separator"></div>' + filterItems(), x, y);
+        if (!state.selected.has(id)) selectChannel(id);
+        state.focusKind = 'channels';
+        const actions = [['add', 'add', 'Add Channel'], ...(state.selected.size === 1 ? [['edit', 'edit', 'Edit playlists']] : []), ['refresh', 'refresh', 'Refresh kênh'], ['playlists', 'refresh', 'Refresh playlists'], ['move', 'drive_file_move', 'Move To Group'], ['copy', 'content_copy', 'Copy Links'], ['export', 'download', 'Export List CSV'], ['clear', 'delete', 'Clear Group'], ['toggle', 'unfold_more', 'Mở / thu playlists'], ['expand', 'unfold_more', 'Mở tất cả'], ['collapse', 'unfold_less', 'Thu tất cả'], ['delete', 'delete', 'Xóa kênh']];
+        const menu = createMenu(actions.map(([action, icon, label]) => `<button type="button" role="menuitem" class="row-context-item ${action === 'delete' ? 'row-context-danger' : ''}" data-menu="${action}"><span class="material-icons-round">${icon}</span>${label}</button>`).join('') + '<div class="row-context-separator"></div>' + filterItems(), x, y);
         bindFilter(menu);
         menu.addEventListener('click', event => {
             const action = event.target.closest('[data-menu]')?.dataset.menu;
             if (!action) return;
             closeMenu();
+            if (action === 'add') openAdd();
+            if (action === 'move') moveMenu(x, y);
+            if (action === 'copy') copyChannels().catch(error => message(errorText(error), true));
+            if (action === 'export') Promise.resolve(exportChannelList()).catch(error => message(errorText(error), true));
+            if (action === 'clear') clearGroup();
             if (action === 'edit') openEdit(item);
-            if (action === 'refresh') mutate(null, '/youtube/channels/refresh', 'POST', { channel_ids: [id] });
-            if (action === 'playlists') mutate(null, `/youtube/channels/${encodeURIComponent(id)}/playlists/refresh`, 'POST', undefined, true);
-            if (action === 'delete') openDelete(item);
+            if (action === 'refresh') refreshSelectedChannels();
+            if (action === 'playlists') { state.playlistSelected = new Set(selectedChannels().flatMap(row => (row.playlists || []).map(playlist => playlistKey(row.id, playlist.id)))); runAction('fetch-selected'); }
+            if (action === 'delete') deleteChannels();
             if (action === 'toggle') {
                 if (state.collapsed.has(id)) state.collapsed.delete(id); else state.collapsed.add(id);
                 flushRender();
@@ -443,8 +714,165 @@
         if (modal.focus?.isConnected && state.visible) modal.focus.focus();
         if (state.pendingRender) flushRender();
     }
+    function reorderedVisible(full, visible, moving, target, after) {
+        if (moving.includes(target)) return full;
+        const picked = visible.filter(id => moving.includes(id));
+        const rest = visible.filter(id => !moving.includes(id));
+        const index = rest.indexOf(target);
+        if (index < 0 || !picked.length) return full;
+        rest.splice(index + (after ? 1 : 0), 0, ...picked);
+        const visibleSet = new Set(visible);
+        let position = 0;
+        // Hidden rows keep their slots; only the visible subsequence changes order.
+        return full.map(id => visibleSet.has(id) ? rest[position++] : id);
+    }
+    function widthKey() { return `spoticheck_channel_column_widths_${state.userId}`; }
+    function loadWidths() {
+        state.widths = null;
+        try {
+            const widths = JSON.parse(localStorage.getItem(widthKey()));
+            if (Array.isArray(widths) && widths.length === 6 && widths.every(value => Number.isFinite(value))) state.widths = widths.map(value => Math.min(800, Math.max(48, value)));
+        } catch (_) { /* Private browsing can disable storage. */ }
+        applyWidths();
+    }
+    function applyWidths() {
+        if (!state.host) return;
+        if (state.widths) state.host.style.setProperty('--chp-columns', state.widths.map(value => `${value}px`).join(' '));
+        else state.host.style.removeProperty('--chp-columns');
+    }
+    function saveWidths() {
+        try { if (state.widths) localStorage.setItem(widthKey(), JSON.stringify(state.widths)); else localStorage.removeItem(widthKey()); } catch (_) { /* Resizing remains usable without storage. */ }
+    }
+    function cancelResize() {
+        if (!state.resize) return;
+        state.resize.controller.abort(); state.resize = null;
+        document.body.classList.remove('chp-resizing');
+    }
+    function startResize(event) {
+        const handle = event.target.closest('[data-chp-resize]');
+        if (!handle || event.button !== 0 || !state.visible || state.modal) return;
+        event.preventDefault(); event.stopImmediatePropagation(); invalidate(); cancelResize();
+        const widths = [...handle.closest('.custom-grid-row').children].map(node => Math.min(800, Math.max(48, node.getBoundingClientRect().width)));
+        const index = Number(handle.dataset.chpResize), scope = state.scope, owner = state.userId, startX = event.clientX;
+        const controller = new AbortController();
+        state.resize = { controller }; document.body.classList.add('chp-resizing');
+        const move = event => {
+            if (scope !== state.scope || owner !== String(state.getUser()?.id || '')) { cancelResize(); return; }
+            event.preventDefault(); event.stopImmediatePropagation();
+            state.widths = [...widths]; state.widths[index] = Math.min(800, Math.max(48, widths[index] + event.clientX - startX)); applyWidths();
+        };
+        window.addEventListener('pointermove', move, { capture: true, signal: controller.signal });
+        window.addEventListener('pointerup', event => { move(event); saveWidths(); cancelResize(); if (state.pendingRender) flushRender(); }, { capture: true, signal: controller.signal });
+        window.addEventListener('pointercancel', cancelResize, { capture: true, signal: controller.signal });
+    }
+    function stopDrag() {
+        if (state.scrollFrame != null) cancelAnimationFrame(state.scrollFrame);
+        state.scrollFrame = null; state.drag = null;
+        document.querySelectorAll('.chp-drop-before, .chp-drop-after').forEach(node => node.classList.remove('chp-drop-before', 'chp-drop-after'));
+    }
+    function autoScroll(event) {
+        if (!state.drag) return;
+        state.drag.pointer = { x: event.clientX, y: event.clientY };
+        if (state.scrollFrame != null) return;
+        const frame = () => {
+            if (!state.drag || !state.visible) { stopDrag(); return; }
+            const { x, y } = state.drag.pointer;
+            const railRect = state.rail?.getBoundingClientRect();
+            let node = railRect && x >= railRect.left && x <= railRect.right ? state.rail : state.host;
+            while (node && !(node.scrollHeight > node.clientHeight && /auto|scroll/.test(getComputedStyle(node).overflowY))) node = node.parentElement;
+            node ||= document.scrollingElement;
+            const rect = node === document.scrollingElement ? { top: 0, bottom: window.innerHeight } : node.getBoundingClientRect();
+            const edge = 48;
+            const speed = y < rect.top + edge ? -Math.min(18, Math.max(0, (rect.top + edge - y) / 3)) : y > rect.bottom - edge ? Math.min(18, Math.max(0, (y - rect.bottom + edge) / 3)) : 0;
+            if (speed) node.scrollTop += speed;
+            state.scrollFrame = requestAnimationFrame(frame);
+        };
+        state.scrollFrame = requestAnimationFrame(frame);
+    }
+    function dragTarget(event) {
+        const drag = state.drag;
+        if (!drag || drag.scope !== state.scope || drag.owner !== String(state.getUser()?.id || '') || state.sort) return null;
+        if (drag.kind === 'channelgroup') return event.target.closest('[data-chp-group]');
+        if (drag.kind === 'channels') return event.target.closest('[data-chp-group], [data-chp-channel]');
+        const row = event.target.closest('[data-chp-playlist]');
+        return row?.dataset.chpParent === drag.parent ? row : null;
+    }
+    function bindDrag(host) {
+        host.addEventListener('dragstart', event => {
+            const row = event.target.closest('[data-chp-playlist], [data-chp-channel], [data-chp-group]');
+            if (!row || event.target.closest('a, img') || state.sort || state.modal || state.writePending) { event.preventDefault(); return; }
+            const kind = row.hasAttribute('data-chp-group') ? 'channelgroup' : row.hasAttribute('data-chp-playlist') ? 'playlist' : 'channels';
+            const selectionKind = kind === 'channelgroup' ? 'groups' : kind;
+            const id = kind === 'channelgroup' ? row.dataset.chpGroup : kind === 'playlist' ? row.dataset.chpPlaylist : row.dataset.chpChannel;
+            if (!selection(selectionKind).has(id)) selectRows(selectionKind, id);
+            const parent = row.dataset.chpParent;
+            let ids = visibleIds(selectionKind).filter(value => selection(selectionKind).has(value));
+            if (kind === 'playlist') ids = ids.filter(value => value.startsWith(`${parent}:`));
+            state.drag = { kind, ids, parent, scope: state.scope, owner: state.userId, pointer: { x: event.clientX, y: event.clientY } };
+            invalidate();
+            event.dataTransfer.effectAllowed = 'move';
+            event.dataTransfer.setData('application/x-spoticheck-channel-workspace', JSON.stringify({ kind, ids, parent }));
+        });
+        host.addEventListener('dragover', event => {
+            if (!state.drag) return;
+            autoScroll(event);
+            const row = dragTarget(event);
+            document.querySelectorAll('.chp-drop-before, .chp-drop-after').forEach(node => node.classList.remove('chp-drop-before', 'chp-drop-after'));
+            if (!row) { event.dataTransfer.dropEffect = 'none'; return; }
+            event.preventDefault(); event.dataTransfer.dropEffect = 'move';
+            const rect = row.getBoundingClientRect();
+            row.classList.add(event.clientY > rect.top + rect.height / 2 ? 'chp-drop-after' : 'chp-drop-before');
+        });
+        host.addEventListener('drop', event => {
+            const row = dragTarget(event), drag = state.drag;
+            if (!row || !drag) { stopDrag(); return; }
+            event.preventDefault(); event.stopPropagation();
+            const rect = row.getBoundingClientRect(), after = event.clientY > rect.top + rect.height / 2;
+            stopDrag();
+            if (drag.kind === 'channels' && row.hasAttribute('data-chp-group')) { moveChannels(drag.ids, row.dataset.chpGroup); return; }
+            if (drag.kind === 'channelgroup') {
+                const ids = reorderedVisible(state.groups.map(group => group.name), visibleIds('groups'), drag.ids, row.dataset.chpGroup, after);
+                state.groups = ordered(state.groups, ids); persistPreferences({ group_order: ids });
+            } else if (drag.kind === 'channels') {
+                const ids = reorderedVisible(state.groupItems.map(item => item.id), visibleIds('channels'), drag.ids, row.dataset.chpChannel, after);
+                state.groupItems = ordered(state.groupItems, ids); state.items = ordered(state.items, ids);
+                persistPreferences({ channel_orders: { [state.group]: ids } });
+            } else {
+                const channel = state.items.find(item => item.id === drag.parent);
+                if (!channel) return;
+                const ids = reorderedVisible(channel.playlists.map(item => item.id), channel.playlists.map(item => item.id), drag.ids.map(value => value.slice(drag.parent.length + 1)), row.dataset.chpItem, after);
+                channel.playlists = ordered(channel.playlists, ids);
+                const cached = state.groupItems.find(item => item.id === drag.parent);
+                if (cached) cached.playlists = ordered(cached.playlists, ids);
+                persistPreferences({ playlist_orders: { [drag.parent]: ids } });
+            }
+            redrawOrder();
+        });
+        host.addEventListener('dragend', () => { stopDrag(); if (state.pendingRender) flushRender(); });
+    }
+    function keyboard(event) {
+        if (!state.visible || state.host?.hidden || state.modal || state.menu || state.userId !== String(state.getUser()?.id || '') || event.target.closest('input, textarea, select, [contenteditable]:not([contenteditable="false"]), [role="dialog"]')) return;
+        const focus = document.activeElement;
+        if (focus?.closest('[data-chp-playlist]')) state.focusKind = 'playlist';
+        else if (focus?.closest('[data-chp-channel]')) state.focusKind = 'channels';
+        else if (state.rail?.contains(focus)) state.focusKind = 'groups';
+        else if (focus !== document.body && !state.host?.contains(focus) && !state.tools?.contains(focus)) return;
+        const modifier = event.ctrlKey || event.metaKey, key = event.key.toLowerCase(), kind = state.focusKind;
+        let run;
+        if (modifier && key === 'a') run = () => { const selected = selection(kind); selected.clear(); visibleIds(kind).forEach(id => selected.add(id)); paintSelection(); };
+        if (key === 'escape') run = () => { state.selected.clear(); state.playlistSelected.clear(); state.groupSelected.clear(); state.cut = null; paintSelection(); };
+        if (key === 'delete' && selection(kind).size) run = () => kind === 'playlist' ? unlinkPlaylists() : kind === 'groups' ? deleteGroups() : deleteChannels();
+        if (key === 'f2' && kind === 'groups' && state.groupSelected.size === 1) run = () => renameGroup([...state.groupSelected][0]);
+        if (modifier && key === 'c' && kind !== 'groups' && selection(kind).size) run = () => kind === 'playlist' ? runAction('copy-selected-links') : copyChannels().catch(error => message(errorText(error), true));
+        if (modifier && key === 'x' && kind === 'channels' && state.selected.size) run = () => { state.cut = { owner: state.userId, ids: selectedChannels().map(item => item.id) }; message('Đã cắt kênh. Chọn nhóm đích và nhấn Ctrl/Cmd+V.'); };
+        if (modifier && key === 'v' && state.cut && state.group) run = () => moveChannels(state.cut.ids, state.group, state.cut.owner);
+        if (!run) return;
+        event.preventDefault(); event.stopImmediatePropagation(); run();
+    }
+    document.addEventListener('keydown', keyboard, true);
     function dialog(title, content, submitLabel, submit) {
         closeMenu(); closeModal();
+        invalidate();
         const node = document.createElement('div'); node.className = 'chp-backdrop';
         node.innerHTML = `<section class="chp-dialog" role="dialog" aria-modal="true" aria-labelledby="chp-dialog-title"><form><header><h2 id="chp-dialog-title">${escapeHtml(title)}</h2><button type="button" data-close aria-label="Đóng">×</button></header><div class="chp-dialog-body">${content}</div><p class="chp-dialog-status" role="status" aria-live="polite"></p><footer><button type="button" data-close>Hủy</button><button type="submit" class="chp-primary">${escapeHtml(submitLabel)}</button></footer></form></section>`;
         const modal = { node, controller: new AbortController(), focus: document.activeElement, busy: false };
@@ -467,6 +895,7 @@
             try {
                 const feedback = await submit(node, modal);
                 if (state.modal !== modal) return;
+                modal.focus = state.tools?.querySelector('.chp-search');
                 closeModal(); await reload(); if (feedback) message(feedback);
             } catch (error) { if (state.modal === modal) { status.textContent = errorText(error); status.classList.add('chp-error'); } }
             finally { modal.busy = false; if (button.isConnected) button.disabled = false; }
@@ -504,6 +933,7 @@
         dialog('Xóa kênh', `<p>Xóa ${escapeHtml(item.name || item.query)}? Các Spotify Item đã liên kết vẫn được giữ nguyên.</p>`, 'Xóa kênh', () => api(`/youtube/channels/${encodeURIComponent(item.id)}`, 'DELETE'));
     }
     async function openEdit(item) {
+        if (String(item.user_id) !== state.userId || state.userId !== String(state.getUser()?.id || '')) return;
         const selected = new Map((item.playlists || []).map(playlist => [playlist.id, playlist]));
         const modal = dialog(`Edit playlists · ${item.name || item.query}`, '<p class="chp-muted">Bỏ chọn chỉ gỡ liên kết, không xóa Spotify Item.</p><div class="chp-picker" aria-busy="true">Đang tải playlist của chủ kênh…</div><label>Dán URL playlist, mỗi dòng một URL<textarea name="urls" rows="5" placeholder="https://open.spotify.com/playlist/…"></textarea></label>', 'Lưu liên kết', async node => {
             if (!loaded) throw new Error('Danh sách playlist chưa tải xong.');
@@ -523,7 +953,7 @@
                 const data = await api(`/items?${params}`, 'GET', undefined, modal.controller.signal);
                 if (state.modal !== modal) return;
                 if (!Array.isArray(data?.items)) throw new Error('Phản hồi playlist không hợp lệ.');
-                for (const playlist of data.items) selected.set(playlist.id, playlist);
+                for (const playlist of data.items) if (String(playlist.user_id) === state.userId) selected.set(playlist.id, playlist);
                 if (!data.items.length || offset + data.items.length >= data.total) break;
             }
             const originalIds = new Set((item.playlists || []).map(playlist => playlist.id));
@@ -578,12 +1008,13 @@
     function syncAccountScope() {
         const next = String(state.getUser()?.id || '');
         if (state.userId === next) return;
-        closeModal(); closeMenu(); state.userId = next;
+        cancelResize(); closeModal(); closeMenu(); state.userId = next; loadWidths();
         return changeScope(true);
     }
     function show() {
         mount();
         syncAccountScope();
+        applyWidths();
         state.visible = true; state.host.hidden = false;
         state.tools.hidden = false;
         renderRail();
@@ -592,6 +1023,7 @@
         return reload();
     }
     function hide() {
+        state.scope++; stopDrag(); cancelResize();
         state.visible = false; invalidate();
         clearInterval(state.timer); clearTimeout(state.debounce);
         closeModal(); closeMenu();
@@ -607,9 +1039,12 @@
         state.formatUpdatedAt = typeof options.formatUpdatedAt === 'function' ? options.formatUpdatedAt : null;
         state.renderUserCell = typeof options.renderUserCell === 'function' ? options.renderUserCell : null;
         state.renderPlaylistOwnerCell = typeof options.renderPlaylistOwnerCell === 'function' ? options.renderPlaylistOwnerCell : null;
+        for (const name of ['runPlaylistAction', 'copyLinks', 'previewImage', 'exportChannels']) state[name] = typeof options[name] === 'function' ? options[name] : null;
         state.settingsGeneration++;
         state.userId = ''; state.group = ''; state.search = ''; state.filter = 'all'; state.offset = 0;
         state.items = []; state.groupItems = []; state.groups = []; state.total = 0; state.collapsed.clear(); state.selected.clear(); state.groupSearch = '';
+        state.preferencesLoaded = false; state.preferences = { group_order: [], channel_orders: {}, playlist_orders: {} };
+        state.groupSelected.clear(); state.playlistSelected.clear(); state.anchors = {}; state.cut = null; state.sort = null; state.focusKind = 'channels';
         if (state.tools) state.tools.querySelector('.chp-search').value = '';
         if (state.groupTools) state.groupTools.querySelector('input').value = '';
         return window.ChannelPlaylists;

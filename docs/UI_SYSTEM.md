@@ -67,5 +67,7 @@
 - Channel edits are right-click/keyboard context-menu actions, not row Edit buttons. No visible page controls; backend paging is internal and must load the complete selected group.
 - Spotify background sync cannot update another view's header/title/controls.
 - No account filter in the group rail. Spotify and Channel & Playlist always use the signed-in account; role badge and authorized Users management remain available.
+- Channel interaction patterns match Link Checker: Ctrl/Cmd and Shift selection, group/row drag/drop with persistent order, scoped context menus, and keyboard actions. Preserve whole channel sections on move and parent-specific playlist associations on unlink.
+- Channel columns support local per-account width resizing/reset and name/view/delta/checked sorting. Disable manual row reorder while a column sort is active; clearing sort restores server order.
 - Both Spotify and channel rails contain named groups and New Group only, without All Links/All Channels entries. Opening a page selects its first available group before rendering rows; no-group state offers group creation, not an aggregate list.
 - Settings hosts per-account YouTube API keys and admin-only global clipboard settings. Own profile/password remain accessible through the sidebar avatar.

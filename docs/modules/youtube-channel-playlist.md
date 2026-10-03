@@ -7,11 +7,13 @@
 ## Entry Points
 - API: `/api/youtube/keys`, `/keys/check`, `/channels` and channel refresh/playlist operations.
 - UI: Channel & Playlist navigation and API & Export Settings.
+- Workspace APIs: `/api/youtube/preferences`, group rename/delete/clear, channel move/batch delete. Ordering lives in additive `youtube_workspace_preferences`, separate from Spotify UI preferences.
 - Channel groups: `/api/youtube/groups` creates owner-scoped named groups, including empty groups. UI displays individual groups only; there is no All Channels aggregate entry.
 
 ## Key Files
 - `backend/app/models/youtube.py`, `backend/app/schemas/youtube.py`
 - `backend/app/api/youtube.py`, `backend/app/services/youtube.py`, `backend/app/services/youtube_jobs.py`
+- `backend/app/services/youtube_workspace.py`: owner locking, preference validation/pruning and safe channel management.
 - `backend/app/utils/youtube_urls.py`
 - `frontend/channels.js`, `frontend/channels.css`; shell integration in `frontend/app.js` and `frontend/index.html`.
 
@@ -34,6 +36,14 @@
 - List requests may be paged internally, but the UI has a single scrollable group list without Prev/Next. Ignore stale responses after changing owner/group.
 - Header/group controls mount into shared shell hosts. Keep Spotify background updates out of those hosts while the channel view is active.
 - Never include API key strings in logs, fixtures, screenshots, Git, or deployment documentation.
+
+## Interaction Parity
+- Group and channel order is persisted per account on the server; polling must respect saved order rather than reset to creation order.
+- Moving a channel moves its channel-playlist section together. Deleting a group moves surviving channels into Ungrouped; clearing a group deletes its YouTube tracking records only.
+- Playlist selection/reordering is scoped to one parent channel. Unlinking affects only that association, never the Spotify Item or other channels using it.
+- Clipboard (Playlist), TXT and Excel reuse Spotify export helpers and the admin's global clipboard line limit. Refresh selected playlists targets exact owned Item IDs, not the entire Spotify list.
+- Keyboard shortcuts apply only to the active channel view and never consume text editing inside inputs/dialogs.
+- Column resizing is stored per account in the current browser; group/channel/attached-playlist order is stored on the server. Sorting is a view operation and disables drag reorder until cleared.
 
 ## Related Decisions
 - Additive YouTube integration and many-to-many playlist references in `docs/DECISIONS.md`.

@@ -637,8 +637,8 @@ def test_batched_response_helpers_constant_queries_and_string_owner_keys(env):
                 assert item["user_name"] == owner.display_name and item["user_avatar"] == owner.avatar
         for table in ("raw_responses", "metrics_snapshots"):
             assert sum(table in sql for sql in statements) == 1
-    # Actor lookup + channel/stored groups/count/page/keys + links/raw/snapshots/users.
-    assert counts == [10, 10]
+    # Actor + workspace preference + channel/stored groups/count/page/keys + links/raw/snapshots/users.
+    assert counts == [11, 11]
     with Session(env.engine) as session:
         user_map = asyncio.run(items_api._load_item_users(AsyncSessionAdapter(session), [env.items["assigned"]]))
         assert set(user_map) == {str(env.users["assigned"].id)}

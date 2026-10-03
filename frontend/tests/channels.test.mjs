@@ -35,8 +35,11 @@ test('ChannelPlaylists isolated browser behavior', async t => {
 
     async function fixture() {
         const page = await browser.newPage({ viewport: { width: 997, height: 900 } });
-        await page.setContent('<html data-theme="light"><head><meta charset="UTF-8"></head><body><header class="topbar"><div><h1 id="page-title"></h1><span id="breadcrumb-group"></span></div><div id="channel-header-tools"></div></header><aside id="group-panel"><div id="channel-group-tools" class="p-5 pb-3"></div><div id="channel-group-rail"></div></aside><div id="channels-panel"></div>' +
-            '<div id="youtube-key-settings"></div><button id="nav-settings">Settings</button>');
+        page.setDefaultTimeout(6000);
+        const html = '<html data-theme="light"><head><meta charset="UTF-8"></head><body><header class="topbar"><div><h1 id="page-title"></h1><span id="breadcrumb-group"></span></div><div id="channel-header-tools"></div></header><aside id="group-panel"><div id="channel-group-tools" class="p-5 pb-3"></div><div id="channel-group-rail"></div></aside><div id="channels-panel"></div>' +
+            '<div id="youtube-key-settings"></div><button id="nav-settings">Settings</button>';
+        await page.route('http://channel.test/', route => route.fulfill({ contentType: 'text/html; charset=utf-8', body: html }));
+        await page.goto('http://channel.test/');
         await page.addStyleTag({ content: sharedCss + css + '\n.flex{display:flex}.items-center{align-items:center}.gap-4{gap:16px}.px-4{padding-left:16px;padding-right:16px}.py-3{padding-top:12px;padding-bottom:12px}.px-5{padding-left:20px;padding-right:20px}.py-8{padding-top:32px;padding-bottom:32px}.text-right{text-align:right}.relative{position:relative}.absolute{position:absolute}.topbar{height:auto;flex-wrap:wrap}body{display:block;overflow:auto}@media(max-width:767px){#group-panel{display:none}}' });
         await page.evaluate(() => {
             window.polls = new Map();
@@ -84,6 +87,334 @@ test('ChannelPlaylists isolated browser behavior', async t => {
         });
         return page;
     }
+
+    async function workspaceFixture() {
+        const page = await fixture();
+        await page.evaluate(async () => {
+            const channel = window.data.items[0], playlist = channel.playlists[0];
+            window.data = {
+                groups: [{ name: 'G', count: 3 }, { name: 'Hidden Group', count: 0 }, { name: 'Target', count: 1 }], has_keys: true,
+                items: [
+                    { ...channel, id: 'c1', group: 'G', name: 'Alpha', youtube_url: 'https://www.youtube.com/@alpha', playlists: [{ ...playlist, type: 'playlist', id: 'p1' }, { ...playlist, type: 'playlist', id: 'p2', spotify_id: 'def' }] },
+                    { ...channel, id: 'c2', group: 'G', name: 'Hidden', youtube_url: 'https://www.youtube.com/@hidden', playlists: [] },
+                    { ...channel, id: 'c3', group: 'G', name: 'Gamma', youtube_url: 'https://www.youtube.com/@gamma', playlists: [{ ...playlist, type: 'playlist', id: 'p1' }] },
+                    { ...channel, id: 'c4', group: 'Target', name: 'Delta', playlists: [] },
+                ],
+            };
+            window.prefs = { group_order: [], channel_orders: {}, playlist_orders: {} };
+            window.actions = []; window.copies = []; window.previews = []; window.exports = [];
+            const order = (rows, ids, key = row => row.id) => [...rows].sort((a, b) => (ids.indexOf(key(a)) < 0 ? ids.length : ids.indexOf(key(a))) - (ids.indexOf(key(b)) < 0 ? ids.length : ids.indexOf(key(b))));
+            window.handleRequest = async (requestPath, options = {}) => {
+                const body = options.body && JSON.parse(options.body);
+                if (requestPath === '/youtube/preferences') {
+                    if (options.method === 'PUT') {
+                        if (window.failWrite) throw new Error('WRITE FAILED');
+                        if (window.holdWrite) await new Promise(resolve => { window.finishWrite = resolve; });
+                        for (const [key, value] of Object.entries(body)) window.prefs[key] = key === 'group_order' ? value : { ...window.prefs[key], ...value };
+                    }
+                    return structuredClone(window.prefs);
+                }
+                if (requestPath.startsWith('/youtube/channels?')) {
+                    const params = new URL(requestPath, 'https://local').searchParams;
+                    let items = structuredClone(window.data.items.filter(row => row.user_id === window.actor.id && (!params.get('group') || row.group === params.get('group'))));
+                    if (params.get('search')) items = items.filter(row => row.name !== 'Hidden');
+                    items = order(items, window.prefs.channel_orders[params.get('group')] || []);
+                    for (const item of items) item.playlists = order(item.playlists, window.prefs.playlist_orders[item.id] || []);
+                    const offset = Number(params.get('offset')), limit = Number(params.get('limit'));
+                    const data = { items: items.slice(offset, offset + limit), total: items.length, groups: order(structuredClone(window.data.groups), window.prefs.group_order), has_keys: true };
+                    if (window.holdRead) { window.holdRead = false; await new Promise(resolve => { window.finishRead = () => resolve(); }); }
+                    return data;
+                }
+                if (requestPath === '/youtube/groups' && options.method === 'POST') window.data.groups.push({ name: body.name, count: 0 });
+                if (requestPath === '/youtube/groups' && options.method === 'PATCH') {
+                    window.data.groups.find(group => group.name === body.old_name).name = body.new_name;
+                    for (const item of window.data.items) if (item.group === body.old_name) item.group = body.new_name;
+                }
+                if (requestPath === '/youtube/groups/delete') {
+                    window.data.groups = window.data.groups.filter(group => !body.names.includes(group.name));
+                    for (const item of window.data.items) if (body.names.includes(item.group)) item.group = 'Ungrouped';
+                    if (!window.data.groups.some(group => group.name === 'Ungrouped')) window.data.groups.push({ name: 'Ungrouped', count: 1 });
+                }
+                if (requestPath === '/youtube/groups/clear') window.data.items = window.data.items.filter(item => item.group !== body.name);
+                if (requestPath === '/youtube/channels/move') for (const item of window.data.items) if (body.channel_ids.includes(item.id)) item.group = body.group;
+                if (requestPath === '/youtube/channels/delete') window.data.items = window.data.items.filter(item => !body.channel_ids.includes(item.id));
+                const association = requestPath.match(/^\/youtube\/channels\/([^/]+)\/playlists$/);
+                if (association && options.method === 'PUT') {
+                    const item = window.data.items.find(row => row.id === association[1]);
+                    item.playlists = item.playlists.filter(row => body.item_ids.includes(row.id));
+                }
+                return { accepted: 1 };
+            };
+            window.options = {
+                getUser: () => window.actor,
+                request: (path, options) => { window.calls.push({ path, ...options }); return window.handleRequest(path, options); },
+                runPlaylistAction: async (action, items) => { window.actions.push({ action, items: structuredClone(items) }); },
+                copyLinks: async text => { window.copies.push(text); },
+                previewImage: url => { window.previews.push(url); },
+                exportChannels: items => { window.exports.push(items.map(item => item.id)); },
+            };
+            ChannelPlaylists.init(window.options); await ChannelPlaylists.show();
+        });
+        return page;
+    }
+    const channelIds = page => page.locator('[data-chp-channel]').evaluateAll(rows => rows.map(row => row.dataset.chpChannel));
+    async function drag(page, source, target, after = true) {
+        const rect = await page.locator(target).boundingBox();
+        await page.locator(source).dragTo(page.locator(target), { sourcePosition: { x: 20, y: 20 }, targetPosition: { x: 20, y: after ? rect.height - 2 : 2 } });
+    }
+
+    await t.test('channel selection replaces, Ctrl toggles, Shift ranges and keyboard guards legacy handlers', async () => {
+        const page = await workspaceFixture();
+        try {
+            await page.locator('[data-chp-channel="c1"] .stt-cell').click();
+            await page.locator('[data-chp-channel="c3"] .stt-cell').click({ modifiers: ['Shift'] });
+            assert.equal(await page.locator('.chp-channel[aria-selected="true"]').count(), 3);
+            await page.locator('[data-chp-channel="c2"] .stt-cell').click({ modifiers: ['Control'] });
+            assert.equal(await page.locator('.chp-channel[aria-selected="true"]').count(), 2);
+            await page.locator('[data-chp-channel="c1"] .stt-cell').click();
+            assert.equal(await page.locator('.chp-channel[aria-selected="true"]').count(), 1);
+            await page.evaluate(() => document.addEventListener('keydown', event => { if (event.key.toLowerCase() === 'a') window.legacyKeys = (window.legacyKeys || 0) + 1; }));
+            await page.keyboard.press('Control+a');
+            assert.equal(await page.locator('.chp-channel[aria-selected="true"]').count(), 3);
+            assert.equal(await page.evaluate(() => window.legacyKeys || 0), 0);
+            await page.keyboard.press('Control+c');
+            assert.equal((await page.evaluate(() => window.copies[0])).split('\n').length, 3);
+            await page.keyboard.press('Escape');
+            assert.equal(await page.locator('.chp-channel[aria-selected="true"]').count(), 0);
+            await page.locator('.chp-search').focus(); await page.keyboard.press('Control+a'); await page.keyboard.press('Delete');
+            assert.equal(await page.locator('.chp-dialog').count(), 0);
+            await page.locator('[data-chp-channel="c1"]').focus(); await page.keyboard.press('Control+a'); await page.keyboard.press('Delete');
+            assert.match(await page.locator('.chp-dialog-body').textContent(), /3 kênh.*Spotify Item/);
+            await page.getByRole('button', { name: 'Xóa kênh', exact: true }).click();
+            await page.waitForFunction(() => window.calls.some(call => call.path === '/youtube/channels/delete'));
+            assert.deepEqual(await page.evaluate(() => JSON.parse(window.calls.find(call => call.path === '/youtube/channels/delete').body)), { channel_ids: ['c1', 'c2', 'c3'] });
+            assert.equal(await page.evaluate(() => window.calls.some(call => call.method === 'DELETE')), false);
+        } finally { await page.close(); }
+    });
+
+    await t.test('group multiselection rename delete and atomic clear preserve Spotify associations', async () => {
+        const page = await workspaceFixture();
+        try {
+            await page.locator('[data-chp-group="G"]').dblclick();
+            await page.locator('[name="name"]').fill('Renamed'); await page.getByRole('button', { name: 'Lưu', exact: true }).click();
+            await page.waitForSelector('[data-chp-group="Renamed"]');
+            assert.deepEqual(await page.evaluate(() => JSON.parse(window.calls.find(call => call.path === '/youtube/groups' && call.method === 'PATCH').body)), { old_name: 'G', new_name: 'Renamed' });
+            await page.locator('[data-chp-group="Renamed"]').click();
+            await page.locator('[data-chp-group="Target"]').click({ modifiers: ['Shift'] });
+            assert.equal(await page.locator('.chp-group-multi').count(), 3);
+            await page.keyboard.press('Delete');
+            await page.getByRole('button', { name: 'Xóa nhóm', exact: true }).click();
+            await page.waitForSelector('[data-chp-group="Ungrouped"]');
+            assert.equal(await page.evaluate(() => window.data.items.length), 4);
+            assert.equal(await page.evaluate(() => window.calls.some(call => /\/items\//.test(call.path) && call.method === 'DELETE')), false);
+            await page.locator('[data-chp-channel="c1"]').click({ button: 'right' });
+            await page.locator('[data-menu="clear"]').click();
+            await page.getByRole('button', { name: 'Xóa kênh', exact: true }).click();
+            await page.waitForFunction(() => window.calls.some(call => call.path === '/youtube/groups/clear'));
+            assert.deepEqual(await page.evaluate(() => JSON.parse(window.calls.find(call => call.path === '/youtube/groups/clear').body)), { name: 'Ungrouped' });
+            assert.equal(await page.evaluate(() => window.calls.some(call => call.path === '/youtube/channels/delete')), false);
+        } finally { await page.close(); }
+    });
+
+    await t.test('CUT paste and row-to-group drop call atomic move without cloning channels', async () => {
+        const page = await workspaceFixture();
+        try {
+            await page.locator('[data-chp-channel="c1"] .stt-cell').click();
+            await page.locator('[data-chp-channel="c3"] .stt-cell').click({ modifiers: ['Control'] });
+            await page.keyboard.press('Control+x'); await page.locator('[data-chp-group="Target"]').click();
+            await page.waitForSelector('[data-chp-channel="c4"]'); await page.keyboard.press('Control+v');
+            await page.waitForFunction(() => window.calls.some(call => call.path === '/youtube/channels/move'));
+            assert.deepEqual(await page.evaluate(() => JSON.parse(window.calls.find(call => call.path === '/youtube/channels/move').body)), { channel_ids: ['c1', 'c3'], group: 'Target' });
+            await page.locator('[data-chp-group="G"]').click(); await page.waitForSelector('[data-chp-channel="c2"]');
+            await drag(page, '[data-chp-channel="c2"]', '[data-chp-group="Target"]');
+            await page.waitForFunction(() => window.calls.filter(call => call.path === '/youtube/channels/move').length === 2);
+            assert.equal(await page.evaluate(() => window.data.items.length), 4);
+        } finally { await page.close(); }
+    });
+
+    await t.test('real channel DnD stores complete orders, preserves hidden slots and survives polling', async () => {
+        const page = await workspaceFixture();
+        try {
+            await page.locator('.chp-search').fill('visible');
+            await page.waitForFunction(() => document.querySelectorAll('[data-chp-channel]').length === 2);
+            await drag(page, '[data-chp-channel="c3"]', '[data-chp-channel="c1"]', false);
+            await page.waitForFunction(() => window.prefs.channel_orders.G?.[0] === 'c3');
+            assert.deepEqual(await page.evaluate(() => window.prefs.channel_orders.G), ['c3', 'c2', 'c1']);
+            assert.deepEqual(await channelIds(page), ['c3', 'c1']);
+            await page.evaluate(async () => { document.activeElement.blur(); await ChannelPlaylists.reload(true); });
+            assert.deepEqual(await channelIds(page), ['c3', 'c1']);
+            await page.locator('.chp-search').fill('');
+            await page.waitForFunction(() => document.querySelectorAll('[data-chp-channel]').length === 3);
+            assert.deepEqual(await channelIds(page), ['c3', 'c2', 'c1']);
+            await page.evaluate(async () => { window.prefs.channel_orders.G = ['c1', 'c2', 'c3']; document.activeElement.blur(); await ChannelPlaylists.reload(true); });
+            assert.deepEqual(await channelIds(page), ['c1', 'c2', 'c3']);
+        } finally { await page.close(); }
+    });
+
+    await t.test('group DnD persists a full order and New Group remains appended', async () => {
+        const page = await workspaceFixture();
+        try {
+            await page.locator('#channel-group-tools input').fill('G');
+            await drag(page, '[data-chp-group="Hidden Group"]', '[data-chp-group="G"]', false);
+            await page.waitForFunction(() => window.prefs.group_order.length === 3);
+            assert.deepEqual(await page.evaluate(() => window.prefs.group_order), ['Hidden Group', 'G', 'Target']);
+            await page.locator('#channel-group-tools input').fill('');
+            await page.locator('#channel-group-rail [data-chp-action="new-group"]').click();
+            await page.locator('[name="name"]').fill('New'); await page.getByRole('button', { name: 'Tạo nhóm', exact: true }).click();
+            await page.waitForSelector('[data-chp-group="New"]');
+            assert.deepEqual(await page.locator('[data-chp-group]').evaluateAll(rows => rows.map(row => row.dataset.chpGroup)), ['Hidden Group', 'G', 'Target', 'New']);
+        } finally { await page.close(); }
+    });
+
+    await t.test('multi-row DnD keeps selection order and pending writes block polling', async () => {
+        const page = await workspaceFixture();
+        try {
+            await page.locator('[data-chp-channel="c1"] .stt-cell').click();
+            await page.locator('[data-chp-channel="c3"] .stt-cell').click({ modifiers: ['Control'] });
+            await page.evaluate(() => { window.holdWrite = true; });
+            await drag(page, '[data-chp-channel="c1"]', '[data-chp-channel="c2"]');
+            await page.waitForFunction(() => !!window.finishWrite);
+            assert.deepEqual(await channelIds(page), ['c2', 'c1', 'c3']);
+            const reads = await page.evaluate(() => window.calls.filter(call => call.method === 'GET').length);
+            await page.evaluate(async () => { await ChannelPlaylists.reload(true); });
+            assert.equal(await page.evaluate(() => window.calls.filter(call => call.method === 'GET').length), reads);
+            await page.evaluate(() => { window.holdWrite = false; window.finishWrite(); });
+            await page.waitForFunction(() => window.prefs.channel_orders.G?.[0] === 'c2');
+            assert.deepEqual(await page.evaluate(() => window.prefs.channel_orders.G), ['c2', 'c1', 'c3']);
+        } finally { await page.close(); }
+    });
+
+    await t.test('large selection moves and refreshes batch 500 without empty requests', async () => {
+        const page = await workspaceFixture();
+        try {
+            await page.evaluate(async () => {
+                const item = window.data.items[0];
+                window.data.items = Array.from({ length: 501 }, (_, index) => ({ ...item, id: `large-${index}`, playlists: [] }));
+                await ChannelPlaylists.reload();
+            });
+            await page.locator('[data-chp-channel="large-0"]').focus(); await page.keyboard.press('Control+a');
+            await page.locator('[data-chp-channel="large-0"]').click({ button: 'right' });
+            await page.locator('[data-menu="refresh"]').click();
+            await page.waitForFunction(() => window.calls.filter(call => call.path === '/youtube/channels/refresh').length === 2);
+            assert.deepEqual(await page.evaluate(() => window.calls.filter(call => call.path === '/youtube/channels/refresh').map(call => JSON.parse(call.body).channel_ids.length)), [500, 1]);
+            await page.locator('[data-chp-channel="large-0"]').focus(); await page.keyboard.press('Control+a'); await page.keyboard.press('Control+x');
+            await page.locator('[data-chp-group="Target"]').click(); await page.keyboard.press('Control+v');
+            await page.waitForFunction(() => window.calls.filter(call => call.path === '/youtube/channels/move').length === 2);
+            assert.deepEqual(await page.evaluate(() => window.calls.filter(call => call.path === '/youtube/channels/move').map(call => JSON.parse(call.body).channel_ids.length)), [500, 1]);
+        } finally { await page.close(); }
+    });
+
+    await t.test('playlist focus selects visible associations, delegates exact actions and unlinks only chosen parent', async () => {
+        const page = await workspaceFixture();
+        try {
+            await page.locator('[data-chp-playlist="c1:p1"] .stt-cell').click();
+            await page.locator('[data-chp-playlist="c1:p2"] .stt-cell').click({ modifiers: ['Shift'] });
+            assert.equal(await page.locator('[data-chp-playlist][aria-selected="true"]').count(), 2);
+            await page.keyboard.press('Control+a');
+            assert.equal(await page.locator('[data-chp-playlist][aria-selected="true"]').count(), 3);
+            for (const action of ['fetch-selected', 'copy-selected-links', 'clipboard-auto', 'txt-playlist-type3', 'export-listview-excel']) {
+                await page.locator('[data-chp-playlist="c1:p1"]').click({ button: 'right' });
+                await page.locator(`[data-command="${action}"]`).click();
+                await page.waitForFunction(action => window.actions.some(entry => entry.action === action), action);
+            }
+            assert.equal(await page.evaluate(() => window.actions.every(entry => entry.items.length === 2 && entry.items.every(item => item.type === 'playlist' && item.user_id === 'owner'))), true);
+            await page.locator('[data-chp-playlist="c1:p1"] .stt-cell').click(); await page.keyboard.press('Delete');
+            await page.getByRole('button', { name: 'Gỡ liên kết', exact: true }).click();
+            await page.waitForFunction(() => window.calls.some(call => call.path === '/youtube/channels/c1/playlists' && call.method === 'PUT'));
+            assert.deepEqual(await page.evaluate(() => JSON.parse(window.calls.find(call => call.path === '/youtube/channels/c1/playlists' && call.method === 'PUT').body)), { item_ids: ['p2'], urls: [] });
+            assert.equal(await page.evaluate(() => window.data.items.find(item => item.id === 'c3').playlists.length), 1);
+            assert.equal(await page.evaluate(() => window.calls.some(call => call.method === 'DELETE')), false);
+        } finally { await page.close(); }
+    });
+
+    await t.test('playlist DnD is same-parent only, sorted channel reorder is disabled', async () => {
+        const page = await workspaceFixture();
+        try {
+            await drag(page, '[data-chp-playlist="c1:p2"]', '[data-chp-playlist="c1:p1"]', false);
+            await page.waitForFunction(() => window.prefs.playlist_orders.c1?.[0] === 'p2');
+            assert.deepEqual(await page.evaluate(() => window.prefs.playlist_orders.c1), ['p2', 'p1']);
+            const writes = await page.evaluate(() => window.calls.filter(call => call.method === 'PUT').length);
+            await drag(page, '[data-chp-playlist="c1:p2"]', '[data-chp-playlist="c3:p1"]');
+            assert.equal(await page.evaluate(() => window.calls.filter(call => call.method === 'PUT').length), writes);
+            await page.locator('[data-chp-sort="name"]').click();
+            await drag(page, '[data-chp-channel="c3"]', '[data-chp-channel="c1"]', false);
+            assert.equal(await page.evaluate(() => window.calls.filter(call => call.method === 'PUT').length), writes);
+            await page.locator('[data-chp-sort="name"]').click(); assert.deepEqual(await channelIds(page), ['c2', 'c3', 'c1']);
+            await page.locator('[data-chp-sort="name"]').click(); assert.deepEqual(await channelIds(page), ['c1', 'c2', 'c3']);
+            assert.equal(await page.evaluate(() => window.calls.some(call => /playlists$/.test(call.path) && call.method === 'PUT')), false);
+        } finally { await page.close(); }
+    });
+
+    await t.test('failed preference write rolls back and a late poll cannot undo optimistic DnD', async () => {
+        const page = await workspaceFixture();
+        try {
+            await page.evaluate(() => { window.failWrite = true; });
+            await drag(page, '[data-chp-channel="c3"]', '[data-chp-channel="c1"]', false);
+            await page.waitForFunction(() => document.querySelector('.chp-status').textContent.includes('WRITE FAILED'));
+            assert.deepEqual(await channelIds(page), ['c1', 'c2', 'c3']);
+            await page.evaluate(() => { window.failWrite = false; window.holdRead = true; window.pendingRead = ChannelPlaylists.reload(true); });
+            await page.waitForFunction(() => !!window.finishRead);
+            await drag(page, '[data-chp-channel="c3"]', '[data-chp-channel="c1"]', false);
+            await page.waitForFunction(() => window.prefs.channel_orders.G?.[0] === 'c3');
+            await page.evaluate(async () => { window.finishRead(); await window.pendingRead; });
+            assert.deepEqual(await channelIds(page), ['c3', 'c1', 'c2']);
+        } finally { await page.close(); }
+    });
+
+    await t.test('owner-only data, hidden view keyboard and channel export/image hooks stay isolated', async () => {
+        const page = await workspaceFixture();
+        try {
+            await page.evaluate(async () => {
+                window.data.items.push({ ...window.data.items[0], id: 'foreign', user_id: 'foreign' });
+                const original = window.handleRequest;
+                window.handleRequest = async (path, options) => {
+                    const data = await original(path, options);
+                    if (path.startsWith('/youtube/channels?')) data.items.push({ ...window.data.items.at(-1) });
+                    return data;
+                };
+                await ChannelPlaylists.reload();
+            });
+            assert.equal(await page.locator('[data-chp-channel="foreign"]').count(), 0);
+            await page.evaluate(async () => { window.data.items[0].image = 'https://example.com/channel.png'; await ChannelPlaylists.reload(); });
+            await page.locator('[data-chp-channel="c1"] .list-cover-image').click();
+            assert.deepEqual(await page.evaluate(() => window.previews), ['https://example.com/channel.png']);
+            await page.locator('[data-chp-channel="c1"]').click({ button: 'right' });
+            await page.locator('[data-menu="export"]').click();
+            assert.deepEqual(await page.evaluate(() => window.exports), [['c1']]);
+            await page.evaluate(async () => { ChannelPlaylists.hide(); document.body.focus(); });
+            const count = await page.evaluate(() => window.calls.length);
+            await page.keyboard.press('Control+a'); await page.keyboard.press('Delete');
+            assert.equal(await page.locator('.chp-dialog').count(), 0);
+            assert.equal(await page.evaluate(() => window.calls.length), count);
+        } finally { await page.close(); }
+    });
+
+    await t.test('resize is bounded, persisted per account, resettable and canceled on hide', async () => {
+        const page = await workspaceFixture();
+        try {
+            const handle = page.locator('[data-chp-resize="3"]');
+            const rect = await handle.boundingBox();
+            await page.mouse.move(rect.x + rect.width / 2, rect.y + rect.height / 2); await page.mouse.down();
+            await page.mouse.move(rect.x + 3000, rect.y + rect.height / 2); await page.mouse.up();
+            assert.equal(await page.evaluate(() => JSON.parse(localStorage.getItem('spoticheck_channel_column_widths_owner'))[3]), 800);
+            const columns = await page.locator('.chp-channel').first().evaluate(node => getComputedStyle(node).gridTemplateColumns);
+            assert.equal(await page.locator('.chp-playlist-grid').first().evaluate(node => getComputedStyle(node).gridTemplateColumns), columns);
+            await page.evaluate(async () => { ChannelPlaylists.init(window.options); await ChannelPlaylists.show(); });
+            assert.match(await page.locator('.chp-channel').first().evaluate(node => getComputedStyle(node).gridTemplateColumns), /800px/);
+            await page.locator('[data-chp-resize="3"]').dblclick();
+            assert.equal(await page.evaluate(() => localStorage.getItem('spoticheck_channel_column_widths_owner')), null);
+            await page.evaluate(async () => {
+                localStorage.setItem('spoticheck_channel_column_widths_other', JSON.stringify([1, 280, 160, 9999, 160, 200]));
+                window.actor.id = 'other'; for (const item of window.data.items) item.user_id = 'other';
+                await ChannelPlaylists.syncAccountScope();
+            });
+            assert.equal(await page.locator('#channels-panel').evaluate(node => node.style.getPropertyValue('--chp-columns')), '48px 280px 160px 800px 160px 200px');
+            const next = await page.locator('[data-chp-resize="0"]').boundingBox();
+            await page.mouse.move(next.x + 5, next.y + 5); await page.mouse.down();
+            await page.evaluate(() => ChannelPlaylists.hide()); await page.mouse.move(next.x + 100, next.y + 5); await page.mouse.up();
+            assert.equal(await page.locator('body').evaluate(node => node.classList.contains('chp-resizing')), false);
+        } finally { await page.close(); }
+    });
 
     await t.test('keys/check renders per-key results without echoing secrets or owner filters', async () => {
         const page = await fixture();
@@ -226,7 +557,7 @@ test('ChannelPlaylists isolated browser behavior', async t => {
                 await ChannelPlaylists.reload();
             });
             assert.equal(await page.locator('[data-chp-group="Nhóm thay thế"]').getAttribute('aria-pressed'), 'true');
-            const latest = await page.evaluate(() => window.calls.at(-1).path);
+            const latest = await page.evaluate(() => window.calls.filter(call => call.path.startsWith('/youtube/channels?')).at(-1).path);
             assert.equal(new URL(latest, 'https://local').searchParams.get('group'), 'Nhóm thay thế');
         } finally { await page.close(); }
     });
@@ -245,9 +576,9 @@ test('ChannelPlaylists isolated browser behavior', async t => {
             assert.equal(await page.locator('.chp-list [data-chp-action="new-group"]').count(), 0);
             assert.equal(await page.locator('#channel-group-rail [data-chp-action="new-group"]').isVisible(), true);
             assert.equal(await page.locator('[data-chp-action="add"]').isDisabled(), true);
-            assert.equal(await page.evaluate(() => window.calls.length), 1);
+            assert.equal(await page.evaluate(() => window.calls.filter(call => call.path.startsWith('/youtube/channels?')).length), 1);
             await page.evaluate(() => ChannelPlaylists.reload());
-            assert.equal(await page.evaluate(() => window.calls.length), 2);
+            assert.equal(await page.evaluate(() => window.calls.filter(call => call.path.startsWith('/youtube/channels?')).length), 2);
         } finally { await page.close(); }
     });
 
@@ -511,7 +842,7 @@ test('ChannelPlaylists isolated browser behavior', async t => {
             await page.evaluate(async () => {
                 window.data.items[0].last_checked = '2026-10-02T10:30:00';
                 window.data.items[0].playlists[0].last_checked = '2026-10-02T10:30:00';
-                ChannelPlaylists.init({ getUser: () => ({ id: 'actor' }), request: window.handleRequest,
+                ChannelPlaylists.init({ getUser: () => ({ id: 'owner' }), request: window.handleRequest,
                     formatChecked: value => value ? 'Just now' : '-', formatUpdatedAt: value => value ? '02/10/2026' : '-' });
                 await ChannelPlaylists.show({ userId: 'owner' });
             });
@@ -574,6 +905,8 @@ test('ChannelPlaylists isolated browser behavior', async t => {
             await page.waitForFunction(() => !!window.finishOldPage);
             await page.evaluate(async () => {
                 window.actor.id = 'new-owner';
+                window.data.items[0].user_id = 'new-owner';
+                window.data.items[0].playlists[0].user_id = 'new-owner';
                 await ChannelPlaylists.syncAccountScope();
                 window.finishOldPage({ items: [{ id: 'old-last', name: 'STALE', playlists: [] }], total: 101 });
                 await window.oldPoll;

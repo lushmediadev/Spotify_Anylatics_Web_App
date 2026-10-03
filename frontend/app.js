@@ -5433,6 +5433,49 @@ function showRowContextMenu(clientX, clientY, row = null) {
     state.contextMenuVisible = true;
 }
 
+async function runChannelPlaylistAction(action, items) {
+    const ownId = String(getAuthUser()?.id || '');
+    const selected = Array.from(new Map((items || []).filter(item => item?.id && item.type === 'playlist'
+        && String(item.user_id || '') === ownId).map(item => [String(item.id), item])).values());
+    if (!selected.length) throw new Error('No owned playlists selected');
+    if (action === 'copy-selected-links') return copySelectedLinksToClipboard(selected);
+    if (action === 'fetch-selected') {
+        for (let offset = 0; offset < selected.length; offset += 100) {
+            const batch = selected.slice(offset, offset + 100);
+            await api.crawlBatch(batch.map(getItemSpotifyUrl), null, ownId, batch.map(item => item.id));
+        }
+        state.listScopeCache.clear();
+        showToast(`Refreshing ${selected.length} playlist(s)`, 'success');
+        return;
+    }
+    const exportAction = action === 'clipboard-auto' ? 'clipboard-playlist-type3' : action;
+    if (!['clipboard-playlist-type3', 'txt-playlist-type3', 'export-listview-excel'].includes(exportAction)) {
+        throw new Error('Unsupported playlist action');
+    }
+    if (state.exportInProgress) throw new Error('Export is running. Please wait.');
+    if (await runServerExport(exportAction, selected)) return;
+    if (exportAction === 'export-listview-excel') {
+        downloadTextFile(buildCsvContent(
+            ['Type', 'Name', 'Spotify URL', 'Group', 'User', 'Playlist Owner', 'Playlist (Save)',
+                'Playlist (Count)', 'Album (Track Count)', 'Artist (Followers)', 'Artist (Listeners)', 'Tracks (Views)', 'Updated'],
+            buildListViewExportRows(selected)), buildExportFileName('spoticheck-listview', 'csv'), 'text/csv;charset=utf-8');
+    } else {
+        await runStructuredExport(exportAction, selected, exportAction.startsWith('txt-') ? 'txt' : 'clipboard');
+    }
+}
+
+function exportChannelRows(items) {
+    const ownId = String(getAuthUser()?.id || '');
+    const selected = (items || []).filter(item => String(item.user_id || '') === ownId);
+    if (!selected.length) throw new Error('No owned channels selected');
+    const rows = selected.map(item => [item.name || item.query, item.youtube_url || '', item.group,
+        item.view_count ?? '', item.view_count_delta ?? '', item.delta_days ?? '',
+        (item.playlists || []).map(playlist => getItemSpotifyUrl(playlist)).join('\n'), item.status,
+        formatUpdatedAt(item.last_checked)]);
+    downloadTextFile(buildCsvContent(['Channel', 'YouTube URL', 'Group', 'Views', 'View Delta', 'Days',
+        'Spotify Playlists', 'Status', 'Checked'], rows), buildExportFileName('channel-playlists', 'csv'), 'text/csv;charset=utf-8');
+}
+
 async function executeRowContextMenuAction(action, opts = {}) {
     if (!action) return;
     if (state.exportInProgress) {
@@ -7942,6 +7985,10 @@ document.addEventListener('DOMContentLoaded', async () => {
         formatUpdatedAt,
         renderUserCell: renderOwnerUpdatedCell,
         renderPlaylistOwnerCell,
+        copyLinks: (text) => copyToClipboard(text, 'Copied links'),
+        previewImage: openImagePreview,
+        runPlaylistAction: runChannelPlaylistAction,
+        exportChannels: exportChannelRows,
         onGroupChanged: (name) => {
             if (state.currentView !== 'channels') return;
             const title = name || 'Channel & Playlist';

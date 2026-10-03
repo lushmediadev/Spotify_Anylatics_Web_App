@@ -3,8 +3,8 @@
 import uuid
 from datetime import datetime
 
-from sqlalchemy import BigInteger, DateTime, ForeignKey, Integer, String, Text, UniqueConstraint
-from sqlalchemy.dialects.postgresql import UUID
+from sqlalchemy import BigInteger, DateTime, ForeignKey, Integer, String, Text, UniqueConstraint, JSON
+from sqlalchemy.dialects.postgresql import UUID, JSONB
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.database import Base
@@ -65,3 +65,11 @@ class ChannelPlaylist(Base):
     __tablename__ = "youtube_channel_playlists"
     channel_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("youtube_channels.id", ondelete="CASCADE"), primary_key=True)
     item_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("items.id", ondelete="CASCADE"), primary_key=True)
+
+
+class YouTubeWorkspacePreference(Base):
+    __tablename__ = "youtube_workspace_preferences"
+    user_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), primary_key=True)
+    group_order: Mapped[list] = mapped_column(JSON().with_variant(JSONB(), "postgresql"), default=list)
+    channel_orders: Mapped[dict] = mapped_column(JSON().with_variant(JSONB(), "postgresql"), default=dict)
+    playlist_orders: Mapped[dict] = mapped_column(JSON().with_variant(JSONB(), "postgresql"), default=dict)

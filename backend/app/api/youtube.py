@@ -10,7 +10,7 @@ from urllib.parse import urlsplit
 from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.exceptions import RequestValidationError
 from fastapi.routing import APIRoute
-from sqlalchemy import delete, func, or_, select, update
+from sqlalchemy import case, delete, func, or_, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.items import _extract_owner_url, _item_to_response, _load_item_users, _load_latest_raw_data, _load_recent_snapshots
@@ -18,11 +18,15 @@ from app.database import get_db
 from app.models.crawl_job import CrawlJob
 from app.models.item import Item
 from app.models.user import User
-from app.models.youtube import Channel, ChannelPlaylist, ChannelSnapshot, YouTubeApiKey, YouTubeChannelGroup
+from app.models.youtube import Channel, ChannelPlaylist, ChannelSnapshot, YouTubeApiKey, YouTubeChannelGroup, YouTubeWorkspacePreference
 from app.schemas.youtube import (ChannelCreateRequest, ChannelGroupRequest, ChannelListResponse, ChannelRefreshRequest,
-    ChannelResponse, KeysCheckRequest, KeysRequest, PlaylistReplaceRequest)
+    ChannelResponse, KeysCheckRequest, KeysRequest, PlaylistReplaceRequest, WorkspacePreferenceResponse,
+    WorkspacePreferenceRequest, ChannelBatchRequest, ChannelMoveRequest, ChannelGroupRenameRequest,
+    ChannelGroupsDeleteRequest, ChannelGroupClearRequest)
 from app.services.auth import get_current_user, owner_scope_condition, require_user_access
 from app.services import youtube_jobs
+from app.services import youtube_workspace as workspace
+from app.services.youtube_workspace import AGGREGATE_GROUPS, channel_group_name
 from app.services.youtube import check_keys as check_external_keys
 from app.utils.youtube_urls import parse_youtube_url
 
@@ -43,14 +47,6 @@ class PrivateKeyRoute(APIRoute):
 
 
 router = APIRouter(prefix="/youtube", tags=["YouTube"], route_class=PrivateKeyRoute)
-AGGREGATE_GROUPS = {"all", "all links", "all channels"}
-
-
-def channel_group_name(value):
-    name = value.strip()
-    if not name or name.casefold() in AGGREGATE_GROUPS:
-        raise HTTPException(400, "Choose a non-aggregate channel group")
-    return name
 
 
 async def ensure_channel_group(db, user_id, name):
@@ -66,12 +62,184 @@ async def create_group(req: ChannelGroupRequest, db: AsyncSession = Depends(get_
     name = channel_group_name(req.name)
     owner = await require_user_access(db, current_user, req.target_user_id or current_user.id)
     await db.execute(select(User.id).where(User.id == owner.id).with_for_update())
+    await workspace.append_new_group(db, owner.id, name)
     await ensure_channel_group(db, owner.id, name)
     await db.commit()
     count = (await db.execute(select(func.count()).select_from(Channel).where(
         Channel.user_id == owner.id, Channel.group == name,
     ))).scalar_one()
     return {"name": name, "count": count, "user_id": str(owner.id)}
+
+
+@router.get("/preferences", response_model=WorkspacePreferenceResponse)
+async def get_workspace_preferences(db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_user)):
+    _, data = await workspace.load_preferences(db, current_user.id)
+    return await workspace.prune_preferences(db, current_user.id, data)
+
+
+@router.put("/preferences", response_model=WorkspacePreferenceResponse)
+async def put_workspace_preferences(req: WorkspacePreferenceRequest, db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_user)):
+    patch = req.model_dump(exclude_unset=True)
+    if any(value is None for value in patch.values()):
+        raise HTTPException(400, "Preference fields cannot be null; use [] to reset an order")
+    workspace.check_size({"group_order": [], "channel_orders": {}, "playlist_orders": {}, **patch})
+    await workspace.lock_owner(db, current_user.id)
+    groups, channels = await workspace.workspace_state(db, current_user.id)
+    members = await workspace.playlist_members(db, current_user.id)
+    if "group_order" in patch:
+        patch["group_order"] = workspace.unique_names(patch["group_order"])
+        if not set(patch["group_order"]) <= groups:
+            raise HTTPException(400, "Group not found")
+    if "channel_orders" in patch:
+        normalized = {}
+        for key, values in patch["channel_orders"].items():
+            name = workspace.unique_names([key])[0]
+            ids = workspace.unique_ids(values)
+            if name not in groups or any(value not in channels or channels[value].group != name for value in ids):
+                raise HTTPException(400, "Channels must belong to the owner's group")
+            if name in normalized:
+                raise HTTPException(400, "Duplicate group names")
+            normalized[name] = ids
+        patch["channel_orders"] = normalized
+    if "playlist_orders" in patch:
+        normalized = {}
+        for key, values in patch["playlist_orders"].items():
+            channel = workspace.unique_ids([key])[0]
+            ids = workspace.unique_ids(values)
+            if channel not in channels or not set(ids) <= members.get(channel, set()):
+                raise HTTPException(400, "Playlists must be linked to an owned channel")
+            if channel in normalized:
+                raise HTTPException(400, "Duplicate channel IDs")
+            normalized[channel] = ids
+        patch["playlist_orders"] = normalized
+    row, data = await workspace.load_preferences(db, current_user.id)
+    data = await workspace.prune_preferences(db, current_user.id, data)
+    for field, value in patch.items():
+        if field == "group_order":
+            data[field] = value
+        else:
+            data[field].update(value)
+    workspace.save_preferences(db, current_user.id, row, data)
+    await db.commit()
+    return data
+
+
+@router.patch("/groups")
+async def rename_group(req: ChannelGroupRenameRequest, db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_user)):
+    old, new = channel_group_name(req.old_name), channel_group_name(req.new_name)
+    await workspace.lock_owner(db, current_user.id)
+    groups, _ = await workspace.workspace_state(db, current_user.id)
+    if old not in groups:
+        raise HTTPException(404, "Group not found")
+    if new != old and new in groups:
+        raise HTTPException(409, "Group already exists")
+    await ensure_channel_group(db, current_user.id, old)
+    await db.flush()
+    result = await db.execute(update(Channel).where(Channel.user_id == current_user.id, Channel.group == old).values(group=new))
+    await db.execute(update(YouTubeChannelGroup).where(YouTubeChannelGroup.user_id == current_user.id,
+        YouTubeChannelGroup.name == old).values(name=new))
+    row, data = await workspace.load_preferences(db, current_user.id)
+    if row:
+        data["group_order"] = [new if value == old else value for value in data["group_order"]]
+        if old in data["channel_orders"]:
+            data["channel_orders"][new] = data["channel_orders"].pop(old)
+        workspace.save_preferences(db, current_user.id, row, await workspace.prune_preferences(db, current_user.id, data))
+    await db.commit()
+    return {"old_name": old, "new_name": new, "updated": result.rowcount}
+
+
+async def move_workspace_channels(db, user_id, rows, destination):
+    preference, data = await workspace.load_preferences(db, user_id)
+    data = await workspace.prune_preferences(db, user_id, data)
+    moved = {str(row.id) for row in rows if row.group != destination}
+    if moved:
+        for source in {row.group for row in rows if row.group != destination}:
+            await ensure_channel_group(db, user_id, source)
+        _, all_channels = await workspace.workspace_state(db, user_id)
+        # Preserve visible destination order, including previously unranked records.
+        destination_order = list(data["channel_orders"].get(destination, []))
+        destination_order += [key for key, row in all_channels.items()
+            if row.group == destination and key not in destination_order]
+        group_ranks = {name: index for index, name in enumerate(data["group_order"])}
+        channel_ranks = {name: {value: index for index, value in enumerate(values)}
+            for name, values in data["channel_orders"].items()}
+        appended = sorted(moved, key=lambda key: (
+            group_ranks.get(all_channels[key].group, len(group_ranks)),
+            all_channels[key].group if group_ranks else "",
+            channel_ranks.get(all_channels[key].group, {}).get(key, 5000),
+            all_channels[key].created_at, key,
+        ))
+        for name, values in data["channel_orders"].items():
+            data["channel_orders"][name] = [value for value in values if value not in moved]
+        data["channel_orders"][destination] = destination_order + appended
+        for row in rows:
+            row.group = destination
+        await db.flush()
+        workspace.save_preferences(db, user_id, preference, data)
+    return len(moved)
+
+
+@router.post("/groups/delete")
+async def delete_groups(req: ChannelGroupsDeleteRequest, db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_user)):
+    names = workspace.unique_names(req.names)
+    await workspace.lock_owner(db, current_user.id)
+    groups, channels = await workspace.workspace_state(db, current_user.id)
+    if not set(names) <= groups:
+        raise HTTPException(404, "One or more groups not found")
+    selected = [row for row in channels.values() if row.group in names]
+    if "Ungrouped" in names and selected:
+        raise HTTPException(400, "Cannot delete Ungrouped while channels require it")
+    moved = 0
+    if selected:
+        await workspace.append_new_group(db, current_user.id, "Ungrouped")
+        await ensure_channel_group(db, current_user.id, "Ungrouped")
+        await db.flush()
+        moved = await move_workspace_channels(db, current_user.id, selected, "Ungrouped")
+    await db.execute(delete(YouTubeChannelGroup).where(YouTubeChannelGroup.user_id == current_user.id,
+        YouTubeChannelGroup.name.in_(names)))
+    row, data = await workspace.load_preferences(db, current_user.id)
+    if row:
+        workspace.save_preferences(db, current_user.id, row, await workspace.prune_preferences(db, current_user.id, data))
+    await db.commit()
+    return {"deleted": len(names), "moved": moved, "names": names}
+
+
+@router.post("/groups/clear")
+async def clear_group(req: ChannelGroupClearRequest, db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_user)):
+    name = channel_group_name(req.name)
+    await workspace.lock_owner(db, current_user.id)
+    groups, channels = await workspace.workspace_state(db, current_user.id)
+    if name not in groups:
+        raise HTTPException(404, "Group not found")
+    await ensure_channel_group(db, current_user.id, name)
+    await db.flush()
+    selected = [row for row in channels.values() if row.group == name]
+    await workspace.remove_channels(db, current_user.id, selected)
+    await db.commit()
+    return {"name": name, "deleted": len(selected)}
+
+
+@router.post("/channels/move")
+async def move_channels(req: ChannelMoveRequest, db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_user)):
+    destination = channel_group_name(req.group)
+    await workspace.lock_owner(db, current_user.id)
+    rows = await workspace.locked_channels(db, current_user.id, req.channel_ids)
+    groups, _ = await workspace.workspace_state(db, current_user.id)
+    if destination not in groups:
+        raise HTTPException(400, "Destination group not found")
+    await ensure_channel_group(db, current_user.id, destination)
+    moved = await move_workspace_channels(db, current_user.id, rows, destination)
+    await db.commit()
+    return {"moved": moved, "group": destination, "channel_ids": [str(value) for value in req.channel_ids]}
+
+
+@router.post("/channels/delete")
+async def delete_channels(req: ChannelBatchRequest, db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_user)):
+    await workspace.lock_owner(db, current_user.id)
+    rows = await workspace.locked_channels(db, current_user.id, req.channel_ids)
+    await workspace.remove_channels(db, current_user.id, rows)
+    await db.commit()
+    return {"deleted": len(rows), "channel_ids": [str(value) for value in req.channel_ids]}
 
 
 def clean_keys(raw):
@@ -118,9 +286,15 @@ async def channel_for_actor(db, actor, channel_id):
     return row
 
 
-async def channel_responses(db, channels):
+async def channel_responses(db, channels, preferences=None):
     playlists = defaultdict(list)
     if channels:
+        if preferences is None:
+            preferences = {row.user_id: row.playlist_orders for row in (await db.execute(
+                select(YouTubeWorkspacePreference).where(YouTubeWorkspacePreference.user_id.in_(
+                    {channel.user_id for channel in channels})))).scalars()}
+        ranks = {channel.id: {value: index for index, value in enumerate(
+            preferences.get(channel.user_id, {}).get(str(channel.id), []))} for channel in channels}
         rows = (await db.execute(select(ChannelPlaylist.channel_id, Item).join(Item, Item.id == ChannelPlaylist.item_id)
             .join(Channel, Channel.id == ChannelPlaylist.channel_id).where(
                 Channel.id.in_([row.id for row in channels]), Item.user_id == Channel.user_id,
@@ -133,6 +307,9 @@ async def channel_responses(db, channels):
         for channel_id, item in rows:
             playlists[channel_id].append(_item_to_response(item, owner_url=_extract_owner_url(item, raw.get(item.spotify_id)), raw_data=raw.get(item.spotify_id),
                 snapshots=snapshots.get(item.id), item_user=users.get(str(item.user_id))))
+        for channel_id, values in playlists.items():
+            rank = ranks[channel_id]
+            values.sort(key=lambda item: rank.get(item.id, len(rank)))
     return [ChannelResponse(**{field: str(getattr(row, field)) if field in {"id", "user_id"} else getattr(row, field)
         for field in ChannelResponse.model_fields if field not in {"playlists", "youtube_url"}},
         youtube_url=f"https://www.youtube.com/channel/{row.youtube_id}" if row.youtube_id else None,
@@ -143,6 +320,7 @@ async def channel_responses(db, channels):
 async def list_channels(user_id: uuid.UUID | None = None, group: str | None = None, search: str | None = None,
     filter: Literal["all", "changed", "errors"] = "all", limit: int = Query(50, ge=1, le=500),
     offset: int = Query(0, ge=0), db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_user)):
+    _, preferences = await workspace.load_preferences(db, current_user.id)
     conditions = [owner_scope_condition(current_user, Channel.user_id)]
     if user_id:
         conditions.append(Channel.user_id == user_id)
@@ -165,11 +343,22 @@ async def list_channels(user_id: uuid.UUID | None = None, group: str | None = No
     elif filter == "errors":
         conditions.append(Channel.status == "error")
     total = (await db.execute(select(func.count()).select_from(Channel).where(*conditions))).scalar_one()
-    channels = list((await db.execute(select(Channel).where(*conditions).order_by(Channel.created_at.asc(), Channel.id)
+    ordering = []
+    # Keep the legacy global created_at order unless a group rail order was set.
+    group_ranks = {name: index for index, name in enumerate(preferences["group_order"])}
+    if group_ranks:
+        ordering.extend([case(group_ranks, value=Channel.group, else_=len(group_ranks)), Channel.group])
+    channel_ranks = {uuid.UUID(value): index for values in preferences["channel_orders"].values()
+        for index, value in enumerate(values)}
+    if channel_ranks:
+        ordering.append(case(channel_ranks, value=Channel.id, else_=5000))
+    channels = list((await db.execute(select(Channel).where(*conditions).order_by(*ordering, Channel.created_at.asc(), Channel.id)
         .limit(limit).offset(offset))).scalars())
     keys = await own_keys(db, current_user)
-    return ChannelListResponse(items=await channel_responses(db, channels), total=total,
-        groups=[{"name": name, "count": group_counts[name]} for name in sorted(group_counts)], key_count=len(keys), has_keys=bool(keys))
+    return ChannelListResponse(items=await channel_responses(db, channels,
+        {current_user.id: preferences["playlist_orders"]}), total=total,
+        groups=[{"name": name, "count": group_counts[name]} for name in sorted(group_counts,
+            key=lambda name: (group_ranks.get(name, len(group_ranks)), name))], key_count=len(keys), has_keys=bool(keys))
 
 
 async def claim_refresh(db, channels):
@@ -204,6 +393,7 @@ async def create_channels(req: ChannelCreateRequest, db: AsyncSession = Depends(
         raise HTTPException(400, "Invalid YouTube channel URL")
     # Serialize owner mutations across API calls and workers, including unresolved aliases.
     await db.execute(select(User).where(User.id == owner.id).with_for_update())
+    await workspace.append_new_group(db, owner.id, group)
     await ensure_channel_group(db, owner.id, group)
     existing = list((await db.execute(select(Channel).where(Channel.user_id == owner.id))).scalars())
     by_query = {(row.query_type, row.query): row for row in existing}
@@ -253,16 +443,9 @@ async def refresh_channel(channel_id: uuid.UUID, db: AsyncSession = Depends(get_
 
 @router.delete("/channels/{channel_id}")
 async def delete_channel(channel_id: uuid.UUID, db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_user)):
-    row = await channel_for_actor(db, current_user, channel_id)
-    await db.execute(select(User.id).where(User.id == row.user_id).with_for_update())
-    row = (await db.execute(select(Channel).where(Channel.id == channel_id,
-        owner_scope_condition(current_user, Channel.user_id)).with_for_update()
-        .execution_options(populate_existing=True))).scalar_one_or_none()
-    if row is None:
-        raise HTTPException(404, "Channel not found")
-    await db.execute(delete(ChannelPlaylist).where(ChannelPlaylist.channel_id == row.id))
-    await db.execute(delete(ChannelSnapshot).where(ChannelSnapshot.channel_id == row.id))
-    await db.delete(row)
+    await workspace.lock_owner(db, current_user.id)
+    rows = await workspace.locked_channels(db, current_user.id, [channel_id])
+    await workspace.remove_channels(db, current_user.id, rows)
     await db.commit()
     return {"deleted": True, "channel_id": str(channel_id)}
 
@@ -327,6 +510,11 @@ async def replace_playlists(channel_id: uuid.UUID, req: PlaylistReplaceRequest, 
     await db.execute(delete(ChannelPlaylist).where(ChannelPlaylist.channel_id == channel_id))
     for item_id in {item.id for item in selected}:
         db.add(ChannelPlaylist(channel_id=channel_id, item_id=item_id))
+    await db.flush()
+    preference, data = await workspace.load_preferences(db, current_user.id)
+    if preference:
+        workspace.save_preferences(db, current_user.id, preference,
+            await workspace.prune_preferences(db, current_user.id, data))
     await db.commit()
     for job, spotify_id in jobs:
         youtube_jobs.track(youtube_jobs.run_spotify_job(job.id, spotify_id))
