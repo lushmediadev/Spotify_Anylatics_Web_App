@@ -192,6 +192,35 @@ test('ChannelPlaylists isolated browser behavior', async t => {
         } finally { await page.close(); }
     });
 
+    await t.test('outside clicks clear row selection and channel double-click toggles children only', async () => {
+        const page = await workspaceFixture();
+        try {
+            await page.locator('[data-chp-channel="c1"] .stt-cell').click();
+            await page.locator('[data-chp-playlist="c1:p1"] .stt-cell').click();
+            assert.equal(await page.locator('.chp-channel.row-selected').count(), 0);
+            assert.equal(await page.locator('.chp-playlist-grid.row-selected').count(), 1);
+            await page.locator('.playlist-hero h2').click();
+            assert.equal(await page.locator('#channels-panel .row-selected').count(), 0);
+            assert.equal(await page.locator('[data-chp-kpi="Selected"]').textContent(), '0');
+            await page.locator('[data-chp-channel="c1"] .stt-cell').dblclick();
+            assert.equal(await page.locator('[data-chp-block="c1"] .chp-children').isVisible(), false);
+            assert.equal(await page.locator('[data-chp-block="c2"] .chp-children').isVisible(), true);
+            await page.locator('[data-chp-channel="c1"] .stt-cell').dblclick();
+            assert.equal(await page.locator('[data-chp-block="c1"] .chp-children').isVisible(), true);
+            await page.locator('[data-chp-playlist="c1:p1"] .stt-cell').dblclick();
+            assert.equal(await page.locator('[data-chp-block="c1"] .chp-children').isVisible(), true);
+            await page.locator('.chp-search').click();
+            assert.equal(await page.locator('#channels-panel .row-selected').count(), 0);
+            await page.locator('[data-chp-channel="c1"] .stt-cell').click();
+            await page.locator('[data-chp-channel="c3"] .stt-cell').click({ modifiers: ['Shift'] });
+            assert.equal(await page.locator('.chp-channel.row-selected').count(), 3);
+            await page.locator('[data-chp-channel="c1"]').click({ button: 'right' });
+            await page.getByRole('menuitem', { name: /Move To Group$/ }).click();
+            assert.equal(await page.locator('.chp-channel.row-selected').count(), 3);
+            await page.keyboard.press('Escape');
+        } finally { await page.close(); }
+    });
+
     await t.test('group multiselection rename delete and atomic clear preserve Spotify associations', async () => {
         const page = await workspaceFixture();
         try {

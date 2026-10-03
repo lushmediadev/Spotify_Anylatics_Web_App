@@ -123,6 +123,14 @@
             }
         });
         host.addEventListener('focusout', () => setTimeout(flushRender, 0));
+        host.addEventListener('dblclick', event => {
+            if (event.button !== 0 || state.modal || state.drag || state.resize
+                || event.target.closest('a, button, input, select, textarea, img, [data-chp-resize]')) return;
+            const row = event.target.closest('[data-chp-channel]');
+            if (!row) return;
+            event.preventDefault();
+            setPlaylistCollapsed(row.dataset.chpChannel, !state.collapsed.has(row.dataset.chpChannel));
+        });
         host.addEventListener('pointerdown', startResize);
         host.addEventListener('dblclick', event => {
             if (!event.target.closest('[data-chp-resize]')) return;
@@ -427,6 +435,11 @@
         } catch (error) { if (generation === state.generation) message(errorText(error), true); }
         finally { state.bulkBusy = false; if (button.isConnected) button.disabled = false; }
     }
+    function setPlaylistCollapsed(id, collapse) {
+        if (collapse) state.collapsed.add(id); else state.collapsed.delete(id);
+        const block = [...state.host.querySelectorAll('[data-chp-block]')].find(node => node.dataset.chpBlock === id);
+        if (block) block.querySelector('.chp-children').hidden = collapse;
+    }
     function panelClick(event) {
         const sort = event.target.closest('[data-chp-sort]')?.dataset.chpSort;
         if (sort) {
@@ -448,9 +461,7 @@
             const ids = action === 'toggle' ? [button.dataset.chpId] : state.items.map(item => item.id);
             for (const id of ids) {
                 const collapse = action === 'collapse' || (action === 'toggle' && !state.collapsed.has(id));
-                if (collapse) state.collapsed.add(id); else state.collapsed.delete(id);
-                const block = [...state.host.querySelectorAll('[data-chp-block]')].find(node => node.dataset.chpBlock === id);
-                if (block) block.querySelector('.chp-children').hidden = collapse;
+                setPlaylistCollapsed(id, collapse);
             }
         }
     }
@@ -1049,6 +1060,19 @@
         if (state.groupTools) state.groupTools.querySelector('input').value = '';
         return window.ChannelPlaylists;
     }
+    document.addEventListener('pointerdown', event => {
+        if (!state.visible || event.button !== 0 || state.modal || state.drag || state.resize
+            || event.ctrlKey || event.metaKey || event.shiftKey
+            || event.target.closest('.chp-menu, .row-context-menu, .modal-overlay.open, .chp-backdrop')) return;
+        const row = event.target.closest('[data-chp-channel], [data-chp-playlist]');
+        if (!row || row.hasAttribute('data-chp-playlist')) {
+            state.selected.clear(); delete state.anchors.channels;
+        }
+        if (!row || row.hasAttribute('data-chp-channel')) {
+            state.playlistSelected.clear(); delete state.anchors.playlist;
+        }
+        paintSelection();
+    }, true);
     document.addEventListener('pointerdown', event => { if (state.menu && !state.menu.contains(event.target)) closeMenu(); });
     document.addEventListener('focusin', event => { if (state.menu && !state.menu.contains(event.target)) closeMenu(); });
     window.ChannelPlaylists = { init, show, hide, reload, showKeySettings, syncAccountScope };
