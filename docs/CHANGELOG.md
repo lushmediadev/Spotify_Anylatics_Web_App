@@ -5,6 +5,7 @@
 - Changed: playlist count sits beside CHANNEL instead of the group subtitle; channel/playlist rows use 76px minimum height with 44px covers and compact column headers.
 - Scope: Channel & Playlist presentation only; Spotify list, data ownership, API and association logic unchanged.
 - Verification: 50 frontend/browser and 443 backend tests passed; browser measurements confirm 76px channel/playlist rows and no repeated child headers or User / Updated cells.
+- Deployment: `ebff7f3` pushed/pulled through GitHub; app-only VPS rebuild healthy and public JS/CSS hashes verified. Caddy unchanged. Backup: `/opt/spoticheck/backups/postgres/pre-compact-channel-ui-20261003-035840.sql.gz`; rollback image: `spoticheck-rollback:pre-compact-channel-ui`.
 
 ### 2026-10-03 - Align Channel & Playlist with the original dashboard
 - Changed: channel tools move into the shared topbar, group controls stay in the left rail, and the workspace reuses the original hero/KPI/row typography and status/metric components.
