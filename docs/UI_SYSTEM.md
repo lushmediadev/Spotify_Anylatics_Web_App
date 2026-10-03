@@ -65,6 +65,8 @@
 - Channel workspace reuses `.playlist-hero`, `.hero-kpi`, list typography, covers, status dots and metric badges. Its hero takes the first filtered YouTube channel banner using the YTM cover URL logic.
 - Channel & Playlist rows are compact: 76px minimum height and 44px covers, matching YouTube Manager density. Playlist count sits beside CHANNEL; group subtitles, repeated child headers and child User / Updated cells are omitted. Spotify's separate list sizing is unchanged.
 - Channel edits are right-click/keyboard context-menu actions, not row Edit buttons. No visible page controls; backend paging is internal and must load the complete selected group.
+- Playlist context actions have matching icons. Unlink removes only the channel association; permanent app-link deletion is separate and explicitly warns about removal from Link Checker and every linked channel.
+- Edit playlists includes Spotify group/search filters and cover thumbnails. Filtering never drops checked selections outside the current visible results.
 - Spotify background sync cannot update another view's header/title/controls.
 - No account filter in the group rail. Spotify and Channel & Playlist always use the signed-in account; role badge and authorized Users management remain available.
 - Channel interaction patterns match Link Checker: Ctrl/Cmd and Shift selection, group/row drag/drop with persistent order, scoped context menus, and keyboard actions. Preserve whole channel sections on move and parent-specific playlist associations on unlink.

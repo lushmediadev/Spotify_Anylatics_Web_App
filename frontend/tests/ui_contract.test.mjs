@@ -13,7 +13,7 @@ test("channel playlist actions reuse Spotify exporters and refresh exactly selec
   const calls = [];
   const context = vm.createContext({ Map, Error, state: { exportInProgress: false, listScopeCache: new Map() },
     getAuthUser: () => ({ id: 'own' }), getItemSpotifyUrl: item => item.spotify_url,
-    api: { crawlBatch: async (...args) => calls.push(args) }, showToast: () => {},
+    api: { crawlBatch: async (...args) => calls.push(args), deleteItemById: async id => calls.push(id) }, showToast: () => {},
     copySelectedLinksToClipboard: async items => calls.push(items),
     runServerExport: async (...args) => { calls.push(args); return true; },
   });
@@ -28,6 +28,9 @@ test("channel playlist actions reuse Spotify exporters and refresh exactly selec
   await context.runChannelPlaylistAction('clipboard-auto', [own]);
   assert.equal(calls[0][0], 'clipboard-playlist-type3');
   await assert.rejects(() => context.runChannelPlaylistAction('fetch-selected', [foreign]), /owned/);
+  calls.length = 0;
+  await context.runChannelPlaylistAction('delete-selected-links', [own, foreign, own]);
+  assert.deepEqual(calls, ['p1']);
 });
 
 test("channels is the first navigation item and the default landing view", () => {

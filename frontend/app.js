@@ -5439,6 +5439,17 @@ async function runChannelPlaylistAction(action, items) {
         && String(item.user_id || '') === ownId).map(item => [String(item.id), item])).values());
     if (!selected.length) throw new Error('No owned playlists selected');
     if (action === 'copy-selected-links') return copySelectedLinksToClipboard(selected);
+    if (action === 'delete-selected-links') {
+        try {
+            for (const item of selected) {
+                if (String(getAuthUser()?.id || '') !== ownId) throw new Error('Account changed');
+                await api.deleteItemById(item.id);
+            }
+        } finally {
+            state.listScopeCache.clear(); state.itemSummary = null;
+        }
+        return;
+    }
     if (action === 'fetch-selected') {
         for (let offset = 0; offset < selected.length; offset += 100) {
             const batch = selected.slice(offset, offset + 100);

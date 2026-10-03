@@ -666,6 +666,59 @@ test('ChannelPlaylists isolated browser behavior', async t => {
         } finally { await page.close(); }
     });
 
+    await t.test('playlist picker filters groups/search, displays covers and preserves hidden selections', async () => {
+        const page = await fixture();
+        try {
+            await page.evaluate(() => {
+                const base = window.data.items[0].playlists[0];
+                base.group = 'Jazz'; base.image = 'https://example.com/cover.jpg';
+                const original = window.handleRequest;
+                window.handleRequest = (path, options) => path.startsWith('/items?') ? { items: [base,
+                    { ...base, id: 'p2', name: 'Lofi Study', spotify_id: 'LOFI-ID', group: 'Lofi' },
+                    { ...base, id: 'p3', name: 'Coffee Jazz', spotify_id: 'JAZZ-ID', group: 'Jazz' }], total: 3 } : original(path, options);
+            });
+            await page.evaluate(() => ChannelPlaylists.show());
+            await page.locator('.chp-channel').click({ button: 'right' });
+            await page.locator('[data-menu="edit"]').click();
+            await page.waitForSelector('.chp-pick');
+            assert.equal(await page.locator('.chp-pick-cover').count(), 3);
+            await page.getByLabel('Nhóm playlist', { exact: true }).selectOption('group:Lofi');
+            assert.equal(await page.locator('[name="playlist"]').count(), 1);
+            await page.locator('[name="playlist"]').check();
+            await page.getByLabel('Nhóm playlist', { exact: true }).selectOption('group:Jazz');
+            await page.getByLabel('Tìm playlist', { exact: true }).fill('JAZZ-ID');
+            assert.equal(await page.locator('[name="playlist"]').count(), 1);
+            await page.locator('[name="playlist"]').check();
+            await page.getByLabel('Tìm playlist', { exact: true }).fill('nothing matches');
+            assert.equal(await page.locator('[name="playlist"]').count(), 0);
+            assert.match(await page.locator('.chp-picker-count').textContent(), /Đã chọn 3/);
+            await page.getByRole('button', { name: 'Lưu liên kết', exact: true }).click();
+            await page.waitForSelector('.chp-dialog', { state: 'detached' });
+            const body = await page.evaluate(() => JSON.parse(window.calls.find(call => call.path.endsWith('/playlists') && call.method === 'PUT').body));
+            assert.deepEqual(body.item_ids.sort(), ['p1', 'p2', 'p3']);
+        } finally { await page.close(); }
+    });
+
+    await t.test('playlist menu icons distinguish unlink from confirmed permanent app deletion', async () => {
+        const page = await workspaceFixture();
+        try {
+            await page.locator('[data-chp-playlist="c1:p1"]').click({ button: 'right' });
+            const count = await page.locator('.chp-menu [data-command]').count();
+            assert.equal(await page.locator('.chp-menu [data-command] .material-icons-round').count(), count);
+            assert.equal(await page.locator('[data-command="unlink"] .material-icons-round').textContent(), 'link_off');
+            assert.equal(await page.locator('[data-command="delete-link"] .material-icons-round').textContent(), 'delete_forever');
+            await page.locator('[data-command="delete-link"]').click();
+            assert.match(await page.locator('.chp-dialog-body').textContent(), /mọi kênh/);
+            assert.equal(await page.evaluate(() => window.actions.some(call => call.action === 'delete-selected-links')), false);
+            await page.getByRole('button', { name: 'Hủy', exact: true }).click();
+            await page.locator('[data-chp-playlist="c1:p1"]').click({ button: 'right' });
+            await page.locator('[data-command="delete-link"]').click();
+            await page.getByRole('button', { name: 'Xoá link', exact: true }).click();
+            await page.waitForSelector('.chp-dialog', { state: 'detached' });
+            assert.ok(await page.evaluate(() => window.actions.some(call => call.action === 'delete-selected-links' && call.items.some(item => item.id === 'p1'))));
+        } finally { await page.close(); }
+    });
+
     await t.test('playlist replacement uses owner pagination and unlink never deletes Item; owner switch closes editor', async () => {
         const page = await fixture();
         try {

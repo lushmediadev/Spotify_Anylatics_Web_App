@@ -1,5 +1,11 @@
 # Changelog
 
+### 2026-10-03 - Playlist picker and deletion clarity
+- Added: context-menu icons and a separately confirmed delete-link action; unlink remains parent-channel-only, while deleting a Spotify Item removes its tracking and all channel associations.
+- Edit picker: filter by Spotify group, search title/owner/ID/link, show cover thumbnails and selected count, retain hidden checked choices across filters.
+- Scope: reuse existing own-only Spotify deletion API; no schema or ownership change.
+- Verification: 522 backend and 70 frontend/browser tests passed; filter persistence, thumbnail rendering, own-ID deletion, cancelled confirmation and separate unlink behavior covered.
+
 ### 2026-10-03 - Channel interaction parity
 - Added: persisted per-account group/channel/attached-playlist order and group/channel batch management; compatible additive APIs with strict own-resource validation.
 - UI: group and row drag/drop, multi-selection, group rename/delete/clear, channel move, clipboard shortcuts and playlist-specific context actions reuse existing visual patterns.

@@ -41,6 +41,8 @@
 - Group and channel order is persisted per account on the server; polling must respect saved order rather than reset to creation order.
 - Moving a channel moves its channel-playlist section together. Deleting a group moves surviving channels into Ungrouped; clearing a group deletes its YouTube tracking records only.
 - Playlist selection/reordering is scoped to one parent channel. Unlinking affects only that association, never the Spotify Item or other channels using it.
+- The explicit delete-link action is different: after warning/confirmation it calls the existing own-only Spotify Item deletion API, removing the Item and all its channel associations. It does not delete the upstream playlist on Spotify.
+- Edit picker selections are maintained independently of visible group/search results; saving includes checked IDs hidden by filters.
 - Clipboard (Playlist), TXT and Excel reuse Spotify export helpers and the admin's global clipboard line limit. Refresh selected playlists targets exact owned Item IDs, not the entire Spotify list.
 - Keyboard shortcuts apply only to the active channel view and never consume text editing inside inputs/dialogs.
 - Column resizing is stored per account in the current browser; group/channel/attached-playlist order is stored on the server. Sorting is a view operation and disables drag reorder until cleared.

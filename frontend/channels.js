@@ -559,7 +559,11 @@
         }).catch(error => { if (scope === state.scope) message(errorText(error), true); });
     }
     function actionMenu(actions, x, y, run) {
-        const menu = createMenu(actions.map(([action, label]) => `<button type="button" role="menuitem" class="row-context-item" data-command="${escapeHtml(action)}">${escapeHtml(label)}</button>`).join(''), x, y);
+        const icons = { new: 'add', rename: 'edit', delete: 'delete', clear: 'clear_all',
+            unlink: 'link_off', 'delete-link': 'delete_forever', 'copy-selected-links': 'content_copy',
+            'fetch-selected': 'refresh', 'clipboard-auto': 'content_paste', 'txt-playlist-type3': 'description',
+            'export-listview-excel': 'table_view' };
+        const menu = createMenu(actions.map(([action, label]) => `<button type="button" role="menuitem" class="row-context-item ${action === 'delete-link' ? 'row-context-danger' : ''}" data-command="${escapeHtml(action)}"><span class="material-icons-round" aria-hidden="true">${icons[action] || 'folder'}</span><span>${escapeHtml(label)}</span></button>`).join(''), x, y);
         menu.addEventListener('click', event => {
             const action = event.target.closest('[data-command]')?.dataset.command;
             if (!action) return;
@@ -656,7 +660,17 @@
     function openPlaylistMenu(row, x, y) {
         if (!state.playlistSelected.has(row.dataset.chpPlaylist)) selectRows('playlist', row.dataset.chpPlaylist);
         state.focusKind = 'playlist';
-        actionMenu([['copy-selected-links', 'Copy Link'], ['fetch-selected', 'Refresh playlists đã chọn'], ['unlink', 'Gỡ liên kết đã chọn'], ['clipboard-auto', 'Clipboard Playlist'], ['txt-playlist-type3', 'Export TXT'], ['export-listview-excel', 'Export Excel']], x, y, action => action === 'unlink' ? unlinkPlaylists() : runAction(action));
+        actionMenu([['copy-selected-links', 'Copy Link'], ['fetch-selected', 'Refresh playlists đã chọn'], ['unlink', 'Gỡ liên kết khỏi kênh'], ['delete-link', 'Xoá link Spotify khỏi app'], ['clipboard-auto', 'Clipboard Playlist'], ['txt-playlist-type3', 'Export TXT'], ['export-listview-excel', 'Export Excel']], x, y, action => action === 'unlink' ? unlinkPlaylists() : action === 'delete-link' ? deleteSpotifyLinks() : runAction(action));
+    }
+    function deleteSpotifyLinks() {
+        const items = [...new Map(selectedPlaylists().map(({ item }) => [item.id, item])).values()];
+        if (!items.length || !state.runPlaylistAction) return;
+        const owner = state.userId, scope = state.scope;
+        dialog('Xoá link Spotify khỏi app', `<p>Xoá hẳn ${items.length} playlist khỏi Link Checker và mọi kênh đang gắn? Dữ liệu theo dõi của các link này sẽ bị xoá. Hành động này không xoá playlist trên Spotify.</p><p class="chp-muted">Nếu chỉ muốn bỏ khỏi kênh này, hãy huỷ và chọn Gỡ liên kết khỏi kênh.</p>`, 'Xoá link', async () => {
+            if (scope !== state.scope || owner !== String(state.getUser()?.id || '')) return;
+            await state.runPlaylistAction('delete-selected-links', items);
+            notifyItems(); state.playlistSelected.clear();
+        });
     }
     function moveMenu(x, y) {
         const ids = selectedChannels().map(item => item.id);
@@ -946,9 +960,10 @@
     async function openEdit(item) {
         if (String(item.user_id) !== state.userId || state.userId !== String(state.getUser()?.id || '')) return;
         const selected = new Map((item.playlists || []).map(playlist => [playlist.id, playlist]));
-        const modal = dialog(`Edit playlists · ${item.name || item.query}`, '<p class="chp-muted">Bỏ chọn chỉ gỡ liên kết, không xóa Spotify Item.</p><div class="chp-picker" aria-busy="true">Đang tải playlist của chủ kênh…</div><label>Dán URL playlist, mỗi dòng một URL<textarea name="urls" rows="5" placeholder="https://open.spotify.com/playlist/…"></textarea></label>', 'Lưu liên kết', async node => {
+        const chosen = new Set(selected.keys());
+        const modal = dialog(`Edit playlists · ${item.name || item.query}`, '<p class="chp-muted">Bỏ chọn chỉ gỡ liên kết, không xóa Spotify Item.</p><div class="chp-picker-filters"><label>Nhóm Spotify<select name="picker_group" aria-label="Nhóm playlist" disabled><option value="">Tất cả nhóm</option></select></label><label>Tìm playlist<div class="chp-picker-search-wrap"><span class="material-icons-round" aria-hidden="true">search</span><input name="picker_search" type="search" aria-label="Tìm playlist" placeholder="Tên, owner, ID hoặc link playlist" disabled></div></label></div><p class="chp-picker-count chp-muted" role="status"></p><div class="chp-picker" aria-busy="true">Đang tải playlist của chủ kênh…</div><label>Dán URL playlist, mỗi dòng một URL<textarea name="urls" rows="5" placeholder="https://open.spotify.com/playlist/…"></textarea></label>', 'Lưu liên kết', async node => {
             if (!loaded) throw new Error('Danh sách playlist chưa tải xong.');
-            const item_ids = [...node.querySelectorAll('[name="playlist"]:checked')].map(input => input.value);
+            const item_ids = [...chosen];
             const urls = lines(node.querySelector('[name="urls"]').value);
             if (item_ids.length > 500 || urls.length > 500) throw new Error('Tối đa 500 playlist hoặc URL mỗi lần.');
             await api(`/youtube/channels/${encodeURIComponent(item.id)}/playlists`, 'PUT', { item_ids, urls });
@@ -967,8 +982,33 @@
                 for (const playlist of data.items) if (String(playlist.user_id) === state.userId) selected.set(playlist.id, playlist);
                 if (!data.items.length || offset + data.items.length >= data.total) break;
             }
-            const originalIds = new Set((item.playlists || []).map(playlist => playlist.id));
-            picker.innerHTML = [...selected.values()].map(playlist => `<label class="chp-pick"><input type="checkbox" name="playlist" value="${escapeHtml(playlist.id)}"${originalIds.has(playlist.id) ? ' checked' : ''}><span>${escapeHtml(playlistTitle(playlist))}<small class="chp-muted">${escapeHtml(playlist.spotify_id)}</small></span></label>`).join('') || '<p class="chp-muted">Chủ kênh chưa có playlist. Có thể dán URL bên dưới.</p>';
+            const groupSelect = modal.node.querySelector('[name="picker_group"]');
+            const searchInput = modal.node.querySelector('[name="picker_search"]');
+            const all = [...selected.values()];
+            const groups = [...new Set(all.map(playlist => playlist.group || ''))].sort((a, b) => a.localeCompare(b, 'vi'));
+            groupSelect.innerHTML = '<option value="">Tất cả nhóm</option>' + groups.map(name => `<option value="${escapeHtml('group:' + name)}">${escapeHtml(name || 'Chưa phân nhóm')}</option>`).join('');
+            const normalize = value => String(value || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/đ/g, 'd').replace(/Đ/g, 'D').toLowerCase();
+            function renderPicker() {
+                const query = normalize(searchInput.value.trim());
+                const rows = all.filter(playlist => (!groupSelect.value || groupSelect.value === 'group:' + (playlist.group || ''))
+                    && normalize([playlistTitle(playlist), playlist.owner_name, playlist.spotify_id, playlist.spotify_url].join(' ')).includes(query));
+                picker.innerHTML = rows.map(playlist => {
+                    const cover = safeUrl(playlist.image);
+                    return `<label class="chp-pick"><input type="checkbox" name="playlist" value="${escapeHtml(playlist.id)}"${chosen.has(playlist.id) ? ' checked' : ''}>${cover ? `<img class="chp-pick-cover" src="${cover}" alt="" loading="lazy" referrerpolicy="no-referrer">` : '<span class="chp-pick-cover chp-cover-empty" aria-hidden="true"></span>'}<span>${escapeHtml(playlistTitle(playlist))}<small class="chp-muted">${escapeHtml(playlist.group || 'Chưa phân nhóm')} · ${escapeHtml(playlist.spotify_id)}</small></span></label>`;
+                }).join('') || '<p class="chp-muted">Không có playlist phù hợp. Đổi nhóm/từ khoá hoặc dán URL bên dưới.</p>';
+                modal.node.querySelector('.chp-picker-count').textContent = `${rows.length}/${all.length} playlist · Đã chọn ${chosen.size}`;
+            }
+            picker.addEventListener('change', event => {
+                const checkbox = event.target.closest('[name="playlist"]');
+                if (!checkbox) return;
+                if (checkbox.checked) chosen.add(checkbox.value); else chosen.delete(checkbox.value);
+                modal.node.querySelector('.chp-picker-count').textContent = `${picker.querySelectorAll('[name="playlist"]').length}/${all.length} playlist · Đã chọn ${chosen.size}`;
+            });
+            searchInput.addEventListener('input', renderPicker);
+            searchInput.addEventListener('keydown', event => { if (event.key === 'Enter') event.preventDefault(); });
+            groupSelect.addEventListener('change', renderPicker);
+            groupSelect.disabled = false; searchInput.disabled = false;
+            renderPicker();
             loaded = true; button.disabled = false;
         } catch (error) {
             if (state.modal === modal && error.name !== 'AbortError') { picker.textContent = errorText(error); picker.classList.add('chp-error'); }

@@ -72,6 +72,15 @@ body.chp-resizing { cursor: col-resize; user-select: none; }
 .chp-picker { max-height: 280px; overflow-y: auto; border-block: 1px solid var(--chp-border); margin: 12px 0 16px; }
 .chp-pick { display: flex; align-items: flex-start; gap: 10px; padding: 9px 4px; border-bottom: 1px solid rgba(0, 0, 0, .08); cursor: pointer; overflow-wrap: anywhere; }
 .chp-pick input { margin-top: 4px; accent-color: var(--chp-text); }
+.chp-picker-filters { display: grid; grid-template-columns: minmax(130px, 1fr) minmax(160px, 2fr); gap: 12px; }
+.chp-picker-filters label { display: flex; flex-direction: column; gap: 6px; font-size: 13px; }
+.chp-picker-filters select, .chp-picker-filters input { width: 100%; min-width: 0; border-radius: 8px; background-color: var(--chp-surface); border: 1px solid var(--chp-border); }
+.chp-picker-search-wrap { position: relative; }
+.chp-picker-search-wrap .material-icons-round { position: absolute; left: 9px; top: 50%; transform: translateY(-50%); font-size: 18px; color: var(--chp-muted); }
+.chp-picker-search-wrap input { padding-left: 34px !important; }
+.chp-pick-cover { width: 40px; height: 40px; flex: 0 0 40px; border-radius: 4px; object-fit: cover; }
+.chp-picker-count { font-size: 12px; margin: 10px 0 0; }
+@media (max-width: 480px) { .chp-picker-filters { grid-template-columns: 1fr; } }
 .chp-dialog small { display: block; font-size: 12px; margin-top: 2px; }
 .chp-settings { padding: 16px 0; max-width: 640px; }
 .chp-settings-actions { display: flex; gap: 8px; }
