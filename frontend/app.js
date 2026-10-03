@@ -6566,7 +6566,7 @@ function initVirtualListScroll() {
 // VIEW MANAGEMENT â€” single source of truth for panel switching
 // ===================================================================
 
-state.currentView = 'linkchecker'; // linkchecker | channels | settings | account | users
+state.currentView = 'channels'; // linkchecker | channels | settings | account | users
 
 function setElementDisplay(el, mode) {
     if (!el) return;
@@ -8162,15 +8162,10 @@ document.addEventListener('DOMContentLoaded', async () => {
     initStickyHeader();
     initVirtualListScroll();
 
-    // Initial data load
-    loadData().then(() => {
-        // Update hero image after data is rendered
-        setTimeout(updateHeroImage, 100);
-        // Sync groups from server
-        syncGroupsFromServer();
-        // Keep remote updates (from other users/tabs) in sync without manual refresh.
-        startBackgroundSync();
-    });
+    // Channels is the landing page; Spotify data loads when its tab is opened.
+    switchToView('channels');
+    syncGroupsFromServer();
+    startBackgroundSync();
 
     // Keep "Checked" relative times live without page reload.
     setInterval(refreshCheckedLabels, 30_000);

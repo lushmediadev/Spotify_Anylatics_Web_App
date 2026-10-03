@@ -9,6 +9,14 @@ const appJs = fs.readFileSync(path.join(root, "app.js"), "utf8");
 const indexHtml = fs.readFileSync(path.join(root, "index.html"), "utf8");
 const styleCss = fs.readFileSync(path.join(root, "style.css"), "utf8");
 
+test("channels is the first navigation item and the default landing view", () => {
+  assert.ok(indexHtml.indexOf('id="nav-channels"') < indexHtml.indexOf('id="nav-links"'));
+  assert.match(appJs, /state\.currentView = 'channels'/);
+  const init = appJs.slice(appJs.indexOf("document.addEventListener('DOMContentLoaded'"));
+  assert.match(init, /switchToView\('channels'\);\s+syncGroupsFromServer\(\);\s+startBackgroundSync\(\)/);
+  assert.doesNotMatch(init, /loadData\(\)\.then/);
+});
+
 test("sidebar omits the unused Dashboard tab and preserves working navigation", () => {
   assert.doesNotMatch(indexHtml, /id="nav-dashboard"|data-tooltip="Dashboard"/);
   for (const id of ['nav-links', 'nav-channels', 'nav-settings']) {

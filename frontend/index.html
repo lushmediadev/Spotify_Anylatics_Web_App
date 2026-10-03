@@ -56,13 +56,13 @@
             <span class="font-bold text-xl tracking-tight sidebar-logo-text">SpotiCheck</span>
         </div>
         <nav class="flex-1 px-3 space-y-1">
-            <a id="nav-links" class="sidebar-tooltip-target flex items-center gap-4 px-3 py-3 rounded-lg text-white bg-white/10 group cursor-pointer" data-tooltip="Link Checker" href="#">
-                <span class="material-icons-round text-primary">link</span>
-                <span class="font-medium sidebar-label">Link Checker</span>
-            </a>
-            <a id="nav-channels" class="sidebar-tooltip-target flex items-center gap-4 px-3 py-3 rounded-lg text-secondary-text hover:text-white transition-colors group cursor-pointer" data-tooltip="Channel &amp; Playlist" href="#">
-                <span class="material-icons-round">subscriptions</span>
+            <a id="nav-channels" class="sidebar-tooltip-target flex items-center gap-4 px-3 py-3 rounded-lg text-white bg-white/10 group cursor-pointer" data-tooltip="Channel &amp; Playlist" href="#">
+                <span class="material-icons-round text-primary">subscriptions</span>
                 <span class="font-medium sidebar-label">Channel &amp; Playlist</span>
+            </a>
+            <a id="nav-links" class="sidebar-tooltip-target flex items-center gap-4 px-3 py-3 rounded-lg text-secondary-text hover:text-white transition-colors group cursor-pointer" data-tooltip="Link Checker" href="#">
+                <span class="material-icons-round">link</span>
+                <span class="font-medium sidebar-label">Link Checker</span>
             </a>
             <a id="nav-settings" class="sidebar-tooltip-target flex items-center gap-4 px-3 py-3 rounded-lg text-secondary-text hover:text-white transition-colors group cursor-pointer" data-tooltip="Settings" href="#">
                 <span class="material-icons-round">settings</span>
@@ -130,7 +130,7 @@
         </header>
 
         <!-- Main Area -->
-        <div class="list-wrap flex-1 overflow-y-auto px-0 pb-0 list-scroll">
+        <div class="list-wrap flex-1 overflow-y-auto px-0 pb-0 list-scroll" style="display:none">
             <div class="list-shell">
                 <!-- Hero Section -->
                 <section class="playlist-hero px-5 py-8 mb-0">
@@ -653,6 +653,6 @@
         </div>
 
     <script src="channels.js?v=20261003-own-scope-1"></script>
-    <script src="app.js?v=20261003-own-scope-1"></script>
+    <script src="app.js?v=20261003-channel-default-1"></script>
 </body>
 </html>
