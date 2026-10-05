@@ -1,5 +1,10 @@
 # Changelog
 
+### 2026-10-05 - Independent GitHub repository
+- Migrated: `lushmediadev/Spotify_Anylatics_Web_App` recreated as an independent public repository with the same name, full committed history and local branches; old fork removed after read-back/ref verification.
+- Local origin now targets lushmediadev; previous source remains available as shinemusic. No application code, runtime data or VPS deployment changed.
+- Backup: `D:\GitHub_Migration_Backups\lushmediadev-20261005` contains original fork mirrors, local bundles and verified replacement mirrors.
+
 ### 2026-10-03 - Complete playlist picker groups
 - Fixed: group filter merges own custom groups, all-type item summary groups and playlist groups; empty groups and track/album-only groups no longer disappear.
 - Changed: single-channel context menu puts Edit playlists before Add Channel. Existing visual, ownership and playlist-only selection remain unchanged.

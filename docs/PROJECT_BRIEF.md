@@ -10,6 +10,7 @@ SpotiCheck tracks public Spotify metrics for Artist, Track, Album, and Playlist 
 - Backend: Python FastAPI, SQLAlchemy async, PostgreSQL, `httpx`, and Playwright fallback.
 - Runtime: single FastAPI service serves API plus static frontend.
 - Deploy: Docker Compose + Caddy + PostgreSQL on VPS `82.197.71.6`.
+- Canonical GitHub origin: `https://github.com/lushmediadev/Spotify_Anylatics_Web_App.git`, an independent public repository. The `shinemusic` remote preserves the previous source; VPS remotes were not changed during the repository migration.
 
 ## Main Modules
 
