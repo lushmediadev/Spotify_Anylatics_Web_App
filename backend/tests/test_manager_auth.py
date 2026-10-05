@@ -291,6 +291,26 @@ def test_demotion_lock_refreshes_stale_target(accounts):
     assert manager.role == "user"
 
 
+@pytest.mark.parametrize('operation', ['update', 'reset', 'delete'])
+def test_reassigned_user_refreshes_cached_scope_before_management(accounts, operation):
+    db, users = accounts
+    target = users['assigned']
+    db.session.execute(update(User).where(User.id == target.id).values(manager_id=users['other_manager'].id)
+                       .execution_options(synchronize_session=False))
+    assert target.manager_id == users['manager'].id
+    if operation == 'update':
+        action = auth_api.admin_update_user(str(target.id), AdminUpdateUserRequest(display_name='Forbidden'), users['manager'], db)
+    elif operation == 'reset':
+        from app.schemas.auth import AdminResetPasswordRequest
+        action = auth_api.admin_reset_password(str(target.id), AdminResetPasswordRequest(new_password='forbidden-pass'), users['manager'], db)
+    else:
+        action = auth_api.admin_delete_user(str(target.id), users['manager'], db)
+    _expect_status(403, action)
+    assert target.manager_id == users['other_manager'].id
+    assert target.password_hash == 'old-hash' and target.display_name is None
+    assert not db.dependent_queries
+
+
 def test_manager_with_assigned_users_cannot_be_demoted(accounts):
     db, users = accounts
     manager = users["manager"]
@@ -355,19 +375,21 @@ def test_http_dependencies_manager_access_user_denied_global_preferences_admin_o
     app.dependency_overrides[auth_api.get_db] = database
     with TestClient(app) as client:
         response = client.get("/auth/users")
-        assert response.status_code == 403
+        assert response.status_code == 200
+        assert {row['username'] for row in response.json()} == {'manager', 'assigned'}
         assert client.get("/auth/me").json()["manager_id"] is None
         own_groups_url = f"/auth/users/{actor.id}/groups"
-        assert client.get(own_groups_url).status_code == 403
+        assert client.get(own_groups_url).status_code == 200
         response = client.put(own_groups_url, json={"groups": [" Own ", "Own", ""]})
-        assert response.status_code == 403
+        assert response.status_code == 200
         response = client.get(own_groups_url)
-        assert response.status_code == 403
+        assert response.status_code == 200
+        assert response.json()['groups'] == ['Own']
         assert client.patch(f"/auth/users/{actor.id}", json={"display_name": "denied"}).status_code == 403
         assert client.post(f"/auth/users/{actor.id}/reset-password", json={"new_password": "pass"}).status_code == 403
         assert client.delete(f"/auth/users/{actor.id}").status_code == 403
         assert client.put("/auth/admin/preferences", json={"playlist_clipboard_line_limit": 10}).status_code == 403
-        assert client.post("/auth/users", json={"username": "bad", "password": "pass", "manager_id": "bad"}).status_code == 403
+        assert client.post("/auth/users", json={"username": "bad", "password": "pass", "manager_id": "bad"}).status_code == 422
         actor = users["assigned"]
         assert client.get("/auth/me").json()["manager_id"] == str(users["manager"].id)
         assert client.get("/auth/users").status_code == 403

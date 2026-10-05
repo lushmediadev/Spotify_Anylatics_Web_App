@@ -1,5 +1,10 @@
 # Changelog
 
+### 2026-10-05 - Manager quản lý user dưới quyền
+- Mở Users cho manager; tạo user tự gắn manager_id, admin thấy cùng tài khoản trong danh sách toàn bộ. Admin reset-password mọi tài khoản; manager chỉ sửa/reset-password/activate/delete assigned users, không nâng role hoặc reassign.
+- Khóa/refresh target row khi quản lý để chặn quyền stale sau admin reassign; dữ liệu workspace vẫn own-account-only. Không đổi route/payload/schema; tăng app.js cache version và cập nhật hướng dẫn tạo tài khoản.
+- Kiểm thử HTTP tạo/sửa/reset/reassign và phủ nhận foreign targets, stale cached scope, privacy của account response; browser local manager xác nhận Users, phạm vi danh sách và User-only create form.
+
 ### 2026-10-05 - Nhãn và logo sidebar theo workspace
 - Bỏ banner Admin Mode khỏi group rail dùng chung; quyền tài khoản và quản lý Users giữ nguyên.
 - Tab YouTube Link Checker dùng đúng SVG logo sidebar của YTM; chuyển sang mọi tab khác khôi phục logo SpotiCheck. Tăng cache version của `app.js`.

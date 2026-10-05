@@ -1,5 +1,6 @@
 """Real SQL/HTTP gates for independent data, migration and manager access."""
 import asyncio
+import uuid
 from datetime import datetime
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
@@ -13,6 +14,7 @@ from app.models.metrics_snapshot import MetricsSnapshot
 from app.models.raw_response import RawResponse
 from app.models.youtube import Channel, ChannelPlaylist, YouTubeWorkspacePreference
 from app.services.auth import get_current_user
+from app.services.auth import verify_password
 from app.services.playlist_workspace_migration import migrate_playlist_workspace
 from app.ytm.database import Base as YTMBase, get_db as ytm_db
 from app.ytm.api import crawl as ytm_crawl
@@ -77,8 +79,9 @@ def test_manager_only_ytm_own_resources_shared_keys_and_no_import(env, monkeypat
     monkeypatch.setattr(ytm_crawl, 'schedule_crawl_jobs', lambda jobs: None)
     env.actor = 'manager'
     with full_client(env) as client:
-        for path in ('/api/items', '/api/items/summary', '/api/youtube/channels', '/api/youtube/preferences', '/api/channel-playlists/items', '/api/auth/users'):
+        for path in ('/api/items', '/api/items/summary', '/api/youtube/channels', '/api/youtube/preferences', '/api/channel-playlists/items'):
             assert client.get(path).status_code == 403, path
+        assert client.get('/api/auth/users').status_code == 200
         assert client.post('/api/crawl/batch', json={'urls': ['https://open.spotify.com/playlist/' + 'L' * 22], 'group': 'No'}).status_code == 403
         assert client.post('/api/channel-playlists/items/export', json={'action': 'playlist-type3', 'format': 'json', 'item_ids': []}).status_code == 403
         assert client.get('/api/youtube/keys').status_code == 200
@@ -93,6 +96,49 @@ def test_manager_only_ytm_own_resources_shared_keys_and_no_import(env, monkeypat
         assert client.get('/api/ytm/items').json()['total'] == 0
         assert client.get('/api/ytm/auth/me/groups').json()['groups'] == []
         assert client.get('/api/youtube/channels').json()['total'] > 0
+
+
+def test_manager_created_user_is_shared_with_admin_and_management_stays_scoped(env):
+    env.actor = 'manager'
+    with full_client(env) as client:
+        created = client.post('/api/auth/users', json={
+            'username': 'managed_new', 'password': 'initial-pass', 'role': 'user',
+        })
+        assert created.status_code == 201, created.text
+        user_id = created.json()['id']
+        assert created.json()['manager_id'] == str(env.users['manager'].id)
+        assert user_id in {row['id'] for row in client.get('/api/auth/users').json()}
+        assert client.patch(f'/api/auth/users/{user_id}', json={'display_name': 'Managed User'}).status_code == 200
+        assert client.post(f'/api/auth/users/{user_id}/reset-password', json={'new_password': 'manager-pass'}).status_code == 200
+        assert client.post('/api/auth/users', json={'username': 'elevated', 'password': 'pass', 'role': 'admin'}).status_code == 403
+        assert client.post('/api/auth/users', json={
+            'username': 'foreign-assignment', 'password': 'pass', 'manager_id': str(env.users['other_manager'].id),
+        }).status_code == 403
+        for target in ('admin', 'other_manager', 'unassigned', 'linked_admin'):
+            target_id = str(env.users[target].id)
+            assert client.patch(f'/api/auth/users/{target_id}', json={'display_name': 'Forbidden'}).status_code == 403
+            assert client.post(f'/api/auth/users/{target_id}/reset-password', json={'new_password': 'forbidden-pass'}).status_code == 403
+            assert client.delete(f'/api/auth/users/{target_id}').status_code == 403
+        assert client.patch(f'/api/auth/users/{user_id}', json={'role': 'manager'}).status_code == 403
+        assert client.patch(f'/api/auth/users/{user_id}', json={'manager_id': None}).status_code == 403
+        env.actor = 'other_manager'
+        assert user_id not in {row['id'] for row in client.get('/api/auth/users').json()}
+        assert client.post(f'/api/auth/users/{user_id}/reset-password', json={'new_password': 'forbidden-pass'}).status_code == 403
+        with Session(env.engine) as session:
+            assert verify_password('manager-pass', session.get(type(env.users['manager']), uuid.UUID(user_id)).password_hash)
+        env.actor = 'admin'
+        listed = {row['id']: row for row in client.get('/api/auth/users').json()}
+        assert listed[user_id]['display_name'] == 'Managed User'
+        assert client.post(f'/api/auth/users/{user_id}/reset-password', json={'new_password': 'admin-pass'}).status_code == 200
+        with Session(env.engine) as session:
+            assert verify_password('admin-pass', session.get(type(env.users['manager']), uuid.UUID(user_id)).password_hash)
+        assert client.patch(f'/api/auth/users/{user_id}', json={'manager_id': str(env.users['other_manager'].id)}).status_code == 200
+        env.actor = 'manager'
+        assert user_id not in {row['id'] for row in client.get('/api/auth/users').json()}
+        assert client.post(f'/api/auth/users/{user_id}/reset-password', json={'new_password': 'forbidden-pass'}).status_code == 403
+        env.actor = 'other_manager'
+        assert user_id in {row['id'] for row in client.get('/api/auth/users').json()}
+        assert client.delete(f'/api/auth/users/{user_id}').status_code == 200
 
 
 def test_user_deletion_cascades_independent_ytm_data(env, monkeypatch):

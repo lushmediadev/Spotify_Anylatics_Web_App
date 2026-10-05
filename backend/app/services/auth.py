@@ -121,7 +121,7 @@ async def get_admin_user(
 async def get_manager_or_admin_user(
     current_user: User = Depends(get_current_user),
 ) -> User:
-    if current_user.role != "admin":
+    if current_user.role not in ("admin", "manager"):
         raise HTTPException(status_code=403, detail="Manager or admin privileges required")
     return current_user
 
@@ -147,7 +147,11 @@ async def require_user_access(
         target_id = uuid.UUID(str(user_id))
     except (ValueError, TypeError) as exc:
         raise HTTPException(status_code=400, detail="Invalid user_id") from exc
-    result = await db.execute(select(User).where(User.id == target_id))
+    query = select(User).where(User.id == target_id)
+    if management:
+        # Serialize target edits/resets with reassignment and refresh cached rows.
+        query = query.with_for_update().execution_options(populate_existing=True)
+    result = await db.execute(query)
     target = result.scalar_one_or_none()
     if target is None:
         raise HTTPException(status_code=404, detail="User not found")

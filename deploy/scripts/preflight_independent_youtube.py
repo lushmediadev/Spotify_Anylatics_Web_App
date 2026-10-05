@@ -56,8 +56,9 @@ async def main():
     youtube_jobs.track = lambda coroutine: coroutine.close()
     async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://preflight") as client:
         headers = {"Authorization": "Bearer " + manager_token}
-        for path in ("/api/items", "/api/youtube/channels", "/api/channel-playlists/items", "/api/auth/users"):
+        for path in ("/api/items", "/api/youtube/channels", "/api/channel-playlists/items"):
             assert (await client.get(path, headers=headers)).status_code == 403
+        assert (await client.get('/api/auth/users', headers=headers)).status_code == 200
         assert (await client.get("/api/youtube/keys", headers=headers)).status_code == 200
         assert (await client.get("/api/ytm/items", headers=headers)).json()["total"] == 0
         response = await client.post("/api/ytm/crawl/batch", headers=headers, json={"urls": ["https://www.youtube.com/@pf_channel"], "group": "YTM Only"})

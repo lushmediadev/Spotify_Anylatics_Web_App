@@ -179,9 +179,9 @@ test("all roles use own data while manager account role restrictions remain", ()
   vm.runInContext(appJs.slice(appJs.indexOf('function getAuthUser()'), appJs.indexOf('function logout()')), context);
   vm.runInContext(appJs.slice(appJs.indexOf('function getAdminTargetUserId()'), appJs.indexOf('function getScopedGroupOwnerUserId()')), context);
   vm.runInContext(appJs.slice(appJs.indexOf('function getBackendListParams()'), appJs.indexOf('function getBackendListScopeKey(')), context);
-  assert.equal(vm.runInContext('canManageUsers()', context), false);
+  assert.equal(vm.runInContext('canManageUsers()', context), true);
   assert.equal(vm.runInContext('getAssignableRoles().map(role => role.value).join(",")', context), 'user');
-  assert.equal(vm.runInContext('getBackendListParams().user_id', context), undefined);
+  assert.equal(vm.runInContext('getBackendListParams().user_id', context), 'manager-id');
   account = { id: 'user-id', role: 'user' };
   assert.equal(vm.runInContext('canManageUsers()', context), false);
   assert.equal(vm.runInContext('getBackendListParams().user_id', context), undefined);

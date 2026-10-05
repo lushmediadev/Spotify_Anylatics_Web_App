@@ -1178,10 +1178,6 @@ def test_management_responses_redact_private_data_but_keep_account_access(env, a
             user.ui_preferences = json.dumps({"row_order": [f"private-{user.username}"]})
         session.commit()
     listed = env.client.get("/api/auth/users")
-    if actor == "manager":
-        assert listed.status_code == 403
-        assert env.client.patch(f"/api/auth/users/{env.users['assigned'].id}", json={"display_name": "Denied"}).status_code == 403
-        return
     assert listed.status_code == 200
     visible = NAMES if actor == "admin" else ("manager", "assigned")
     assert {row["username"] for row in listed.json()} == set(visible)

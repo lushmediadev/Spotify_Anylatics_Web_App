@@ -152,7 +152,7 @@ function getAuthUser() {
 }
 
 function canManageUsers(user = getAuthUser()) {
-    return user?.role === 'admin';
+    return user?.role === 'admin' || user?.role === 'manager';
 }
 
 function getRoleLabel(role) {
@@ -244,7 +244,7 @@ function setupAuthUI() {
         sidebarProfile.appendChild(logoutBtn);
     }
     if (canManageUsers(user)) {
-        // Add Users nav item for admin
+        // Add Users nav item for account managers
         const nav = document.querySelector('#sidebar nav');
         if (nav && !document.getElementById('nav-users')) {
             const usersLink = document.createElement('a');
@@ -6642,12 +6642,12 @@ function updateAddLinkAvailability() {
 
 function switchToView(view) {
     const managerOnly = getAuthUser()?.role === 'manager';
-    if (managerOnly && !['ytm', 'settings', 'account'].includes(view)) view = 'ytm';
+    if (managerOnly && !['ytm', 'users', 'settings', 'account'].includes(view)) view = 'ytm';
     setElementDisplay(document.getElementById('sidebar-spoticheck-logo'), view === 'ytm' ? 'none' : null);
     setElementDisplay(document.getElementById('sidebar-ytm-logo'), view === 'ytm' ? null : 'none');
     const brandName = document.getElementById('sidebar-brand-name');
     if (brandName) brandName.textContent = view === 'ytm' ? 'YouTube Manager' : 'SpotiCheck';
-    for (const id of ['nav-channels', 'nav-links', 'nav-users']) {
+    for (const id of ['nav-channels', 'nav-links']) {
         const nav = document.getElementById(id);
         if (nav) setElementDisplay(nav, managerOnly ? 'none' : null);
     }
@@ -6750,7 +6750,7 @@ function switchToView(view) {
         window.ChannelPlaylists?.show();
     } else if (view === 'users') {
         setElementDisplay(adminPanel, 'block');
-        if (breadcrumbParent) breadcrumbParent.textContent = 'Admin';
+        if (breadcrumbParent) breadcrumbParent.textContent = getRoleLabel(getAuthUser()?.role);
         if (breadcrumb) breadcrumb.textContent = 'Users';
         if (pageTitle) pageTitle.textContent = 'User Management';
         loadAdminUsers({ force: true });

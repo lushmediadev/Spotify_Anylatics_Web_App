@@ -582,7 +582,7 @@ async def admin_reset_password(
     admin: User = Depends(get_manager_or_admin_user),
     db: AsyncSession = Depends(get_db),
 ):
-    """Admin — set a new password for any user (no old password needed)."""
+    """Reset any account as admin, or an assigned user as manager."""
     user = await require_user_access(db, admin, user_id, management=True)
     if len(req.new_password) < 4:
         raise HTTPException(status_code=400, detail="Password must be at least 4 characters")

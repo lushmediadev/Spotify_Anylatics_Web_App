@@ -6,7 +6,7 @@ Canonical detail lives in `docs/DECISIONS.md`. This file lists active decisions 
 | --- | --- | --- |
 | UI source | Preserve Shine dashboard layout and do targeted changes only. | `docs/DECISIONS.md` |
 | Palette | Use YouTube Manager light grayscale tokens; retain the green Spotify logo. | `docs/UI_SYSTEM.md` |
-| Roles | Admin, manager, user; manager is restricted to own YouTube Link Checker and shared personal/key settings. | `docs/modules/access-control.md` |
+| Roles | Admin quản lý tất cả tài khoản; manager quản lý assigned users và own YouTube Link Checker/personal/key settings. | `docs/modules/access-control.md` |
 | YouTube integration | Independent pasted playlist records plus a separate YTM workspace; shared login/own API keys, no old YTM data import or deployment changes. | `docs/modules/youtube-channel-playlist.md` |
 | Workspace interactions | Persist workspace-specific order; URL-only edits and confirmed deletion do not affect Spotify checker records. | `docs/modules/youtube-channel-playlist.md` |
 | User scope | Every role accesses its own resource data only; managing accounts does not grant access to their links/channels/groups. | `docs/modules/access-control.md` |

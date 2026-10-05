@@ -14,11 +14,12 @@
 
 ## Invariants
 - Resource data is own-account-only wherever a role has workspace access. Admin/user access Spotify and combined channels; all roles access their own YTM workspace and API keys. No account filter or impersonation flow.
-- Admin manages accounts and global preferences. Manager uses only YouTube Link Checker and own shared key/profile settings; Spotify, Channel & Playlist and account-management HTTP APIs deny managers.
-- Legacy manager_id assignments remain stored for compatibility, but no longer grant managers account-management permission.
+- Admin quản lý mọi tài khoản và global preferences. Manager dùng YouTube Link Checker, Users và own shared key/profile settings; Spotify và Channel & Playlist vẫn chặn manager.
+- Manager tạo duy nhất role user; backend tự gắn manager_id của manager đang đăng nhập. Admin thấy và sửa/reset-password được tất cả tài khoản; manager chỉ sửa/reset-password/activate/delete user được gắn manager_id của mình. Không nhân bản user sang một danh sách riêng.
 - Manager cannot elevate roles, reassign users, or manage another manager/admin. Private group preferences of other accounts are not part of account-list/profile management responses.
 - Explicit null manager_id clears assignment; omitted manager_id preserves it.
 - Reassign users before deleting/demoting their manager. Prevent deleting/demoting/deactivating own admin or last active admin.
+- Management authorization khóa và refresh target row trong transaction để việc admin đổi role/manager_id không để manager cũ sửa user qua bản dữ liệu cache.
 - List/export/delete/refresh and job visibility share server-side ownership enforcement; old jobs resolve ownership through their item.
 
 ## Known Pitfalls
