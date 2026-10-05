@@ -207,14 +207,18 @@ async def _load_job_item(db, job: CrawlJob, spotify_id: str, item_type: str) -> 
     if job.item_id:
         by_id_result = await db.execute(select(Item).where(Item.id == job.item_id))
         by_id = by_id_result.scalar_one_or_none()
-        if by_id is not None:
-            return by_id
+        return by_id  # A deleted exact row must never fall back to another workspace/user.
+
+    if not job.user_id:
+        return None
 
     fallback_result = await db.execute(
         select(Item)
         .where(
             Item.spotify_id == spotify_id,
             Item.item_type == item_type,
+            Item.user_id == job.user_id,
+            Item.workspace == ("channel-playlists" if isinstance(job.result, dict) and job.result.get("youtube_channel_job") else "spotify"),
         )
         .order_by(Item.updated_at.desc())
     )
@@ -371,15 +375,7 @@ async def crawl_item_task(job_id: str, spotify_id: str, item_type: str):
                     if job is not None:
                         item = await _load_job_item(db, job, spotify_id, item_type)
                     else:
-                        item_result = await db.execute(
-                            select(Item)
-                            .where(
-                                Item.spotify_id == spotify_id,
-                                Item.item_type == item_type,
-                            )
-                            .order_by(Item.updated_at.desc())
-                        )
-                        item = item_result.scalars().first()
+                        item = None  # The job was deleted; do not modify unrelated matching rows.
                     if item:
                         item.status = "error"
                         item.error_message = str(e)

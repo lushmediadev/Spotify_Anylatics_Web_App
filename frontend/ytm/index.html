@@ -1,0 +1,328 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>YouTube Manager</title>
+    <meta name="description" content="Theo dõi nhóm kênh YouTube bằng YouTube Data API v3.">
+    <link rel="icon" type="image/svg+xml" href="favicon.svg?v=3">
+    <script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Roboto:wght@300;400;500;700&family=Inter:wght@400;500;600;700&family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@20..48,300..400,0..1,0&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="style.css?v=ytm-24">
+    <style>aside#sidebar { display: none !important; }</style>
+    <script>
+        tailwind.config = {
+            darkMode: "class",
+            theme: {
+                extend: {
+                    colors: {
+                        primary: "#cc0000",
+                        "youtube-red": "#ff0000",
+                        "surface": "#ffffff",
+                        "sidebar": "#f8f9fa",
+                        "panel": "#ffffff",
+                        "row-hover": "#f1f3f4",
+                        "secondary-text": "#5f6368"
+                    },
+                    fontFamily: { display: ["Roboto", "Inter", "sans-serif"] }
+                }
+            }
+        }
+    </script>
+</head>
+<body class="bg-white text-[#202124] font-display flex h-screen overflow-hidden">
+    <aside id="sidebar" class="app-sidebar collapsed w-64 flex-shrink-0 bg-[#f8f9fa] flex flex-col border-r border-black/8 h-full">
+        <div class="p-6 flex items-center gap-3 sidebar-header">
+            <div class="app-logo-slot">
+                <img src="youtube-mark.svg?v=3" class="app-logo-mark" alt="" aria-hidden="true">
+            </div>
+            <span class="font-bold text-xl tracking-tight sidebar-logo-text">YouTube Manager</span>
+        </div>
+        <nav class="flex-1 px-3 space-y-1">
+            <a id="nav-links" class="sidebar-tooltip-target sidebar-nav-active flex items-center gap-4 px-3 py-3 rounded-lg text-[#202124] group cursor-pointer" data-view="links" data-tooltip="Channels" href="#">
+                <span class="material-symbols-outlined text-[#ff0000]">view_list</span>
+                <span class="font-medium sidebar-label">Channels</span>
+            </a>
+            <a id="nav-settings" class="sidebar-tooltip-target flex items-center gap-4 px-3 py-3 rounded-lg text-secondary-text hover:text-[#202124] transition-colors group cursor-pointer" data-tooltip="Settings" href="#">
+                <span class="material-symbols-outlined">settings</span>
+                <span class="font-medium sidebar-label">Settings</span>
+            </a>
+            <a id="nav-users" class="sidebar-tooltip-target hidden items-center gap-4 px-3 py-3 rounded-lg text-secondary-text hover:text-[#202124] transition-colors group cursor-pointer" data-view="users" data-tooltip="Users" href="#">
+                <span class="material-symbols-outlined">group</span>
+                <span class="font-medium sidebar-label">Users</span>
+            </a>
+        </nav>
+        <div class="p-4 mt-auto border-t border-black/8 sidebar-profile">
+            <div class="flex items-center gap-3 px-2 py-2 sidebar-profile-wrap">
+                <div id="profile-avatar" class="w-8 h-8 rounded-full flex-shrink-0 bg-[#cc0000] text-white text-[11px] font-bold leading-none grid place-items-center overflow-hidden ring-1 ring-black/10">YT</div>
+                <div class="sidebar-user-info overflow-hidden">
+                    <p id="profile-name" class="text-sm font-semibold truncate text-[#202124]">Loading...</p>
+                    <p id="profile-role" class="text-xs text-secondary-text truncate">...</p>
+                </div>
+            </div>
+            <button id="btn-logout" class="sidebar-tooltip-target w-full flex items-center gap-3 px-2 py-2 text-secondary-text hover:text-[#202124] transition-colors cursor-pointer" data-tooltip="Sign out">
+                <span class="material-symbols-outlined text-sm">logout</span>
+                <span class="sidebar-label text-sm">Sign Out</span>
+            </button>
+        </div>
+    </aside>
+
+    <section id="group-panel" class="group-panel w-[280px] flex-shrink-0 bg-white border-r border-black/8 hidden md:flex flex-col h-full">
+        <div class="p-5 pb-3 border-b border-black/8 space-y-3">
+            <div class="flex items-center justify-between">
+                <h2 class="text-[11px] font-bold uppercase tracking-[0.15em] text-[#202124]">Groups</h2>
+                <button id="btn-new-group" class="text-secondary-text hover:text-[#202124]"><span class="material-symbols-outlined text-lg">add</span></button>
+            </div>
+            <div id="manager-filter-wrap" class="hidden"></div>
+            <div class="relative">
+                <span class="material-symbols-outlined absolute left-2.5 top-1/2 -translate-y-1/2 text-secondary-text text-[18px]">search</span>
+                <input id="group-search" type="text" placeholder="Search groups..." class="w-full bg-[#f1f3f4] border border-[#e5e5e5] rounded-lg pl-9 pr-3 py-2 text-sm text-[#202124] placeholder-[#909090] focus:outline-none focus:border-[#d8d8d8]">
+            </div>
+        </div>
+        <div id="group-list" class="flex-1 overflow-y-auto p-3 space-y-1"></div>
+    </section>
+
+    <main class="content-panel flex-1 flex flex-col h-full bg-white overflow-hidden">
+        <header class="topbar h-20 flex-shrink-0 flex items-center justify-between px-8 border-b border-black/8">
+            <div class="flex flex-col">
+                <nav class="flex items-center gap-2 text-xs text-secondary-text mb-1">
+                    <span>YouTube</span>
+                    <span class="material-symbols-outlined text-xs">chevron_right</span>
+                    <span id="breadcrumb-group" class="text-[#202124]">All Channels</span>
+                </nav>
+                <h1 id="page-title" class="text-2xl font-bold">All Channels</h1>
+            </div>
+            <div class="flex items-center gap-4">
+                <div class="relative group">
+                    <span class="material-symbols-outlined absolute left-3 top-1/2 -translate-y-1/2 text-secondary-text text-xl">search</span>
+                    <input id="search-input" class="search-pill bg-[#f1f3f4] border-none rounded-lg pl-10 pr-4 py-2 text-sm w-64 placeholder:text-[#909090]" placeholder="Search channels..." type="text">
+                </div>
+                <button id="btn-refresh" class="btn-ghost flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-bold cursor-pointer">
+                    <span class="material-symbols-outlined text-lg">refresh</span>
+                    Refresh all
+                </button>
+                <button id="btn-add-link" class="btn-accent flex items-center gap-2 px-6 py-2 rounded-lg text-white text-sm font-bold cursor-pointer">
+                    <span class="material-symbols-outlined text-lg">add</span>
+                    Add Channel
+                </button>
+            </div>
+        </header>
+
+        <section id="links-view" class="flex-1 overflow-y-auto px-0 pb-0 list-scroll">
+            <div class="list-shell">
+                <section id="playlist-hero" class="playlist-hero px-5 py-6 mb-0">
+                    <div class="flex items-end justify-between gap-6">
+                        <div>
+                            <h2 id="hero-title" class="text-[28px] leading-none font-bold">Channel Tracking</h2>
+                            <p class="text-sm text-secondary-text mt-2">Theo dõi public stats bằng YouTube Data API v3.</p>
+                        </div>
+                        <div class="flex items-center gap-4 text-xs">
+                            <span class="hero-kpi" data-kpi-type="total"><b id="kpi-total">0</b><em>Channels</em></span>
+                            <span class="hero-kpi" data-kpi-type="active"><b id="kpi-active">0</b><em>Active</em></span>
+                            <span class="hero-kpi" data-kpi-type="errors"><b id="kpi-errors">0</b><em>Errors</em></span>
+                            <span class="hero-kpi" data-kpi-type="crawling"><b id="kpi-crawling">0</b><em>Crawling</em></span>
+                            <span class="hero-kpi" data-kpi-type="selected"><b id="kpi-selected">0</b><em>Selected</em></span>
+                        </div>
+                    </div>
+                </section>
+                <div class="list-head pt-0 pb-0">
+                    <div class="list-columns-head youtube-grid-row px-4 py-3 text-[13px] font-medium">
+                        <div><button type="button" class="sort-header" data-sort-key="stt">STT <span class="material-symbols-outlined" data-sort-icon>unfold_more</span></button></div>
+                        <div>Kênh</div>
+                        <div><button type="button" class="sort-header" data-sort-key="updated">Owner / Updated <span class="material-symbols-outlined" data-sort-icon>unfold_more</span></button></div>
+                        <div class="text-right"><button type="button" class="sort-header sort-header-right" data-sort-key="video">Video <span class="material-symbols-outlined" data-sort-icon>unfold_more</span></button></div>
+                        <div class="text-right"><button type="button" class="sort-header sort-header-right" data-sort-key="subscriber">Subscriber <span class="material-symbols-outlined" data-sort-icon>unfold_more</span></button></div>
+                        <div class="text-right"><button type="button" class="sort-header sort-header-right" data-sort-key="view">View <span class="material-symbols-outlined" data-sort-icon>unfold_more</span></button></div>
+                        <div class="text-right">Biến động / Ngày</div>
+                        <div class="text-right"><button type="button" class="sort-header sort-header-right" data-sort-key="checked">Checked <span class="material-symbols-outlined" data-sort-icon>unfold_more</span></button></div>
+                    </div>
+                </div>
+                <div id="link-list" class="list-grid grid grid-cols-1 gap-2"></div>
+                <div id="empty-state" class="hidden p-10 text-center text-secondary-text">
+                    <span class="material-symbols-outlined text-4xl mb-3 text-youtube-red">smart_display</span>
+                    <p class="text-[#202124] font-semibold">Chưa có kênh nào</p>
+                    <p class="text-sm mt-1">Tạo group rồi thêm URL kênh YouTube để bắt đầu tracking.</p>
+                </div>
+            </div>
+        </section>
+
+        <section id="legacy-settings-view" class="hidden flex-1 overflow-y-auto px-8 py-8 bg-white">
+            <div class="max-w-4xl space-y-6">
+                <div class="p-6 rounded-lg border border-[#e5e5e5]" style="background:#ffffff">
+                    <h2 class="text-xl font-bold mb-5">YouTube API keys</h2>
+                    <label class="block text-[13px] font-semibold text-secondary-text mb-2">API key, mỗi dòng một key</label>
+                    <textarea id="legacy-settings-api-keys" class="modal-input resize-none rounded-lg" rows="7" placeholder="AIza..."></textarea>
+                    <div class="flex items-center gap-3 pt-4">
+                        <button id="legacy-settings-save-api" class="btn-accent inline-flex items-center gap-2 px-5 py-2.5 rounded-lg text-sm font-bold cursor-pointer">
+                            <span class="material-symbols-outlined text-base">save</span>Save API keys
+                        </button>
+                        <button id="legacy-settings-check-api" class="btn-ghost inline-flex items-center gap-2 px-5 py-2.5 rounded-lg text-sm font-bold cursor-pointer">
+                            <span class="material-symbols-outlined text-base">fact_check</span>Check API
+                        </button>
+                        <span id="legacy-settings-api-status" class="text-sm text-secondary-text"></span>
+                    </div>
+                </div>
+                <div class="p-6 rounded-lg border border-[#e5e5e5]" style="background:#ffffff">
+                    <h2 class="text-xl font-bold mb-5">Change password</h2>
+                    <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+                        <input id="legacy-settings-current-pw" class="settings-input rounded-lg" type="password" placeholder="Current password">
+                        <input id="legacy-settings-new-pw" class="settings-input rounded-lg" type="password" placeholder="New password">
+                        <input id="legacy-settings-confirm-pw" class="settings-input rounded-lg" type="password" placeholder="Confirm password">
+                    </div>
+                    <button id="legacy-settings-change-pw" class="mt-4 btn-ghost inline-flex items-center gap-2 px-5 py-2.5 rounded-lg text-sm font-bold cursor-pointer">Change password</button>
+                    <span id="legacy-settings-pw-status" class="ml-3 text-sm text-secondary-text"></span>
+                </div>
+            </div>
+        </section>
+
+        <section id="users-view" class="hidden flex-1 overflow-y-auto px-8 py-8 bg-white">
+            <div class="max-w-5xl">
+                <div class="flex items-center justify-between gap-4 mb-6">
+                    <h2 class="text-2xl font-bold">User Management</h2>
+                    <div class="user-management-actions">
+                        <div id="user-manager-filter" class="user-manager-filter"></div>
+                        <button id="admin-users-create-btn" class="btn-accent inline-flex items-center gap-2 px-5 py-2 rounded-lg text-sm font-bold cursor-pointer">
+                            <span class="material-symbols-outlined text-base">person_add</span>Create User
+                        </button>
+                    </div>
+                </div>
+                <div id="admin-users-list" class="space-y-3"></div>
+            </div>
+        </section>
+
+        <footer class="h-11 flex-shrink-0 flex items-center justify-between px-8 bg-[#f8f9fa] border-t border-black/8 text-xs text-secondary-text">
+            <div class="flex gap-6">
+                <span><b class="text-[#202124]">Total:</b> <span id="footer-total">0</span></span>
+                <span><b class="text-[#202124]">Active:</b> <span id="footer-active">0</span></span>
+                <span><b class="text-[#202124]">Errors:</b> <span id="footer-errors">0</span></span>
+                <span><b class="text-[#202124]">Crawling:</b> <span id="footer-crawling">0</span></span>
+            </div>
+            <div class="flex items-center gap-4">
+                <button id="btn-clear-list" class="hidden hover:text-[#202124] transition-colors cursor-pointer">Clear List</button>
+                <div id="row-selection-toolbar" class="selection-toolbar row-selection-toolbar hidden" aria-label="Row selection actions">
+                    <button id="btn-clear-selection" type="button" class="selection-icon-btn hidden" data-selection-action="clear-rows" title="Clear selected rows">
+                        <span class="material-symbols-outlined">close</span>
+                    </button>
+                    <button id="btn-delete-selection" type="button" class="selection-icon-btn is-danger hidden" data-selection-action="delete-rows" title="Delete selected rows">
+                        <span class="material-symbols-outlined">delete</span>
+                    </button>
+                </div>
+                <span><b class="text-[#202124]">Selected:</b> <span id="footer-selected">0</span></span>
+                <div class="w-[1px] h-3 bg-black/10"></div>
+                <span>API Status: <span id="api-status" class="text-[#cc0000] font-bold uppercase">Connecting...</span></span>
+            </div>
+        </footer>
+    </main>
+
+    <div id="add-link-modal" class="modal-overlay">
+        <div class="modal-content rounded-lg">
+            <div class="flex items-center justify-between mb-6">
+                <h2 class="text-xl font-bold">Add YouTube Channel</h2>
+                <button data-close-modal class="text-secondary-text hover:text-[#202124]"><span class="material-symbols-outlined">close</span></button>
+            </div>
+            <div class="space-y-4">
+                <div>
+                    <label class="block text-sm font-medium text-secondary-text mb-2">YouTube channel URL, mỗi dòng một kênh</label>
+                    <textarea id="modal-batch-input" class="modal-input resize-none rounded-lg" rows="7" placeholder="https://www.youtube.com/@handle&#10;https://www.youtube.com/channel/UC..."></textarea>
+                    <p id="modal-url-hint" class="text-xs text-secondary-text mt-2">Hỗ trợ /channel/UC..., /@handle, /user/..., /c/...</p>
+                </div>
+                <div>
+                    <label class="block text-sm font-medium text-secondary-text mb-2">Group</label>
+                    <select id="modal-group-select" class="settings-input rounded-lg"></select>
+                </div>
+                <div id="modal-target-user-wrap" class="hidden">
+                    <label class="block text-sm font-medium text-secondary-text mb-2">Owner</label>
+                    <select id="modal-target-user" class="settings-input rounded-lg"></select>
+                </div>
+                <div class="flex gap-3 pt-4">
+                    <button data-close-modal class="flex-1 btn-ghost px-4 py-3 rounded-lg text-sm font-bold cursor-pointer">Cancel</button>
+                    <button id="modal-submit" class="flex-1 btn-accent px-4 py-3 rounded-lg text-white text-sm font-bold cursor-pointer">Add & Check</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div id="api-settings-modal" class="modal-overlay">
+        <div class="modal-content api-settings-card">
+            <div class="api-settings-header">
+                <div>
+                    <h2>YouTube API keys</h2>
+                    <p>Nhập nhiều API key bằng cách xuống dòng. Khi một key lỗi hoặc hết quota, app sẽ tự lấy key phù hợp.</p>
+                </div>
+                <button data-close-api-settings-modal class="api-settings-close" aria-label="Close API settings">
+                    <span class="material-symbols-outlined">close</span>
+                </button>
+            </div>
+            <div class="api-settings-body">
+                <label class="api-settings-label" for="settings-api-keys">
+                    <span class="material-symbols-outlined">key</span>
+                    API keys
+                </label>
+                <textarea id="settings-api-keys" class="modal-input api-key-textarea" rows="9" placeholder="AIza...&#10;AIza..."></textarea>
+            </div>
+            <div class="api-settings-footer">
+                <button data-close-api-settings-modal class="btn-ghost api-settings-close-btn inline-flex items-center gap-2 px-5 py-2.5 text-sm font-bold cursor-pointer">
+                    Đóng
+                </button>
+                <span id="settings-api-status" class="api-settings-status is-empty"></span>
+                <div class="api-settings-actions">
+                    <button id="settings-check-api" class="btn-ghost inline-flex items-center gap-2 px-5 py-2.5 text-sm font-bold cursor-pointer">
+                        <span class="material-symbols-outlined text-base">fact_check</span>Check API
+                    </button>
+                    <button id="settings-save-api" class="btn-accent inline-flex items-center gap-2 px-5 py-2.5 text-sm font-bold cursor-pointer">
+                        <span class="material-symbols-outlined text-base">save</span>Save
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div id="user-modal" class="modal-overlay">
+        <div class="modal-content user-modal-card">
+            <div class="user-modal-header">
+                <div>
+                    <h2 id="user-modal-title">Create User</h2>
+                    <p>Create and manage account access.</p>
+                </div>
+                <button data-close-user-modal class="user-modal-close" aria-label="Close user modal"><span class="material-symbols-outlined">close</span></button>
+            </div>
+            <input id="user-modal-id" type="hidden">
+            <div class="user-modal-form">
+                <div class="user-modal-grid">
+                    <div class="user-field">
+                        <label for="user-modal-role">Role</label>
+                        <div class="user-select-wrap">
+                            <select id="user-modal-role" class="settings-input"></select>
+                            <span class="material-symbols-outlined">expand_more</span>
+                        </div>
+                    </div>
+                    <div class="user-field">
+                        <label for="user-modal-manager">Manager</label>
+                        <div class="user-select-wrap">
+                            <select id="user-modal-manager" class="settings-input"></select>
+                            <span class="material-symbols-outlined">expand_more</span>
+                        </div>
+                    </div>
+                </div>
+                <div class="user-field">
+                    <label for="user-modal-username">Username</label>
+                    <input id="user-modal-username" class="settings-input" placeholder="username">
+                </div>
+                <div class="user-field">
+                    <label for="user-modal-password">Temporary password</label>
+                    <input id="user-modal-password" class="settings-input" type="password" placeholder="At least 4 characters">
+                </div>
+                <div class="user-modal-actions">
+                    <button data-close-user-modal class="user-modal-cancel">Cancel</button>
+                    <button id="user-modal-save" class="user-modal-save">Save</button>
+                </div>
+                <span id="user-modal-status" class="user-modal-status"></span>
+            </div>
+        </div>
+    </div>
+
+    <div id="context-menu" class="row-context-menu hidden"></div>
+    <div id="toast-container" class="toast-container"></div>
+    <script src="app.js?v=20261005-embedded-1"></script>
+</body>
+</html>

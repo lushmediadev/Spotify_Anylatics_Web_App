@@ -13,8 +13,9 @@
 - `backend/app/models/user.py`: nullable UUID `manager_id`, self FK with `SET NULL`.
 
 ## Invariants
-- Resource data is own-account-only for all three roles: Spotify links/groups/jobs/exports and YouTube channels/groups/playlist associations/keys. No account filter or impersonation flow.
-- Account management remains separate: admin manages all accounts and global preferences; manager manages assigned role=user accounts. Own manager profile uses profile endpoints.
+- Resource data is own-account-only wherever a role has workspace access. Admin/user access Spotify and combined channels; all roles access their own YTM workspace and API keys. No account filter or impersonation flow.
+- Admin manages accounts and global preferences. Manager uses only YouTube Link Checker and own shared key/profile settings; Spotify, Channel & Playlist and account-management HTTP APIs deny managers.
+- Legacy manager_id assignments remain stored for compatibility, but no longer grant managers account-management permission.
 - Manager cannot elevate roles, reassign users, or manage another manager/admin. Private group preferences of other accounts are not part of account-list/profile management responses.
 - Explicit null manager_id clears assignment; omitted manager_id preserves it.
 - Reassign users before deleting/demoting their manager. Prevent deleting/demoting/deactivating own admin or last active admin.

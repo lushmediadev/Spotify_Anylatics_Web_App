@@ -489,11 +489,11 @@ async def replace_playlists(channel_id: uuid.UUID, req: PlaylistReplaceRequest, 
     channel = locked
     requested = set(req.item_ids)
     selected = list((await db.execute(select(Item).where(Item.id.in_(requested), Item.user_id == channel.user_id,
-        Item.item_type == "playlist").order_by(Item.id).with_for_update())).scalars()) if requested else []
+        Item.item_type == "playlist", Item.workspace == "channel-playlists").order_by(Item.id).with_for_update())).scalars()) if requested else []
     if {item.id for item in selected} != requested:
         raise HTTPException(400, "Playlists must belong to the channel owner")
     existing = list((await db.execute(select(Item).where(Item.user_id == channel.user_id, Item.item_type == "playlist",
-        Item.spotify_id.in_(parsed)).order_by(Item.created_at, Item.id).with_for_update())).scalars()) if parsed else []
+        Item.workspace == "channel-playlists", Item.spotify_id.in_(parsed)).order_by(Item.created_at, Item.id).with_for_update())).scalars()) if parsed else []
     by_spotify = {}
     for item in selected + existing:
         by_spotify.setdefault(item.spotify_id, item)
@@ -501,7 +501,7 @@ async def replace_playlists(channel_id: uuid.UUID, req: PlaylistReplaceRequest, 
     for spotify_id in dict.fromkeys(parsed):
         item = by_spotify.get(spotify_id)
         if item is None:
-            item = Item(user_id=channel.user_id, spotify_id=spotify_id, item_type="playlist", group="Channel Playlists", status="pending")
+            item = Item(user_id=channel.user_id, spotify_id=spotify_id, item_type="playlist", workspace="channel-playlists", group="Channel Playlists", status="pending")
             db.add(item)
             await db.flush()
             jobs.append((make_spotify_job(db, item), spotify_id))
@@ -527,6 +527,20 @@ async def refresh_playlists(channel_id: uuid.UUID, db: AsyncSession = Depends(ge
     items = list((await db.execute(select(Item).join(ChannelPlaylist, ChannelPlaylist.item_id == Item.id).where(
         ChannelPlaylist.channel_id == channel.id, Item.user_id == channel.user_id, Item.item_type == "playlist",
     ).with_for_update())).scalars())
+    jobs = [(make_spotify_job(db, item), item.spotify_id) for item in items if item.status != "crawling"]
+    await db.commit()
+    for job, spotify_id in jobs:
+        youtube_jobs.track(youtube_jobs.run_spotify_job(job.id, spotify_id))
+    return {"accepted": len(jobs), "skipped": len(items) - len(jobs), "job_ids": [str(job.id) for job, _ in jobs]}
+
+
+@router.post("/playlists/refresh")
+async def refresh_independent_playlists(req: PlaylistReplaceRequest, db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_user)):
+    ids = set(req.item_ids)
+    items = list((await db.execute(select(Item).where(Item.id.in_(ids), Item.user_id == current_user.id,
+        Item.item_type == "playlist", Item.workspace == "channel-playlists").with_for_update())).scalars())
+    if {item.id for item in items} != ids:
+        raise HTTPException(400, "Select owned independent playlists only")
     jobs = [(make_spotify_job(db, item), item.spotify_id) for item in items if item.status != "crawling"]
     await db.commit()
     for job, spotify_id in jobs:

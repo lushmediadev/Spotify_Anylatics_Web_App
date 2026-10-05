@@ -14,10 +14,13 @@ CHANNELS = [{"id": f"33333333-3333-4333-8333-{i:012d}", "user_id": USER["id"], "
 KEYS = ""
 GROUPS = {"Jazz Channels"}
 PREFERENCES = {"group_order": [], "channel_orders": {}, "playlist_orders": {}}
+YTM_GROUPS = {"YouTube Test"}
+YTM_ROWS = [dict(CHANNELS[0], youtube_url="https://www.youtube.com/@preview", item_type="channel", type="channel", group="YouTube Test", banner_image=None, video_count=176, subscriber_count=45500, user_name="preview", updated_at=NOW, owner_name="preview", checked_date="05/10 12:00")]
 CHANNELS[0].update({
     "image": "https://yt3.ggpht.com/vgjeI6bGloHkTjzYvvYFiJsymYX6X2IA6LlP_dVFL7Fa4kocWrgHvLxXmX5M2gwzcQeMBT2z=s800-c-k-c0x00ffffff-no-rj",
     "banner": "https://yt3.googleusercontent.com/trO9SyI6tvFVEVOeZ2ISUtETSwro_2emwuvF0D-HCFMcPMUH0ZGxBHFz1zeL_Wi-sA9X2mGt3g=w1707-fcrop64=1,00005a57ffffa5a8-k-c0xffffffff-no-nd-rj",
 })
+YTM_ROWS[0].update({"banner_image": CHANNELS[0]["banner"], "image": CHANNELS[0]["image"]})
 for item in ITEMS:
     item["image"] = "https://image-cdn-ak.spotifycdn.com/image/ab67706c0000da841b8aa5219683fc248f7cbe49"
 CHANNEL_TEMPLATE = dict(CHANNELS[0])
@@ -38,6 +41,13 @@ class Handler(SimpleHTTPRequestHandler):
         route = urlsplit(self.path).path
         if not route.startswith("/api/"):
             return super().do_GET()
+        if route == "/api/ytm/auth/me": return self.send_json(dict(USER, role="user", custom_groups=list(YTM_GROUPS)))
+        if route == "/api/ytm/auth/users": return self.send_json([dict(USER, role="user")])
+        if route == "/api/ytm/auth/me/groups": return self.send_json({"groups": sorted(YTM_GROUPS)})
+        if route == "/api/ytm/auth/me/preferences": return self.send_json({"preferences": {}})
+        if route == "/api/ytm/health": return self.send_json({"status": "ok"})
+        if route == "/api/ytm/items/summary": return self.send_json({"total": 1, "all_total": 1, "active": 1, "errors": 0, "crawling": 0, "groups": [{"name": name, "count": 1} for name in YTM_GROUPS]})
+        if route == "/api/ytm/items": return self.send_json({"items": YTM_ROWS, "total": len(YTM_ROWS)})
         if route == "/api/auth/me": return self.send_json(USER)
         if route == "/api/auth/users": return self.send_json([USER])
         if route == "/api/auth/me/groups": return self.send_json({"groups": ["Jazz", "Jazz-Tracks", "Album", "Tracks", "BluesEditor-Playlist", "BluesEditor-Track", "LofiEditor-Playlist"]})
@@ -128,7 +138,10 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("--port", type=int, default=8010)
     parser.add_argument("--empty", action="store_true")
+    parser.add_argument("--manager", action="store_true")
     args = parser.parse_args()
+    if args.manager:
+        USER["role"] = "manager"
     if args.empty:
         CHANNELS.clear()
         GROUPS.clear()

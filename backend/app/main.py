@@ -62,6 +62,18 @@ async def lifespan(app: FastAPI):
     if not settings.AUTO_INIT_DB:
         logger.warning("AUTO_INIT_DB=false but running compatibility DB init to ensure schema integrity")
     await init_db()
+    from app.ytm.database import init_db as init_ytm_db
+    await init_ytm_db()
+    from app.ytm.services import crawler as ytm_crawler
+    await ytm_crawler.recover_interrupted_jobs()
+    from app.services.playlist_workspace_migration import migrate_playlist_workspace
+    from app.database import engine, async_session
+    from sqlalchemy import text
+    async with async_session() as db:
+        if engine.dialect.name == "postgresql":
+            await db.execute(text("SELECT pg_advisory_xact_lock(7031052026)"))
+        await migrate_playlist_workspace(db)
+        await db.commit()
     logger.info("Database tables checked/created")
     await youtube_jobs.recover_stale_channels()
     youtube_jobs.track(youtube_jobs.maintenance())
@@ -70,6 +82,9 @@ async def lifespan(app: FastAPI):
         yield
     finally:
         await youtube_jobs.shutdown()
+        await ytm_crawler.shutdown()
+        from app.ytm.services.youtube_client import close_youtube_http_client
+        await close_youtube_http_client()
 
     logger.info("Shutting down SpotiCheck API...")
 

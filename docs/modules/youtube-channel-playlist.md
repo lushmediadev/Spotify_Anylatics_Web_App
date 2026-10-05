@@ -1,8 +1,8 @@
 # YouTube Channel & Playlist
 
 ## Responsibility
-- Crawl public channel metadata/view counts via YouTube Data API and associate existing Spotify playlists with channels.
-- Does not upload videos, inspect private channel data, or replace the standalone YouTube Manager deployment.
+- Crawl public channel metadata/view counts and independently track pasted Spotify playlists for channels.
+- YouTube Link Checker is a second, separate workspace under `/api/ytm` and `frontend/ytm`; it preserves the standalone YTM interface without importing its records or modifying that deployment.
 
 ## Entry Points
 - API: `/api/youtube/keys`, `/keys/check`, `/channels` and channel refresh/playlist operations.
@@ -24,8 +24,10 @@
 ## Invariants
 - API keys are readable/writable only by their owner; background refresh uses the channel owner's keys.
 - Channel and playlist owners must match. Multiple channels may refer to the same playlist.
-- Unlinking/deleting a channel never deletes the underlying Spotify Item.
-- New pasted Spotify playlists use explicit group `Channel Playlists`; aggregate All Links remains read-only for creation.
+- Channel playlists use `Item.workspace=channel-playlists`; checker rows use `spotify`. HTTP list/delete/export/crawl queries are scoped by shared ORM criteria and separate `/api/channel-playlists` routes.
+- Legacy associations are cloned with metric snapshots and order references in an idempotent startup migration; original checker rows remain untouched.
+- Deleting a channel keeps its independent playlist records; explicitly deleting a playlist affects only this workspace and its channel associations, never checker rows.
+- New pasted Spotify playlists use explicit group `Channel Playlists` within the independent workspace; they never appear in Link Checker groups/search/exports.
 - Runtime schema changes are additive. No automatic data migration from the old YTM service.
 - Channel view deltas compare stored snapshots, not fabricated daily estimates.
 
@@ -40,9 +42,9 @@
 ## Interaction Parity
 - Group and channel order is persisted per account on the server; polling must respect saved order rather than reset to creation order.
 - Moving a channel moves its channel-playlist section together. Deleting a group moves surviving channels into Ungrouped; clearing a group deletes its YouTube tracking records only.
-- Playlist selection/reordering is scoped to one parent channel. Unlinking affects only that association, never the Spotify Item or other channels using it.
-- The explicit delete-link action is different: after warning/confirmation it calls the existing own-only Spotify Item deletion API, removing the Item and all its channel associations. It does not delete the upstream playlist on Spotify.
-- Edit picker selections are maintained independently of visible group/search results; saving includes checked IDs hidden by filters.
+- Playlist selection/reordering is scoped to one parent channel. The unlink menu/shortcut is removed; Edit playlists contains only the complete pasted URL list.
+- Delete, refresh and export use the independent playlist API client. Delete is confirmed and never changes the upstream playlist on Spotify.
+- Collapsed channel rows show playlist counts in the Owner/Playlist column; fully collapsed groups label it Playlist, mixed groups label it Owner / Playlist.
 - Clipboard (Playlist), TXT and Excel reuse Spotify export helpers and the admin's global clipboard line limit. Refresh selected playlists targets exact owned Item IDs, not the entire Spotify list.
 - Keyboard shortcuts apply only to the active channel view and never consume text editing inside inputs/dialogs.
 - Column resizing is stored per account in the current browser; group/channel/attached-playlist order is stored on the server. Sorting is a view operation and disables drag reorder until cleared.

@@ -152,7 +152,7 @@ function getAuthUser() {
 }
 
 function canManageUsers(user = getAuthUser()) {
-    return user?.role === 'admin' || user?.role === 'manager';
+    return user?.role === 'admin';
 }
 
 function getRoleLabel(role) {
@@ -530,6 +530,7 @@ class SpotiCheckAPI {
 }
 
 const api = new SpotiCheckAPI(CONFIG.API_BASE);
+const channelPlaylistAPI = new SpotiCheckAPI(CONFIG.API_BASE + '/channel-playlists');
 
 // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 // UTILITY HELPERS
@@ -5213,7 +5214,7 @@ function getStableItemIdsForExport(items) {
         .map((item) => String(item.id));
 }
 
-async function runServerExport(contextAction, selectedItems) {
+async function runServerExport(contextAction, selectedItems, exportAPI = api) {
     const request = mapContextActionToExportRequest(contextAction);
     if (!request) return false;
 
@@ -5236,7 +5237,7 @@ async function runServerExport(contextAction, selectedItems) {
     setExportInProgress(true, 'Exporting data...');
     try {
         if (request.format === 'json') {
-            const payload = await api.exportRows(request.exportAction, stableItemIds, request.deepFetch);
+            const payload = await exportAPI.exportRows(request.exportAction, stableItemIds, request.deepFetch);
             const rows = Array.isArray(payload?.rows) ? payload.rows : [];
             if (!rows.length) {
                 showToast('No data available for this export mode', 'info');
@@ -5248,7 +5249,7 @@ async function runServerExport(contextAction, selectedItems) {
             return true;
         }
 
-        const response = await api.exportFile(
+        const response = await exportAPI.exportFile(
             request.exportAction,
             request.format,
             stableItemIds,
@@ -5443,7 +5444,7 @@ async function runChannelPlaylistAction(action, items) {
         try {
             for (const item of selected) {
                 if (String(getAuthUser()?.id || '') !== ownId) throw new Error('Account changed');
-                await api.deleteItemById(item.id);
+                await channelPlaylistAPI.deleteItemById(item.id);
             }
         } finally {
             state.listScopeCache.clear(); state.itemSummary = null;
@@ -5453,7 +5454,7 @@ async function runChannelPlaylistAction(action, items) {
     if (action === 'fetch-selected') {
         for (let offset = 0; offset < selected.length; offset += 100) {
             const batch = selected.slice(offset, offset + 100);
-            await api.crawlBatch(batch.map(getItemSpotifyUrl), null, ownId, batch.map(item => item.id));
+            await api._fetch('/youtube/playlists/refresh', { method: 'POST', body: JSON.stringify({ item_ids: batch.map(item => item.id) }) });
         }
         state.listScopeCache.clear();
         showToast(`Refreshing ${selected.length} playlist(s)`, 'success');
@@ -5464,7 +5465,7 @@ async function runChannelPlaylistAction(action, items) {
         throw new Error('Unsupported playlist action');
     }
     if (state.exportInProgress) throw new Error('Export is running. Please wait.');
-    if (await runServerExport(exportAction, selected)) return;
+    if (await runServerExport(exportAction, selected, channelPlaylistAPI)) return;
     if (exportAction === 'export-listview-excel') {
         downloadTextFile(buildCsvContent(
             ['Type', 'Name', 'Spotify URL', 'Group', 'User', 'Playlist Owner', 'Playlist (Save)',
@@ -6648,6 +6649,17 @@ function updateAddLinkAvailability() {
 }
 
 function switchToView(view) {
+    const managerOnly = getAuthUser()?.role === 'manager';
+    if (managerOnly && !['ytm', 'settings', 'account'].includes(view)) view = 'ytm';
+    for (const id of ['nav-channels', 'nav-links', 'nav-users']) {
+        const nav = document.getElementById(id);
+        if (nav) setElementDisplay(nav, managerOnly ? 'none' : null);
+    }
+    const ytmPanel = document.getElementById('ytm-panel');
+    setElementDisplay(ytmPanel, view === 'ytm' ? 'block' : 'none');
+    setElementDisplay(document.querySelector('main > .topbar'), view === 'ytm' ? 'none' : null);
+    const ytmFrame = document.getElementById('ytm-frame');
+    if (view === 'ytm' && ytmFrame && !ytmFrame.getAttribute('src')) ytmFrame.src = '/ytm/index.html?v=20261005-1';
     var listWrap = document.querySelector('.list-wrap');
     var settingsPanel = document.getElementById('settings-panel');
     var accountPanel = document.getElementById('account-panel');
@@ -6674,7 +6686,7 @@ function switchToView(view) {
     setElementDisplay(adminPanel, 'none');
 
     // 2) Update sidebar nav active state
-    var navMap = { linkchecker: 'nav-links', channels: 'nav-channels', settings: 'nav-settings', account: 'nav-settings', users: 'nav-users' };
+    var navMap = { ytm: 'nav-ytm', linkchecker: 'nav-links', channels: 'nav-channels', settings: 'nav-settings', account: 'nav-settings', users: 'nav-users' };
     document.querySelectorAll('#sidebar nav a').forEach(function(a) {
         a.classList.remove('text-white', 'bg-white/10');
         a.classList.add('text-secondary-text');
@@ -8017,6 +8029,10 @@ document.addEventListener('DOMContentLoaded', async () => {
         e.preventDefault();
         switchToView('channels');
     });
+    document.getElementById('nav-ytm')?.addEventListener('click', (e) => {
+        e.preventDefault();
+        switchToView('ytm');
+    });
     document.getElementById('nav-settings').addEventListener('click', (e) => {
         e.preventDefault();
         switchToView('settings');
@@ -8221,8 +8237,8 @@ document.addEventListener('DOMContentLoaded', async () => {
     initVirtualListScroll();
 
     // Channels is the landing page; Spotify data loads when its tab is opened.
-    switchToView('channels');
-    syncGroupsFromServer();
+    switchToView(getAuthUser()?.role === 'manager' ? 'ytm' : 'channels');
+    if (getAuthUser()?.role !== 'manager') syncGroupsFromServer();
     startBackgroundSync();
 
     // Keep "Checked" relative times live without page reload.

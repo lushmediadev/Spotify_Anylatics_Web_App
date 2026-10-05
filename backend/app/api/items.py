@@ -548,7 +548,8 @@ async def _delete_raw_if_unreferenced(
     if excluded_item_ids:
         query = query.where(~Item.id.in_(excluded_item_ids))
 
-    remaining_rows = (await db.execute(query)).all()
+    # Raw responses cache public upstream payloads shared by every workspace/user.
+    remaining_rows = (await db.execute(query.execution_options(skip_item_workspace=True))).all()
     remaining_ids = {row[0] for row in remaining_rows if row and row[0]}
     stale_ids = [sid for sid in unique_ids if sid not in remaining_ids]
     if stale_ids:

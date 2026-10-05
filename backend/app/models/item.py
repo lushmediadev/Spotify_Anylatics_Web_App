@@ -57,6 +57,7 @@ class Item(Base):
 
     # ── Grouping ──
     group: Mapped[str | None] = mapped_column(String(128), nullable=True, index=True)
+    workspace: Mapped[str] = mapped_column(String(32), nullable=False, default="spotify", server_default="spotify", index=True)
 
     # ── User ownership ──
     user_id: Mapped[uuid.UUID | None] = mapped_column(

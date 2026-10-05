@@ -95,7 +95,7 @@ def test_playlist_parent_order_batch_query_and_replace_cleanup(env):
     second_channel = add_channel(env, 400)
     first_item = str(env.items[env.actor].id)
     with Session(env.engine) as session:
-        second = Item(id=fixed_uuid(500), user_id=env.users[env.actor].id, item_type="playlist",
+        second = Item(id=fixed_uuid(500), user_id=env.users[env.actor].id, item_type="playlist", workspace="channel-playlists",
             spotify_id="Q" * 22, group="Original", status="active", created_at=datetime(2026, 2, 1))
         session.add(second)
         session.flush()

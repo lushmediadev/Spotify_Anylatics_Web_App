@@ -45,6 +45,10 @@ class AsyncSessionAdapter:
     def __init__(self, session):
         self.session = session
 
+    @property
+    def info(self):
+        return self.session.info
+
     async def execute(self, statement, *args, **kwargs):
         return self.session.execute(statement, *args, **kwargs)
 
@@ -116,7 +120,7 @@ def env(tmp_path, monkeypatch):
                 view_count=100, view_count_delta=5 if name == "assigned" else 0,
                 created_at=datetime(2026, 1, 1) + timedelta(days=index))
             items[name] = Item(id=fixed_uuid(200 + index), user_id=users[name].id,
-                spotify_id=f"{index:022d}", item_type="playlist", name=f"Playlist {name}",
+                spotify_id=f"{index:022d}", item_type="playlist", workspace="channel-playlists", name=f"Playlist {name}",
                 group="Original", status="active", followers=17, track_count=3,
                 image="https://example.test/cover.png", created_at=datetime(2026, 1, 1))
         session.add_all([*channels.values(), *items.values()])
@@ -556,6 +560,7 @@ def test_delete_user_api_cascades_keys_channels_snapshots_links_not_other_owners
     with Session(env.engine) as session:
         session.add(ChannelPlaylist(channel_id=env.channels["manager"].id, item_id=env.items[owner].id))
         session.commit()
+    env.actor = "admin"
     response = env.client.delete(f"/api/auth/users/{env.users[owner].id}")
     assert response.status_code == 200, response.text
     assert env.users[owner].id not in ids(env, User)
@@ -1173,6 +1178,10 @@ def test_management_responses_redact_private_data_but_keep_account_access(env, a
             user.ui_preferences = json.dumps({"row_order": [f"private-{user.username}"]})
         session.commit()
     listed = env.client.get("/api/auth/users")
+    if actor == "manager":
+        assert listed.status_code == 403
+        assert env.client.patch(f"/api/auth/users/{env.users['assigned'].id}", json={"display_name": "Denied"}).status_code == 403
+        return
     assert listed.status_code == 200
     visible = NAMES if actor == "admin" else ("manager", "assigned")
     assert {row["username"] for row in listed.json()} == set(visible)

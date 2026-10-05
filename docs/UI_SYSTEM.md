@@ -65,9 +65,11 @@
 - Channel workspace reuses `.playlist-hero`, `.hero-kpi`, list typography, covers, status dots and metric badges. Its hero takes the first filtered YouTube channel banner using the YTM cover URL logic.
 - Channel & Playlist rows are compact: 76px minimum height and 44px covers, matching YouTube Manager density. Playlist count sits beside CHANNEL; group subtitles, repeated child headers and child User / Updated cells are omitted. Spotify's separate list sizing is unchanged.
 - Channel edits are right-click/keyboard context-menu actions, not row Edit buttons. No visible page controls; backend paging is internal and must load the complete selected group.
-- Playlist context actions have matching icons. Unlink removes only the channel association; permanent app-link deletion is separate and explicitly warns about removal from Link Checker and every linked channel.
-- Edit playlists includes Spotify group/search filters and cover thumbnails. Filtering never drops checked selections outside the current visible results.
-- Picker groups include own account custom groups and all-type Spotify summary groups, not just groups containing playlists. Empty/non-playlist groups remain selectable and show an empty playlist result. Channel context menus prioritize Edit playlists before Add Channel for single-row selection.
+- Playlist context actions have matching icons and confirmed independent deletion, without an Unlink command. Spotify Link Checker is unaffected.
+- Edit playlists is URL-only, prefilled with the channel's existing URLs; no checker groups/search/picker. Channel menus prioritize Edit playlists before Add Channel.
+- Collapsed channel rows use the empty owner cell for playlist counts. Header is Playlist when all rows are collapsed and Owner / Playlist for mixed expansion.
+- YouTube Link Checker preserves YTM's original HTML/style in a same-origin isolated frame, with its old sidebar hidden and the shared Spotify logo/nav retained. Group rename uses double-click; its edit icon is removed. Own keys are configured in the shared Settings page.
+- Managers land in YouTube Link Checker and see only that workspace plus Settings/personal profile; server-side dependencies also block Spotify, combined channels and Users APIs.
 - Edit playlists visual is scoped to `.chp-playlist-editor`: shared light surfaces, 14px inputs, bold list titles, monochrome checkboxes and icon actions. Only its body scrolls so Save/Cancel stay visible on short/mobile screens.
 - Spotify background sync cannot update another view's header/title/controls.
 - No account filter in the group rail. Spotify and Channel & Playlist always use the signed-in account; role badge and authorized Users management remain available.

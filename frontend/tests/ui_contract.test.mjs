@@ -13,17 +13,18 @@ test("channel playlist actions reuse Spotify exporters and refresh exactly selec
   const calls = [];
   const context = vm.createContext({ Map, Error, state: { exportInProgress: false, listScopeCache: new Map() },
     getAuthUser: () => ({ id: 'own' }), getItemSpotifyUrl: item => item.spotify_url,
-    api: { crawlBatch: async (...args) => calls.push(args), deleteItemById: async id => calls.push(id) }, showToast: () => {},
+    api: { _fetch: async (...args) => calls.push(args), deleteItemById: async id => calls.push(id) }, showToast: () => {},
     copySelectedLinksToClipboard: async items => calls.push(items),
     runServerExport: async (...args) => { calls.push(args); return true; },
   });
   const start = appJs.indexOf('async function runChannelPlaylistAction(');
+  context.channelPlaylistAPI = context.api;
   vm.runInContext(appJs.slice(start, appJs.indexOf('function exportChannelRows(', start)), context);
   const own = { id: 'p1', user_id: 'own', type: 'playlist', spotify_url: 'https://open.spotify.com/playlist/p1' };
   const foreign = { ...own, id: 'foreign', user_id: 'other' };
   await context.runChannelPlaylistAction('fetch-selected', [own, foreign, own]);
-  assert.deepEqual(Array.from(calls[0][3]), ['p1']);
-  assert.equal(calls[0][2], 'own');
+  assert.deepEqual(JSON.parse(calls[0][1].body).item_ids, ['p1']);
+  assert.equal(calls[0][0], '/youtube/playlists/refresh');
   calls.length = 0;
   await context.runChannelPlaylistAction('clipboard-auto', [own]);
   assert.equal(calls[0][0], 'clipboard-playlist-type3');
@@ -37,7 +38,7 @@ test("channels is the first navigation item and the default landing view", () =>
   assert.ok(indexHtml.indexOf('id="nav-channels"') < indexHtml.indexOf('id="nav-links"'));
   assert.match(appJs, /state\.currentView = 'channels'/);
   const init = appJs.slice(appJs.indexOf("document.addEventListener('DOMContentLoaded'"));
-  assert.match(init, /switchToView\('channels'\);\s+syncGroupsFromServer\(\);\s+startBackgroundSync\(\)/);
+  assert.match(init, /switchToView\(getAuthUser\(\)\?\.role === 'manager' \? 'ytm' : 'channels'\)/);
   assert.doesNotMatch(init, /loadData\(\)\.then/);
 });
 
@@ -178,9 +179,9 @@ test("all roles use own data while manager account role restrictions remain", ()
   vm.runInContext(appJs.slice(appJs.indexOf('function getAuthUser()'), appJs.indexOf('function logout()')), context);
   vm.runInContext(appJs.slice(appJs.indexOf('function getAdminTargetUserId()'), appJs.indexOf('function getScopedGroupOwnerUserId()')), context);
   vm.runInContext(appJs.slice(appJs.indexOf('function getBackendListParams()'), appJs.indexOf('function getBackendListScopeKey(')), context);
-  assert.equal(vm.runInContext('canManageUsers()', context), true);
+  assert.equal(vm.runInContext('canManageUsers()', context), false);
   assert.equal(vm.runInContext('getAssignableRoles().map(role => role.value).join(",")', context), 'user');
-  assert.equal(vm.runInContext('getBackendListParams().user_id', context), 'manager-id');
+  assert.equal(vm.runInContext('getBackendListParams().user_id', context), undefined);
   account = { id: 'user-id', role: 'user' };
   assert.equal(vm.runInContext('canManageUsers()', context), false);
   assert.equal(vm.runInContext('getBackendListParams().user_id', context), undefined);

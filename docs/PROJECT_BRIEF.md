@@ -17,6 +17,7 @@ SpotiCheck tracks public Spotify metrics for Artist, Track, Album, and Playlist 
 - `frontend/app.js`: dashboard state, user/group filters, list rendering, export actions, drag/drop, and UI interactions.
 - `frontend/index.html`: static shell and asset cache query params.
 - `frontend/channels.js`: YouTube channels and linked Spotify playlists; see `docs/modules/youtube-channel-playlist.md`.
+- `frontend/ytm/`, `backend/app/ytm/`: isolated YouTube Link Checker, shared login/own keys, independent `ytm_*` data and preferences. The standalone YTM deployment is untouched.
 - `backend/app/api/`: HTTP routes and response contracts.
 - `backend/app/services/`: Spotify fetch/crawl logic.
 - `backend/app/database.py`: async DB setup and runtime indexes.

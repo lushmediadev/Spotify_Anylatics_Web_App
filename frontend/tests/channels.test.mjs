@@ -335,7 +335,7 @@ test('ChannelPlaylists isolated browser behavior', async t => {
         } finally { await page.close(); }
     });
 
-    await t.test('playlist focus selects visible associations, delegates exact actions and unlinks only chosen parent', async () => {
+    await t.test('playlist focus delegates exact independent actions and Delete asks for confirmation', async () => {
         const page = await workspaceFixture();
         try {
             await page.locator('[data-chp-playlist="c1:p1"] .stt-cell').click();
@@ -350,9 +350,9 @@ test('ChannelPlaylists isolated browser behavior', async t => {
             }
             assert.equal(await page.evaluate(() => window.actions.every(entry => entry.items.length === 2 && entry.items.every(item => item.type === 'playlist' && item.user_id === 'owner'))), true);
             await page.locator('[data-chp-playlist="c1:p1"] .stt-cell').click(); await page.keyboard.press('Delete');
-            await page.getByRole('button', { name: 'Gỡ liên kết', exact: true }).click();
-            await page.waitForFunction(() => window.calls.some(call => call.path === '/youtube/channels/c1/playlists' && call.method === 'PUT'));
-            assert.deepEqual(await page.evaluate(() => JSON.parse(window.calls.find(call => call.path === '/youtube/channels/c1/playlists' && call.method === 'PUT').body)), { item_ids: ['p2'], urls: [] });
+            await page.getByRole('button', { name: 'Xoá link', exact: true }).click();
+            await page.waitForFunction(() => window.actions.some(call => call.action === 'delete-selected-links'));
+            assert.deepEqual(await page.evaluate(() => window.actions.find(call => call.action === 'delete-selected-links').items.map(item => item.id)), ['p1']);
             assert.equal(await page.evaluate(() => window.data.items.find(item => item.id === 'c3').playlists.length), 1);
             assert.equal(await page.evaluate(() => window.calls.some(call => call.method === 'DELETE')), false);
         } finally { await page.close(); }
@@ -620,7 +620,7 @@ test('ChannelPlaylists isolated browser behavior', async t => {
             assert.equal(await page.locator('.chp-children').isVisible(), true);
             await page.locator('.chp-channel').click({ button: 'right' });
             await page.locator('[data-menu="edit"]').click();
-            await page.waitForSelector('.chp-pick');
+            await page.waitForSelector('[name="urls"]');
             await page.locator('[name="urls"]').fill('https://open.spotify.com/playlist/draft');
             const count = await page.evaluate(() => window.calls.length);
             await page.evaluate(() => { for (const callback of window.polls.values()) callback(); });
@@ -668,75 +668,33 @@ test('ChannelPlaylists isolated browser behavior', async t => {
         } finally { await page.close(); }
     });
 
-    await t.test('playlist picker filters groups/search, displays covers and preserves hidden selections', async () => {
+    await t.test('paste-only edit is prefilled and never reads Link Checker groups or items', async () => {
         const page = await fixture();
         try {
-            await page.evaluate(() => {
-                const base = window.data.items[0].playlists[0];
-                base.group = 'Jazz'; base.image = 'https://example.com/cover.jpg';
-                const original = window.handleRequest;
-                window.handleRequest = (path, options) => path.startsWith('/items?') ? { items: [base,
-                    { ...base, id: 'p2', name: 'Lofi Study', spotify_id: 'LOFI-ID', group: 'Lofi' },
-                    { ...base, id: 'p3', name: 'Coffee Jazz', spotify_id: 'JAZZ-ID', group: 'Jazz' }], total: 3 } : original(path, options);
-            });
             await page.evaluate(() => ChannelPlaylists.show());
             await page.locator('.chp-channel').click({ button: 'right' });
-            assert.equal(await page.locator('.chp-menu [data-menu]').first().getAttribute('data-menu'), 'edit');
             await page.locator('[data-menu="edit"]').click();
-            await page.waitForSelector('.chp-pick');
-            assert.equal(await page.locator('.chp-pick-cover').count(), 3);
-            assert.deepEqual(await page.locator('[name="picker_group"] option').allTextContents(),
-                ['Tất cả nhóm', 'Empty Album', 'Empty Playlist', 'Jazz', 'Lofi', 'Track Only']);
-            await page.getByLabel('Nhóm playlist', { exact: true }).selectOption('group:Empty Playlist');
-            assert.equal(await page.locator('[name="playlist"]').count(), 0);
-            assert.match(await page.locator('.chp-picker-count').textContent(), /Đã chọn 1/);
-            await page.getByLabel('Nhóm playlist', { exact: true }).selectOption('');
-            const visual = await page.locator('.chp-playlist-editor').evaluate(editor => {
-                const style = selector => getComputedStyle(editor.querySelector(selector));
-                return { radius: style('[name="picker_group"]').borderRadius,
-                    inputHeight: style('[name="picker_search"]').height,
-                    titleWeight: style('.chp-pick > span:last-child').fontWeight,
-                    checkboxAccent: style('[name="playlist"]').accentColor,
-                    saveIcon: editor.querySelector('[type="submit"] .material-icons-round').textContent };
-            });
-            assert.deepEqual(visual, { radius: '14px', inputHeight: '44px', titleWeight: '700', checkboxAccent: 'rgb(15, 15, 15)', saveIcon: 'save' });
-            await page.setViewportSize({ width: 390, height: 640 });
-            const geometry = await page.locator('.chp-playlist-editor').evaluate(editor => {
-                const rect = editor.getBoundingClientRect();
-                const footer = editor.querySelector('footer').getBoundingClientRect();
-                return { left: rect.left, right: rect.right, bottom: rect.bottom, footerBottom: footer.bottom,
-                    overflow: editor.scrollWidth > editor.clientWidth };
-            });
-            assert.ok(geometry.left >= 0 && geometry.right <= 390 && geometry.bottom <= 640);
-            assert.ok(geometry.footerBottom <= geometry.bottom);
-            assert.equal(geometry.overflow, false);
-            await page.getByLabel('Nhóm playlist', { exact: true }).selectOption('group:Lofi');
-            assert.equal(await page.locator('[name="playlist"]').count(), 1);
-            await page.locator('[name="playlist"]').check();
-            await page.getByLabel('Nhóm playlist', { exact: true }).selectOption('group:Jazz');
-            await page.getByLabel('Tìm playlist', { exact: true }).fill('JAZZ-ID');
-            assert.equal(await page.locator('[name="playlist"]').count(), 1);
-            await page.locator('[name="playlist"]').check();
-            await page.getByLabel('Tìm playlist', { exact: true }).fill('nothing matches');
-            assert.equal(await page.locator('[name="playlist"]').count(), 0);
-            assert.match(await page.locator('.chp-picker-count').textContent(), /Đã chọn 3/);
+            assert.equal(await page.locator('.chp-pick, .chp-picker-filters').count(), 0);
+            assert.match(await page.locator('[name="urls"]').inputValue(), /open.spotify.com\/playlist\/abc/);
+            await page.locator('[name="urls"]').fill('https://open.spotify.com/playlist/new');
             await page.getByRole('button', { name: 'Lưu liên kết', exact: true }).click();
             await page.waitForSelector('.chp-dialog', { state: 'detached' });
-            const body = await page.evaluate(() => JSON.parse(window.calls.find(call => call.path.endsWith('/playlists') && call.method === 'PUT').body));
-            assert.deepEqual(body.item_ids.sort(), ['p1', 'p2', 'p3']);
+            const calls = await page.evaluate(() => window.calls);
+            assert.equal(calls.some(call => call.path.startsWith('/items?') || call.path === '/auth/me/groups'), false);
+            assert.deepEqual(JSON.parse(calls.find(call => call.path.endsWith('/playlists') && call.method === 'PUT').body), { urls: ['https://open.spotify.com/playlist/new'] });
         } finally { await page.close(); }
     });
 
-    await t.test('playlist menu icons distinguish unlink from confirmed permanent app deletion', async () => {
+    await t.test('playlist menu removes unlink and confirms independent playlist deletion', async () => {
         const page = await workspaceFixture();
         try {
             await page.locator('[data-chp-playlist="c1:p1"]').click({ button: 'right' });
             const count = await page.locator('.chp-menu [data-command]').count();
             assert.equal(await page.locator('.chp-menu [data-command] .material-icons-round').count(), count);
-            assert.equal(await page.locator('[data-command="unlink"] .material-icons-round').textContent(), 'link_off');
+            assert.equal(await page.locator('[data-command="unlink"]').count(), 0);
             assert.equal(await page.locator('[data-command="delete-link"] .material-icons-round').textContent(), 'delete_forever');
             await page.locator('[data-command="delete-link"]').click();
-            assert.match(await page.locator('.chp-dialog-body').textContent(), /mọi kênh/);
+            assert.match(await page.locator('.chp-dialog-body').textContent(), /Link Checker.*không bị ảnh hưởng/);
             assert.equal(await page.evaluate(() => window.actions.some(call => call.action === 'delete-selected-links')), false);
             await page.getByRole('button', { name: 'Hủy', exact: true }).click();
             await page.locator('[data-chp-playlist="c1:p1"]').click({ button: 'right' });
@@ -747,28 +705,31 @@ test('ChannelPlaylists isolated browser behavior', async t => {
         } finally { await page.close(); }
     });
 
-    await t.test('playlist replacement uses owner pagination and unlink never deletes Item; owner switch closes editor', async () => {
+    await t.test('paste-only editor closes on account switch without saving another owner draft', async () => {
         const page = await fixture();
         try {
-            await page.evaluate(() => ChannelPlaylists.show({ userId: 'owner' }));
-            await page.locator('.chp-channel').click({ button: 'right' });
-            await page.locator('[data-menu="edit"]').click(); await page.waitForSelector('.chp-pick');
-            await page.locator('[name="playlist"]').uncheck();
-            await page.locator('[name="urls"]').fill('https://open.spotify.com/playlist/new');
-            await page.getByRole('button', { name: 'Lưu liên kết' }).click();
-            await page.waitForSelector('.chp-dialog', { state: 'detached' });
-            const calls = await page.evaluate(() => window.calls);
-            const pickerCall = calls.find(call => call.path.startsWith('/items?'));
-            assert.equal(new URL(pickerCall.path, 'https://local').searchParams.get('user_id'), 'owner');
-            assert.equal(new URL(pickerCall.path, 'https://local').searchParams.get('limit'), '500');
-            assert.deepEqual(JSON.parse(calls.find(call => call.method === 'PUT').body), {
-                item_ids: [], urls: ['https://open.spotify.com/playlist/new'],
-            });
-            assert.ok(!calls.some(call => call.method === 'DELETE' && call.path.startsWith('/items')));
+            await page.evaluate(() => ChannelPlaylists.show());
             await page.locator('.chp-channel').click({ button: 'right' });
             await page.locator('[data-menu="edit"]').click();
+            await page.locator('[name="urls"]').fill('https://open.spotify.com/playlist/draft');
             await page.evaluate(() => { window.actor.id = 'new-owner'; return ChannelPlaylists.syncAccountScope(); });
             assert.equal(await page.locator('.chp-dialog').count(), 0);
+            assert.equal(await page.evaluate(() => window.calls.some(call => call.path.endsWith('/playlists') && call.method === 'PUT')), false);
+        } finally { await page.close(); }
+    });
+
+    await t.test('collapsed rows show Playlist counts and mixed expansion keeps owner metrics', async () => {
+        const page = await workspaceFixture();
+        try {
+            await page.locator('[data-chp-channel="c1"] .stt-cell').dblclick();
+            assert.equal(await page.locator('[data-chp-channel="c1"] .chp-owner-empty').textContent(), '2');
+            assert.equal(await page.locator('.list-columns-head .head-cell:nth-child(3) .head-cell-label').textContent(), 'Owner / Playlist');
+            await page.locator('[data-chp-channel="c2"] .stt-cell').dblclick();
+            await page.locator('[data-chp-channel="c3"] .stt-cell').dblclick();
+            assert.equal(await page.locator('.list-columns-head .head-cell:nth-child(3) .head-cell-label').textContent(), 'Playlist');
+            await page.locator('[data-chp-channel="c1"] .stt-cell').dblclick();
+            assert.equal(await page.locator('[data-chp-channel="c1"] .chp-owner-empty').textContent(), '');
+            assert.equal(await page.locator('[data-chp-playlist="c1:p1"]').isVisible(), true);
         } finally { await page.close(); }
     });
 
