@@ -244,14 +244,6 @@ function setupAuthUI() {
         sidebarProfile.appendChild(logoutBtn);
     }
     if (canManageUsers(user)) {
-        const groupPanel = document.getElementById('group-panel');
-        if (groupPanel && !document.getElementById('admin-badge')) {
-            const badge = document.createElement('div');
-            badge.id = 'admin-badge';
-            badge.className = 'px-5 py-2 border-b border-white/5';
-            badge.innerHTML = '<span class="inline-flex items-center gap-1.5 text-[11px] font-bold uppercase tracking-[0.12em] text-primary"><span class="material-icons-round text-sm">admin_panel_settings</span>' + getRoleLabel(user.role) + ' Mode</span>';
-            groupPanel.insertBefore(badge, groupPanel.firstChild);
-        }
         // Add Users nav item for admin
         const nav = document.querySelector('#sidebar nav');
         if (nav && !document.getElementById('nav-users')) {
@@ -6651,6 +6643,10 @@ function updateAddLinkAvailability() {
 function switchToView(view) {
     const managerOnly = getAuthUser()?.role === 'manager';
     if (managerOnly && !['ytm', 'settings', 'account'].includes(view)) view = 'ytm';
+    setElementDisplay(document.getElementById('sidebar-spoticheck-logo'), view === 'ytm' ? 'none' : null);
+    setElementDisplay(document.getElementById('sidebar-ytm-logo'), view === 'ytm' ? null : 'none');
+    const brandName = document.getElementById('sidebar-brand-name');
+    if (brandName) brandName.textContent = view === 'ytm' ? 'YouTube Manager' : 'SpotiCheck';
     for (const id of ['nav-channels', 'nav-links', 'nav-users']) {
         const nav = document.getElementById(id);
         if (nav) setElementDisplay(nav, managerOnly ? 'none' : null);
@@ -6715,11 +6711,9 @@ function switchToView(view) {
     if (groupPanel) {
         setElementDisplay(groupPanel, ['linkchecker', 'channels'].includes(view) ? null : 'none');
         Array.from(groupPanel.children).forEach((child) => {
-            if (child.id !== 'admin-badge') {
-                setElementDisplay(child, ['channel-group-rail', 'channel-group-tools'].includes(child.id)
-                    ? (view === 'channels' ? null : 'none')
-                    : (view === 'linkchecker' ? null : 'none'));
-            }
+            setElementDisplay(child, ['channel-group-rail', 'channel-group-tools'].includes(child.id)
+                ? (view === 'channels' ? null : 'none')
+                : (view === 'linkchecker' ? null : 'none'));
         });
     }
     setElementDisplay(document.querySelector('main > footer'), view === 'linkchecker' ? null : 'none');

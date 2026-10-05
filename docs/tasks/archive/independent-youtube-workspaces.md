@@ -1,12 +1,14 @@
 # Independent YouTube workspaces
 
+Task đã hoàn tất và lưu trữ ngày 2026-10-05. Bằng chứng rollout cuối cùng: `docs/CHANGELOG.md`, entry "Rollout SpotiCheck lên VPS".
+
 ## Status
 - Implemented locally: paste-only independent playlist workspace, collapsed counts, isolated original YTM interface/API and manager-only YTM gates.
 - User confirmed no YTM data import. Standalone YTM site must remain unchanged and running.
 - Verified: 527 backend and 71 frontend/browser tests passed. Disposable PostgreSQL copy preflight passed: 624 original checker rows preserved, 3 legacy playlists migrated, idempotency and manager gates confirmed, YTM empty before tests.
-- GitHub code commit: a629384, on lushmediadev main. VPS origin changed to lushmediadev, new image built, production app NOT restarted yet.
+- GitHub code commit: a629384, on lushmediadev main. VPS origin đã đổi sang lushmediadev; image mới đã triển khai production và xác minh healthy.
 - Backup: /opt/spoticheck/backups/postgres/pre-independent-youtube-20261005-060735.sql.gz (gzip checked); rollback image spoticheck-rollback:pre-independent-youtube.
-- Deployment command was blocked by the execution layer. Awaiting explicit user confirmation for app-only Spotify deployment, followed by live health/data checks. Caddy and standalone YTM remain untouched.
+- Lần deploy trước bị execution layer chặn; user đã yêu cầu rollout trực tiếp và lần này app-only rollout thành công. Health/data và quyền admin/manager đã xác minh; Caddy và standalone YTM giữ nguyên.
 
 ## Requested Outcome
 - Channel & Playlist accepts pasted Spotify playlist URLs only; remove Link Checker picker and unlink context action.
@@ -20,7 +22,7 @@
 - `replace_playlists` supports existing Item IDs and URLs; removing the picker alone does not isolate data.
 - Exact Item UUIDs are already stored on channel crawl jobs, allowing independent records with the same Spotify ID without changing upstream crawl semantics.
 - Standalone source: `D:\Youtube_manager`; frontend is vanilla JS with its own shell/style. Backend uses separate string-ID User/Item/Job/Snapshot tables, global API keys and account-management policies that cannot be copied blindly into this app's UUID models/own-only resources.
-- Canonical GitHub origin is lushmediadev. VPS still points to shinemusicllc and needs a safe remote update before the next deployment; preserve Caddy and other services.
+- Canonical GitHub origin và VPS origin đều là lushmediadev; giữ Caddy và các service khác khi rollout app.
 
 ## Safety And Verification Gates
 - Additive, idempotent migration; preserve original Link Checker Items and snapshots. Clone existing channel associations into independent records before switching the workspace.

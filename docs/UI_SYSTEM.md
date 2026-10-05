@@ -68,11 +68,11 @@
 - Playlist context actions have matching icons and confirmed independent deletion, without an Unlink command. Spotify Link Checker is unaffected.
 - Edit playlists is URL-only, prefilled with the channel's existing URLs; no checker groups/search/picker. Channel menus prioritize Edit playlists before Add Channel.
 - Collapsed channel rows use the empty owner cell for playlist counts. Header is Playlist when all rows are collapsed and Owner / Playlist for mixed expansion.
-- YouTube Link Checker preserves YTM's original HTML/style in a same-origin isolated frame, with its old sidebar hidden and the shared Spotify logo/nav retained. Group rename uses double-click; its edit icon is removed. Own keys are configured in the shared Settings page.
+- YouTube Link Checker preserves YTM's original HTML/style in a same-origin isolated frame, with its old sidebar hidden and shared navigation retained. Its active tab uses the original YTM sidebar logo; every other view restores the SpotiCheck logo. Group rename uses double-click; its edit icon is removed. Own keys are configured in the shared Settings page.
 - Managers land in YouTube Link Checker and see only that workspace plus Settings/personal profile; server-side dependencies also block Spotify, combined channels and Users APIs.
 - Edit playlists visual is scoped to `.chp-playlist-editor`: shared light surfaces, 14px inputs, bold list titles, monochrome checkboxes and icon actions. Only its body scrolls so Save/Cancel stay visible on short/mobile screens.
 - Spotify background sync cannot update another view's header/title/controls.
-- No account filter in the group rail. Spotify and Channel & Playlist always use the signed-in account; role badge and authorized Users management remain available.
+- No account filter or Admin Mode banner in the group rail. Spotify and Channel & Playlist always use the signed-in account; role labels stay in account/profile and authorized Users management remains available.
 - Channel interaction patterns match Link Checker: Ctrl/Cmd and Shift selection, group/row drag/drop with persistent order, scoped context menus, and keyboard actions. Preserve whole channel sections on move and parent-specific playlist associations on unlink.
 - Channel columns support local per-account width resizing/reset and name/view/delta/checked sorting. Disable manual row reorder while a column sort is active; clearing sort restores server order.
 - Both Spotify and channel rails contain named groups and New Group only, without All Links/All Channels entries. Opening a page selects its first available group before rendering rows; no-group state offers group creation, not an aggregate list.

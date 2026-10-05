@@ -45,7 +45,7 @@
     <!-- Zone 1: Collapsible Sidebar -->
     <aside id="sidebar" class="app-sidebar collapsed w-64 flex-shrink-0 bg-sidebar-dark flex flex-col border-r border-white/5 h-full">
         <div class="p-6 flex items-center gap-3 sidebar-header">
-            <svg width="34" height="34" viewBox="0 0 34 34" fill="none" xmlns="http://www.w3.org/2000/svg" class="flex-shrink-0">
+            <svg id="sidebar-spoticheck-logo" width="34" height="34" viewBox="0 0 34 34" fill="none" xmlns="http://www.w3.org/2000/svg" class="flex-shrink-0" role="img" aria-label="SpotiCheck">
                 <circle cx="17" cy="17" r="17" fill="#1DB954"></circle>
                 <rect x="8" y="13" width="2.8" height="8" rx="1.4" fill="#000"></rect>
                 <rect x="12.5" y="9" width="2.8" height="16" rx="1.4" fill="#000"></rect>
@@ -53,7 +53,8 @@
                 <rect x="21.5" y="11" width="2.8" height="12" rx="1.4" fill="#000"></rect>
                 <rect x="26" y="15" width="2.8" height="4" rx="1.4" fill="#000"></rect>
             </svg>
-            <span class="font-bold text-xl tracking-tight sidebar-logo-text">SpotiCheck</span>
+            <img id="sidebar-ytm-logo" src="/ytm/youtube-mark.svg?v=3" width="48" height="34" class="flex-shrink-0 object-contain" alt="YouTube Manager" style="display:none">
+            <span id="sidebar-brand-name" class="font-bold text-xl tracking-tight sidebar-logo-text">SpotiCheck</span>
         </div>
         <nav class="flex-1 px-3 space-y-1">
             <a id="nav-channels" class="sidebar-tooltip-target flex items-center gap-4 px-3 py-3 rounded-lg text-white bg-white/10 group cursor-pointer" data-tooltip="Channel &amp; Playlist" href="#">
@@ -658,6 +659,6 @@
         </div>
 
     <script src="channels.js?v=20261005-independent-1"></script>
-    <script src="app.js?v=20261005-independent-1"></script>
+    <script src="app.js?v=20261005-sidebar-brand-1"></script>
 </body>
 </html>

@@ -1,5 +1,16 @@
 # Changelog
 
+### 2026-10-05 - Nhãn và logo sidebar theo workspace
+- Bỏ banner Admin Mode khỏi group rail dùng chung; quyền tài khoản và quản lý Users giữ nguyên.
+- Tab YouTube Link Checker dùng đúng SVG logo sidebar của YTM; chuyển sang mọi tab khác khôi phục logo SpotiCheck. Tăng cache version của `app.js`.
+- Xác minh: JavaScript syntax, frontend contract/browser checks và backend tests; rollout app-only, kiểm tra browser chuyển tab và public health.
+
+### 2026-10-05 - Rollout SpotiCheck lên VPS
+- Đã triển khai commit `a629384` bằng `docker compose -f docker-compose.vps.yml --env-file .env up -d --no-deps --no-build app`; image chạy mới khớp source, container `healthy`, public/origin `/api/health` đều OK.
+- Backup mới: `/opt/spoticheck/backups/rollout-20261005-065454/spoticheck.sql.gz`, gzip đã kiểm tra; giữ image rollback cũ. 624 Spotify items và 4041 snapshots giữ nguyên số lượng/hash ID; migration tạo 3 playlist độc lập, 4 associations hợp lệ, YTM tích hợp rỗng.
+- Xác minh: 527 backend và 71 frontend/browser tests passed; runtime GET cho admin/manager đúng 200/403; browser login đúng SpotiCheck, không có console error. Caddyfile/hash và ID các container khác giữ nguyên; standalone YTM health OK.
+- Task trước đã hoàn tất; nguyên nhân cụ thể của lần chặn execution layer trước đó chưa có bằng chứng, lệnh rollout lần này thực thi thành công.
+
 ### 2026-10-05 - Independent YouTube workspaces
 - Changed: URL-only playlist editor, no checker picker/unlink menu; collapsed channels show a Playlist count column. Playlist records and snapshots are cloned into an independent scope while preserving original checker data.
 - Added: separate YouTube Link Checker using original YTM visual/metrics, shared login/own API keys, own ytm_* groups/history/preferences and double-click group rename. No old YTM data imported; standalone site untouched.
