@@ -5,7 +5,7 @@
 - Added: separate YouTube Link Checker using original YTM visual/metrics, shared login/own API keys, own ytm_* groups/history/preferences and double-click group rename. No old YTM data imported; standalone site untouched.
 - Permissions: manager is limited to YTM and own shared key/profile settings; Spotify, combined channels and account-management APIs deny manager access.
 - Safety: scoped list/export/delete queries, global raw-cache reference checks and exact crawl-row resolution prevent cross-workspace side effects. Added idempotent migration and disposable PostgreSQL preflight script.
-- Verification: 527 backend and 71 frontend/browser tests passed; local browser smoke verified original YTM visual, group double-click, paste-only edit, collapsed counts and manager-only navigation. PostgreSQL preflight/deployment pending.
+- Verification: 527 backend and 71 frontend/browser tests passed; local smoke verified original YTM visual, group double-click, paste-only edit, collapsed counts and manager-only navigation. PostgreSQL copy preflight passed: 624 checker rows preserved and 3 legacy playlists migrated. Production deployment remains pending after the execution layer blocked the restart command.
 
 ### 2026-10-05 - Independent GitHub repository
 - Migrated: `lushmediadev/Spotify_Anylatics_Web_App` recreated as an independent public repository with the same name, full committed history and local branches; old fork removed after read-back/ref verification.

@@ -3,7 +3,10 @@
 ## Status
 - Implemented locally: paste-only independent playlist workspace, collapsed counts, isolated original YTM interface/API and manager-only YTM gates.
 - User confirmed no YTM data import. Standalone YTM site must remain unchanged and running.
-- Pending: final test results, PostgreSQL disposable-copy preflight, GitHub-first app-only VPS deployment and live verification. Production database backup is mandatory before migration.
+- Verified: 527 backend and 71 frontend/browser tests passed. Disposable PostgreSQL copy preflight passed: 624 original checker rows preserved, 3 legacy playlists migrated, idempotency and manager gates confirmed, YTM empty before tests.
+- GitHub code commit: a629384, on lushmediadev main. VPS origin changed to lushmediadev, new image built, production app NOT restarted yet.
+- Backup: /opt/spoticheck/backups/postgres/pre-independent-youtube-20261005-060735.sql.gz (gzip checked); rollback image spoticheck-rollback:pre-independent-youtube.
+- Deployment command was blocked by the execution layer. Awaiting explicit user confirmation for app-only Spotify deployment, followed by live health/data checks. Caddy and standalone YTM remain untouched.
 
 ## Requested Outcome
 - Channel & Playlist accepts pasted Spotify playlist URLs only; remove Link Checker picker and unlink context action.
