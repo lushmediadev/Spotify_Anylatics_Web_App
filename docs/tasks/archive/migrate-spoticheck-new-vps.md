@@ -1,5 +1,7 @@
 # migrate-spoticheck-new-vps Chuyển app và domain
 
+Task hoàn tất ngày 2026-10-09; canonical runtime trong docs/PROJECT_BRIEF.md và deploy/README.md, bằng chứng migration trong docs/CHANGELOG.md.
+
 ## Goal
 - Chuyển SpotiCheck từ 82.197.71.6 sang 194.233.69.135 và dùng ytm.lushmedia.net.
 
@@ -12,10 +14,12 @@
 - Secret chuyển server-to-server qua SSH, không vào Git/log. User/domain có thể cần đăng nhập lại do localStorage khác origin.
 
 ## Current State
-- SSH hai VPS và Cloudflare đã truy cập được; ytm.lushmedia.net chưa có DNS. Đang chuẩn bị runtime riêng để tránh đụng Nginx hiện có.
+- New checkout commit7126e74, Compose spoticheck/app+db đã build và restore staging; runtime smoke 5 tài khoản/quyền đạt, key YouTube dùng được IP mới. 561 backend +80 frontend tests đạt.
+- Cloudflare A ytm.lushmedia.net=194.233.69.135 Proxied; Let's Encrypt cấp thành công. Nginx mới giữ maintenance503 cho tới final restore.
+- Final SQL restore trong transaction; cả18 bảng full-row hashes khớp source trước startup. New app healthy/public200, old domain redirect302, old app stopped/restart=no và timer disabled; DB/image/source giữ rollback.
 
 ## Next Steps
-- Deploy staging/restore thử, TLS/DNS, final dump và data comparison, cutover/re-login smoke/backup.
+- Không còn bước cutover. Theo dõi vận hành tại domain mới; không khởi động old app để tránh split writes.
 
 ## Risks
 - YouTube API keys có thể bị giới hạn IP cũ; cần kiểm tra với egress IP mới, không tự sửa Google Cloud policy.

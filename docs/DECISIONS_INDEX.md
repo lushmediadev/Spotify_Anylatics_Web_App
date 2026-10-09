@@ -16,5 +16,5 @@ Canonical detail lives in `docs/DECISIONS.md`. This file lists active decisions 
 | Deployment source | GitHub `main` is the source of truth; VPS updates pull a tested commit via `spoticheck update`. | `docs/DECISIONS.md` |
 | Link ordering | Default list order is oldest-created first, so newly added links append at the end; explicit sorts and manual row order remain supported. | `docs/DECISIONS.md` |
 | Group labels | Admin group labels should stay clean visually while ownership remains enforced internally. | `docs/DECISIONS.md` |
-| VPS deploy | Docker Compose + Caddy + PostgreSQL is the production path. | `docs/DECISIONS.md` |
+| VPS deploy | Isolated Compose app/db behind existing host Nginx on 194.233.69.135; legacy Caddy host keeps redirect/rollback only. | `docs/DECISIONS.md` |
 | Performance | Large list views must prefer set-based backend queries and incremental frontend rendering. | `docs/CHANGELOG.md` |

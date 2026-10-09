@@ -7,7 +7,7 @@
 - Frontend syntax check: `node --check D:\Spotify_AnylaticsWeb_App\frontend\app.js`
 - Frontend contract tests: `node --test D:\Spotify_AnylaticsWeb_App\frontend\tests\ui_contract.test.mjs`
 - Docker build reference: `docker build -t spoticheck D:\Spotify_AnylaticsWeb_App`
-- VPS stack build/run: `cd D:\Spotify_AnylaticsWeb_App\deploy && docker compose -f docker-compose.vps.yml --env-file .env up -d --build`
+- VPS stack build/run (current Nginx host): `cd D:\Spotify_AnylaticsWeb_App\deploy && docker compose -f docker-compose.nginx.yml --env-file .env up -d --build`
 - VPS helper install: `sudo /opt/spoticheck/app/deploy/scripts/install_helpers.sh`
 - VPS helper usage: `spoticheck status|logs|backup|redeploy|update|migrate-from-url|set-admin`
 - Mail stack build/run: `cd D:\Spotify_AnylaticsWeb_App\deploy\mail && docker compose --env-file .env up -d`
