@@ -5,6 +5,7 @@
 - Chuyển .env qua SSH và final dump sau khi old app dừng ghi; single-transaction restore và full-row hash cả18 bảng khớp trước startup: 5 users, 626 items, 4043 snapshots, 1 YTM item, 1 YouTube key. Account/workspace HTTP smoke đạt; key YouTube valid trên IP mới.
 - Helpers/backup timer hỗ trợ runtime Nginx qua .compose-file; hint API-key IP cập nhật. 561 backend +80 frontend/browser tests pass. Public health mới200, old redirect302, standalone YTM và các website khác200; ID container khác giữ nguyên.
 - Backup/manifest: `/opt/spoticheck/backups/migration-20261009/` trên cả hai VPS; final SHA256 `e68682daa0f9f10f907c68063866478e1bcba330de52ed9c3c57fc079e833f0a`.
+- Backup timer mới đã chạy thực tế: service Result=success/exit0, file63MB gzip checked; backup hiện có chmod600 và script umask077. Browser dashboard domain mới hoạt động, không console error; runtime helper/source đã đồng bộ commit cuối.
 ### 2026-10-09 - Logo cho tài khoản chỉ dùng Youtube
 - Tài khoản có duy nhất workspace Youtube giữ logo YTM trên mọi trang, gồm Settings/Profile/Users; refresh quyền cũng cập nhật branding. Dùng effective grants nên user kế thừa áp dụng cùng manager.
 - Tăng app.js cache version; logo trên tài khoản nhiều workspace tiếp tục theo tab đang mở.
