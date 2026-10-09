@@ -1,5 +1,9 @@
 # Changelog
 
+### 2026-10-09 - Gỡ SpotiCheck khỏi VPS cũ
+- Theo yêu cầu user, xoá deploy-app-1/deploy-db-1, deploy_postgres_data, source/.git/frontend/backend/.env secrets, backups/helper/timer và19 image tags SpotiCheck trên82.197.71.6. Backup trên VPS mới đã kiểm tra gzip/hash trước khi gỡ.
+- Giữ nguyên inode Caddyfile và deploy/mail đang bind cho service khác; legacy docker-compose.vps.yml còn duy nhất Caddy với volumes/networks external hiện có, .env chỉ còn APP_DOMAIN. Không restart Caddy/mail, ID container khác giữ nguyên; old domain redirect vẫn hoạt động.
+- Bản production194.233.69.135 không thay đổi; old VPS không còn app/database SpotiCheck để rollback. Backup/final manifest và app hiện tại giữ trên VPS mới.
 ### 2026-10-09 - Chuyển VPS và domain SpotiCheck
 - Production mới: `194.233.69.135`, `https://ytm.lushmedia.net`, isolated Compose `spoticheck` + host Nginx/loopback8015; Cloudflare A proxied, Let's Encrypt và renew hook. Domain cũ redirect302; old app stop/restart=no, old backup timer disabled, DB/image giữ rollback.
 - Chuyển .env qua SSH và final dump sau khi old app dừng ghi; single-transaction restore và full-row hash cả18 bảng khớp trước startup: 5 users, 626 items, 4043 snapshots, 1 YTM item, 1 YouTube key. Account/workspace HTTP smoke đạt; key YouTube valid trên IP mới.

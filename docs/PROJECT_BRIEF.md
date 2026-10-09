@@ -9,7 +9,7 @@ SpotiCheck tracks public Spotify metrics for Artist, Track, Album, and Playlist 
 - Frontend: static HTML + Tailwind CDN + vanilla JavaScript in `frontend/`.
 - Backend: Python FastAPI, SQLAlchemy async, PostgreSQL, `httpx`, and Playwright fallback.
 - Runtime: single FastAPI service serves API plus static frontend.
-- Deploy: Docker Compose project `spoticheck` + host Nginx + PostgreSQL on VPS `194.233.69.135`, public `https://ytm.lushmedia.net`; app binds `127.0.0.1:8015`. Legacy VPS `82.197.71.6` retains a stopped rollback app/database and redirects the old Spotify domain.
+- Deploy: Docker Compose project `spoticheck` + host Nginx + PostgreSQL on VPS `194.233.69.135`, public `https://ytm.lushmedia.net`; app binds `127.0.0.1:8015`. SpotiCheck code/app/database/images/backups were removed from legacy VPS `82.197.71.6` after migration. The legacy deploy path now holds only shared Caddy/mail infrastructure and the old-domain redirect; backups remain on the new VPS.
 - Canonical GitHub origin: `https://github.com/lushmediadev/Spotify_Anylatics_Web_App.git`, an independent public repository; new VPS checkout `/opt/spoticheck/app` pulls this origin. The `shinemusic` remote preserves the previous source.
 
 ## Main Modules
