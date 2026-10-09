@@ -6,6 +6,7 @@ from app.database import get_db
 from app.models.item import Item
 from app.models.crawl_job import CrawlJob
 from app.services.auth import get_current_user
+from app.services.workspace_access import require_workspace_access
 
 
 @event.listens_for(Session, "do_orm_execute")
@@ -29,8 +30,9 @@ def scope_new_items(session, _context, _instances):
 
 
 async def bind_item_workspace(request: Request, db=Depends(get_db), actor=Depends(get_current_user)):
-    if actor.role == "manager" and request.url.path not in {"/api/youtube/keys", "/api/youtube/keys/check"}:
-        raise HTTPException(403, "Manager access is limited to YouTube Link Checker")
+    if request.url.path not in {"/api/youtube/keys", "/api/youtube/keys/check"}:
+        workspace = "youtube-spotify" if request.url.path.startswith(("/api/youtube/", "/api/channel-playlists/")) else "spotify"
+        await require_workspace_access(actor, db, workspace)
     db.info["item_workspace"] = (
         "channel-playlists" if request.url.path.startswith(("/api/youtube/", "/api/channel-playlists/")) else "spotify"
     )

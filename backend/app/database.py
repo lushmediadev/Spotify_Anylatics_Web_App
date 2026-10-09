@@ -73,6 +73,7 @@ async def init_db():
     # Each migration runs in its own transaction because PostgreSQL
     # aborts the entire transaction when any statement fails.
     migrations = [
+        "ALTER TABLE users ADD COLUMN IF NOT EXISTS workspace_access JSON",
         "ALTER TABLE items ADD COLUMN IF NOT EXISTS workspace VARCHAR(32) NOT NULL DEFAULT 'spotify'",
         "CREATE INDEX IF NOT EXISTS ix_items_workspace ON items(workspace)",
         "ALTER TABLE users ADD COLUMN IF NOT EXISTS manager_id UUID REFERENCES users(id) ON DELETE SET NULL",

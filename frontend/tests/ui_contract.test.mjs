@@ -38,7 +38,7 @@ test("channels is the first navigation item and the default landing view", () =>
   assert.ok(indexHtml.indexOf('id="nav-channels"') < indexHtml.indexOf('id="nav-links"'));
   assert.match(appJs, /state\.currentView = 'channels'/);
   const init = appJs.slice(appJs.indexOf("document.addEventListener('DOMContentLoaded'"));
-  assert.match(init, /switchToView\(getAuthUser\(\)\?\.role === 'manager' \? 'ytm' : 'channels'\)/);
+  assert.match(init, /switchToView\(getDefaultWorkspaceView\(\)\)/);
   assert.doesNotMatch(init, /loadData\(\)\.then/);
 });
 
@@ -145,7 +145,7 @@ test("Spotify bootstrap discovers groups but never requests an aggregate item pa
     const state = { activeGroup: 'all', dataLoadRequestId: 0, listTotal: 0 };
     const context = vm.createContext({ state, ALL_GROUP_ID: 'all', CONFIG: { LIST_PAGE_SIZE: 120 }, console,
       document: { getElementById: () => null },
-      getAuthUser: () => ({ role: 'user' }), canManageUsers: () => false,
+      getAuthUser: () => ({ role: 'user' }), canManageUsers: () => false, canAccessView: () => true,
       getAuthToken: () => 'fixture', updateApiStatus: () => {},
       getBackendListParams: () => state.activeGroup === 'all' ? {} : { group: state.activeGroup },
       getBackendListScopeKey: params => JSON.stringify(params),

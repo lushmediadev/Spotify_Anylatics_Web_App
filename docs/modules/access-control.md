@@ -11,10 +11,14 @@
 - `backend/app/services/auth.py`: canonical SQL scope predicates and target authorization.
 - `backend/app/api/auth.py`: role changes, manager assignment, global settings.
 - `backend/app/models/user.py`: nullable UUID `manager_id`, self FK with `SET NULL`.
+- `backend/app/services/workspace_access.py`: canonical workspace grants, dynamic inheritance và HTTP authorization.
 
 ## Invariants
-- Resource data is own-account-only wherever a role has workspace access. Admin/user access Spotify and combined channels; all roles access their own YTM workspace and API keys. No account filter or impersonation flow.
-- Admin quản lý mọi tài khoản và global preferences. Manager dùng YouTube Link Checker, Users và own shared key/profile settings; Spotify và Channel & Playlist vẫn chặn manager.
+- Resource data luôn own-account-only; có workspace không cho phép xem dữ liệu của user được quản lý. Admin và user không thuộc manager có cả ba workspace. Keys/profile/settings dùng chung.
+- Admin quản lý mọi tài khoản và global preferences. Manager có Users cùng các workspace được admin gán; user dưới quyền kế thừa workspace hiện tại của manager, không có bản quyền riêng để manager tự thay đổi.
+- ID/label workspace: `youtube` = Youtube/YouTube Link Checker; `spotify` = Spotify/Link Checker; `youtube-spotify` = Youtube-Spotify/Channel & Playlist riêng. Checkbox có thể chọn nhiều, ít nhất một.
+- `User.workspace_access` là nullable JSON cho manager; API request/response thêm `workspaces` array. Manager cũ/null mặc định Youtube; admin/standalone user giữ cả ba. Assigned user resolve từ manager mỗi request, manager invalid/inactive fail closed với [] và chỉ còn shared profile/settings.
+- Chỉ admin đặt workspace khi create/update role manager. Manager/user gửi field này bị chặn; field omitted giữ nguyên cấu hình, null/empty/unknown không được dùng để mở rộng quyền. API gates và navigation dùng cùng effective response.
 - Manager tạo duy nhất role user; backend tự gắn manager_id của manager đang đăng nhập. Admin thấy và sửa/reset-password được tất cả tài khoản; manager chỉ sửa/reset-password/activate/delete user được gắn manager_id của mình. Không nhân bản user sang một danh sách riêng.
 - Manager cannot elevate roles, reassign users, or manage another manager/admin. Private group preferences of other accounts are not part of account-list/profile management responses.
 - Explicit null manager_id clears assignment; omitted manager_id preserves it.

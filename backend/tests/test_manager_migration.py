@@ -47,3 +47,6 @@ def test_startup_repeats_additive_manager_migration(monkeypatch):
         "ALTER TABLE users ADD COLUMN IF NOT EXISTS manager_id UUID REFERENCES users(id) ON DELETE SET NULL",
         "CREATE INDEX IF NOT EXISTS ix_users_manager_id ON users(manager_id)",
     ] * 2
+    assert [sql for sql in statements if "workspace_access" in sql] == [
+        "ALTER TABLE users ADD COLUMN IF NOT EXISTS workspace_access JSON",
+    ] * 2

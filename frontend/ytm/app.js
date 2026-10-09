@@ -131,11 +131,21 @@ function requireAuth() {
   return true;
 }
 
+let lastForbiddenNotification = 0;
+function notifyWorkspaceForbidden(res) {
+  if (res.status !== 403 || window.parent === window) return;
+  const now = Date.now();
+  if (now - lastForbiddenNotification < 3000) return;
+  lastForbiddenNotification = now;
+  window.parent.postMessage({ type: 'spoticheck-workspace-forbidden', workspace: 'youtube' }, window.location.origin);
+}
+
 async function apiFetch(path, opts = {}) {
   const headers = { ...(opts.headers || {}) };
   if (opts.body && !headers['Content-Type']) headers['Content-Type'] = 'application/json';
   if (token()) headers.Authorization = 'Bearer ' + token();
   const res = await fetch(CONFIG.API_BASE + path, { ...opts, headers });
+  notifyWorkspaceForbidden(res);
   if (res.status === 401) {
     logout();
     return;
@@ -152,6 +162,7 @@ async function apiDownload(path, opts = {}) {
   if (opts.body && !headers['Content-Type']) headers['Content-Type'] = 'application/json';
   if (token()) headers.Authorization = 'Bearer ' + token();
   const res = await fetch(CONFIG.API_BASE + path, { ...opts, headers });
+  notifyWorkspaceForbidden(res);
   if (res.status === 401) {
     logout();
     return null;

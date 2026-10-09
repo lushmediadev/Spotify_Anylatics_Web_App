@@ -1,8 +1,11 @@
 """Auth-related Pydantic schemas."""
 
 from uuid import UUID
+from typing import Literal
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
+
+WorkspaceKey = Literal["youtube", "spotify", "youtube-spotify"]
 
 
 class RegisterRequest(BaseModel):
@@ -24,6 +27,7 @@ class UserResponse(BaseModel):
     display_name: str | None
     role: str
     manager_id: str | None = None
+    workspaces: list[WorkspaceKey] = Field(default_factory=lambda: ["youtube", "spotify", "youtube-spotify"])
     is_active: bool = True
     created_at: str | None = None
     last_login: str | None = None
@@ -58,6 +62,7 @@ class AdminUpdateUserRequest(BaseModel):
     role: str | None = None
     is_active: bool | None = None
     manager_id: UUID | None = None
+    workspaces: list[WorkspaceKey] | None = Field(default=None, min_length=1, max_length=3)
 
 
 class AdminResetPasswordRequest(BaseModel):
@@ -71,3 +76,4 @@ class AdminCreateUserRequest(BaseModel):
     display_name: str | None = None
     role: str = "user"
     manager_id: UUID | None = None
+    workspaces: list[WorkspaceKey] | None = Field(default=None, min_length=1, max_length=3)

@@ -155,6 +155,95 @@ function canManageUsers(user = getAuthUser()) {
     return user?.role === 'admin' || user?.role === 'manager';
 }
 
+const WORKSPACE_OPTIONS = [
+    { value: 'youtube', label: 'Youtube', view: 'ytm', nav: 'nav-ytm' },
+    { value: 'spotify', label: 'Spotify', view: 'linkchecker', nav: 'nav-links' },
+    { value: 'youtube-spotify', label: 'Youtube-Spotify', view: 'channels', nav: 'nav-channels' },
+];
+
+function getEffectiveWorkspaces(user = getAuthUser()) {
+    if (!user) return [];
+    if (Array.isArray(user.workspaces)) {
+        return WORKSPACE_OPTIONS.map((option) => option.value).filter((value) => user.workspaces.includes(value));
+    }
+    return user.role === 'manager' ? ['youtube'] : WORKSPACE_OPTIONS.map((option) => option.value);
+}
+
+function canAccessView(view, user = getAuthUser()) {
+    const workspace = WORKSPACE_OPTIONS.find((option) => option.view === view);
+    if (workspace) return getEffectiveWorkspaces(user).includes(workspace.value);
+    if (view === 'users') return canManageUsers(user);
+    return ['settings', 'account'].includes(view);
+}
+
+function getDefaultWorkspaceView(user = getAuthUser()) {
+    return ['channels', 'ytm', 'linkchecker'].find((view) => canAccessView(view, user)) || 'settings';
+}
+
+function updateWorkspaceNavigation() {
+    for (const option of WORKSPACE_OPTIONS) {
+        setElementDisplay(document.getElementById(option.nav), canAccessView(option.view) ? null : 'none');
+    }
+    setElementDisplay(document.getElementById('nav-users'), canManageUsers() ? null : 'none');
+}
+
+let authRefreshPromise = null;
+async function refreshAuthUser() {
+    if (!getAuthToken()) return;
+    if (authRefreshPromise) return authRefreshPromise;
+    const token = getAuthToken();
+    authRefreshPromise = (async () => {
+        const user = await api._fetch('/auth/me');
+        if (!user || token !== getAuthToken()) return;
+        localStorage.setItem('spoticheck_user', JSON.stringify(user));
+        setupAuthUI();
+        if (!canAccessView('linkchecker', user)) {
+            stopPolling();
+            state.dataLoadRequestId++;
+            state.listScopeCache?.clear();
+            state.items = [];
+            state.virtualItems = [];
+            state.pendingJobs.clear();
+            state.pendingJobToItem.clear();
+        }
+        if (!canAccessView('ytm', user)) document.getElementById('ytm-frame')?.removeAttribute('src');
+        if (!canAccessView(state.currentView, user)) switchToView(getDefaultWorkspaceView(user));
+        return user;
+    })().finally(() => { authRefreshPromise = null; });
+    return authRefreshPromise;
+}
+
+async function navigateToWorkspace(view) {
+    try {
+        await refreshAuthUser();
+        switchToView(view);
+    } catch (err) {
+        showToast(err.message, 'error');
+    }
+}
+
+function setupWorkspaceSelection(prefix, user = { role: 'manager' }) {
+    const field = document.getElementById(`${prefix}-workspace-field`);
+    if (!field) return;
+    const selected = getEffectiveWorkspaces(user);
+    field.querySelectorAll('input[name="workspaces"]').forEach((input) => {
+        input.checked = selected.includes(input.value);
+    });
+    updateManagerAssignmentVisibility(prefix);
+}
+
+function getWorkspaceAssignment(prefix, role) {
+    if (getAuthUser()?.role !== 'admin' || role !== 'manager') return {};
+    const field = document.getElementById(`${prefix}-workspace-field`);
+    const workspaces = Array.from(field?.querySelectorAll('input[name="workspaces"]:checked') || [])
+        .map((input) => input.value);
+    if (!workspaces.length) {
+        field?.querySelector('input')?.focus();
+        throw new Error('Chọn ít nhất một workspace cho Manager.');
+    }
+    return { workspaces };
+}
+
 function getRoleLabel(role) {
     return { admin: 'Admin', manager: 'Manager', user: 'User' }[role] || 'User';
 }
@@ -195,6 +284,8 @@ function updateManagerAssignmentVisibility(prefix) {
     const role = document.getElementById(`${prefix}-role-dropdown`)?.getAttribute('data-value');
     const field = document.getElementById(`${prefix}-manager-field`);
     if (field) field.style.display = getAuthUser()?.role === 'admin' && role === 'user' ? '' : 'none';
+    const workspaceField = document.getElementById(`${prefix}-workspace-field`);
+    if (workspaceField) workspaceField.hidden = getAuthUser()?.role !== 'admin' || role !== 'manager';
 }
 
 function getManagerAssignment(prefix, role) {
@@ -258,6 +349,12 @@ function setupAuthUI() {
             if (settingsNav) nav.insertBefore(usersLink, settingsNav);
         }
     }
+    const usersNav = document.getElementById('nav-users');
+    if (usersNav) usersNav.onclick = (event) => {
+        event.preventDefault();
+        switchToView('users');
+    };
+    updateWorkspaceNavigation();
 }
 
 
@@ -365,6 +462,9 @@ class SpotiCheckAPI {
             if (res.status === 401) {
                 logout();
                 return;
+            }
+            if (res.status === 403 && path !== '/auth/me') {
+                await refreshAuthUser().catch((err) => console.warn('[Auth] Could not refresh permissions:', err.message));
             }
             if (!res.ok) {
                 const errPayload = await res.clone().json().catch(() => null);
@@ -3078,6 +3178,7 @@ function getListParamsForGroupEntry(groupEntry) {
 }
 
 function scheduleSmallGroupPrefetch() {
+    if (!canAccessView('linkchecker')) return;
     if (!getAuthToken()) return;
     if (state.currentView && state.currentView !== 'linkchecker') return;
     if (state.groupPrefetchTimer) window.clearTimeout(state.groupPrefetchTimer);
@@ -3090,6 +3191,7 @@ function scheduleSmallGroupPrefetch() {
 }
 
 async function prefetchSmallGroupScopes() {
+    if (!canAccessView('linkchecker')) return;
     const candidates = (state.groups || [])
         .filter((group) => group && group.id !== ALL_GROUP_ID)
         .filter((group) => {
@@ -3099,6 +3201,7 @@ async function prefetchSmallGroupScopes() {
         .slice(0, CONFIG.SMALL_GROUP_PREFETCH_LIMIT);
 
     for (const group of candidates) {
+        if (!canAccessView('linkchecker')) return;
         const params = getListParamsForGroupEntry(group);
         const scopeKey = getBackendListScopeKey(params);
         if (state.listScopeCache.has(scopeKey) || state.prefetchedGroupScopeKeys.has(scopeKey)) continue;
@@ -3136,6 +3239,7 @@ function sleep(ms) {
 }
 
 function scheduleWarmCurrentListScope() {
+    if (!canAccessView('linkchecker')) return;
     if (!getAuthToken()) return;
     if (state.currentView && state.currentView !== 'linkchecker') return;
     if (!state.listScopeKey || Number(state.listTotal || 0) <= CONFIG.LIST_PAGE_SIZE) return;
@@ -6073,6 +6177,7 @@ function showToast(message, type = 'info') {
 // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 
 function startPolling() {
+    if (!canAccessView('linkchecker')) return;
     if (state.pollTimer) return;
     pollJobs();
     state.pollTimer = setInterval(pollJobs, CONFIG.POLL_INTERVAL);
@@ -6133,6 +6238,10 @@ async function fetchPendingJobs(jobIds) {
 }
 
 async function pollJobs() {
+    if (!canAccessView('linkchecker')) {
+        stopPolling();
+        return;
+    }
     if (state.pendingJobs.size === 0) {
         stopPolling();
         return;
@@ -6371,6 +6480,7 @@ function getDemoData() {
 
 
 async function loadVirtualPage(offset, opts = {}) {
+    if (!canAccessView('linkchecker')) return;
     const normalizedOffset = Math.max(0, Math.floor(Number(offset || 0) / CONFIG.LIST_PAGE_SIZE) * CONFIG.LIST_PAGE_SIZE);
     if (!state.listScopeKey) return;
     if (state.loadedPageOffsets.has(normalizedOffset)) return;
@@ -6431,6 +6541,7 @@ async function loadAllVirtualItemsForCurrentScope() {
 }
 
 async function loadData(opts = {}) {
+    if (!canAccessView('linkchecker')) return;
     const preserveScroll = Boolean(opts?.preserveScroll);
     const force = Boolean(opts?.force);
     const requestId = ++state.dataLoadRequestId;
@@ -6519,6 +6630,7 @@ async function loadData(opts = {}) {
 // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 
 async function runBackgroundSync(opts = {}) {
+    if (!canAccessView('linkchecker')) return;
     const force = Boolean(opts?.force);
     if (state.remoteSyncInFlight) return;
     if (!getAuthToken()) return;
@@ -6641,21 +6753,17 @@ function updateAddLinkAvailability() {
 }
 
 function switchToView(view) {
-    const managerOnly = getAuthUser()?.role === 'manager';
-    if (managerOnly && !['ytm', 'users', 'settings', 'account'].includes(view)) view = 'ytm';
+    if (!canAccessView(view)) view = getDefaultWorkspaceView();
+    updateWorkspaceNavigation();
     setElementDisplay(document.getElementById('sidebar-spoticheck-logo'), view === 'ytm' ? 'none' : null);
     setElementDisplay(document.getElementById('sidebar-ytm-logo'), view === 'ytm' ? null : 'none');
     const brandName = document.getElementById('sidebar-brand-name');
     if (brandName) brandName.textContent = view === 'ytm' ? 'YouTube Manager' : 'SpotiCheck';
-    for (const id of ['nav-channels', 'nav-links']) {
-        const nav = document.getElementById(id);
-        if (nav) setElementDisplay(nav, managerOnly ? 'none' : null);
-    }
     const ytmPanel = document.getElementById('ytm-panel');
     setElementDisplay(ytmPanel, view === 'ytm' ? 'block' : 'none');
     setElementDisplay(document.querySelector('main > .topbar'), view === 'ytm' ? 'none' : null);
     const ytmFrame = document.getElementById('ytm-frame');
-    if (view === 'ytm' && ytmFrame && !ytmFrame.getAttribute('src')) ytmFrame.src = '/ytm/index.html?v=20261005-1';
+    if (view === 'ytm' && ytmFrame && !ytmFrame.getAttribute('src')) ytmFrame.src = '/ytm/index.html?v=20261009-workspaces-1';
     var listWrap = document.querySelector('.list-wrap');
     var settingsPanel = document.getElementById('settings-panel');
     var accountPanel = document.getElementById('account-panel');
@@ -7218,6 +7326,7 @@ function openAdminEditModal(userId) {
         }
     }
     setupManagerAssignment('admin-edit', user.manager_id);
+    setupWorkspaceSelection('admin-edit', user.role === 'manager' ? user : { role: 'manager' });
     document.getElementById('admin-edit-status').style.display = 'none';
     document.getElementById('admin-edit-status').textContent = '';
 
@@ -7249,6 +7358,7 @@ function openAdminCreateModal() {
     }
 
     setupManagerAssignment('admin-create');
+    setupWorkspaceSelection('admin-create');
     var statusEl = document.getElementById('admin-create-status');
     statusEl.style.display = 'none';
     statusEl.textContent = '';
@@ -7296,6 +7406,7 @@ async function submitAdminCreateUser() {
                 display_name: displayName || null,
                 role: role || 'user',
                 ...getManagerAssignment('admin-create', role),
+                ...getWorkspaceAssignment('admin-create', role),
             }),
         });
         var data = await res.json().catch(function() { return {}; });
@@ -7334,7 +7445,7 @@ async function saveAdminEditUser() {
         var res = await fetch(CONFIG.API_BASE + '/auth/users/' + userId, {
             method: 'PATCH',
             headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + token },
-            body: JSON.stringify({ username: username, display_name: displayName || null, role: role, ...getManagerAssignment('admin-edit', role) }),
+            body: JSON.stringify({ username: username, display_name: displayName || null, role: role, ...getManagerAssignment('admin-edit', role), ...getWorkspaceAssignment('admin-edit', role) }),
         });
         var data = await res.json();
         if (!res.ok) throw new Error(data.detail || 'Failed to update user');
@@ -7517,6 +7628,18 @@ document.addEventListener('DOMContentLoaded', async () => {
         console.warn('[Auth] Could not refresh account:', err.message);
     }
     setupAuthUI();
+    window.addEventListener('message', (event) => {
+        const frame = document.getElementById('ytm-frame');
+        if (event.origin !== location.origin || event.source !== frame?.contentWindow) return;
+        if (event.data?.type !== 'spoticheck-workspace-forbidden' || event.data.workspace !== 'youtube') return;
+        refreshAuthUser().catch((err) => console.warn('[Auth] Could not refresh permissions:', err.message));
+    });
+    const refreshPermissions = () => {
+        if (!document.hidden) refreshAuthUser().catch((err) => console.warn('[Auth] Could not refresh permissions:', err.message));
+    };
+    window.addEventListener('focus', refreshPermissions);
+    document.addEventListener('visibilitychange', refreshPermissions);
+    setInterval(refreshPermissions, 30_000);
     await hydrateUiPreferencesFromServer();
     state.columnWidths = loadPersistedColumnWidths();
     applyColumnWidths(state.columnWidths);
@@ -8021,11 +8144,11 @@ document.addEventListener('DOMContentLoaded', async () => {
     });
     document.getElementById('nav-channels')?.addEventListener('click', (e) => {
         e.preventDefault();
-        switchToView('channels');
+        navigateToWorkspace('channels');
     });
     document.getElementById('nav-ytm')?.addEventListener('click', (e) => {
         e.preventDefault();
-        switchToView('ytm');
+        navigateToWorkspace('ytm');
     });
     document.getElementById('nav-settings').addEventListener('click', (e) => {
         e.preventDefault();
@@ -8034,17 +8157,8 @@ document.addEventListener('DOMContentLoaded', async () => {
 
     document.getElementById('nav-links').addEventListener('click', (e) => {
         e.preventDefault();
-        switchToView('linkchecker');
+        navigateToWorkspace('linkchecker');
     });
-
-    // Users nav (admin)
-    const navUsersEl = document.getElementById('nav-users');
-    if (navUsersEl) {
-        navUsersEl.addEventListener('click', function(e) {
-            e.preventDefault();
-            switchToView('users');
-        });
-    }
 
     // Settings event listeners
     document.getElementById('settings-save-profile')?.addEventListener('click', handleSaveProfile);
@@ -8230,9 +8344,9 @@ document.addEventListener('DOMContentLoaded', async () => {
     initStickyHeader();
     initVirtualListScroll();
 
-    // Channels is the landing page; Spotify data loads when its tab is opened.
-    switchToView(getAuthUser()?.role === 'manager' ? 'ytm' : 'channels');
-    if (getAuthUser()?.role !== 'manager') syncGroupsFromServer();
+    // Open the first workspace permitted by the refreshed account response.
+    switchToView(getDefaultWorkspaceView());
+    if (canAccessView('linkchecker')) syncGroupsFromServer();
     startBackgroundSync();
 
     // Keep "Checked" relative times live without page reload.

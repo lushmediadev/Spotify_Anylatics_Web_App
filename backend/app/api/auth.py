@@ -13,6 +13,7 @@ from app.models.item import Item
 from app.models.crawl_job import CrawlJob
 from app.models.metrics_snapshot import MetricsSnapshot
 from app.models.app_setting import AppSetting
+from app.services.workspace_access import effective_workspaces, requested_manager_workspaces
 from app.schemas.auth import (
     RegisterRequest,
     LoginRequest,
@@ -63,7 +64,7 @@ def _public_email(email: str | None) -> str | None:
     return email
 
 
-def _user_response(user: User, *, include_private: bool = True) -> UserResponse:
+async def _user_response(user: User, db, *, include_private: bool = True, managers=None) -> UserResponse:
     try:
         custom_groups = json.loads(user.custom_groups) if user.custom_groups else []
     except (json.JSONDecodeError, TypeError):
@@ -78,6 +79,7 @@ def _user_response(user: User, *, include_private: bool = True) -> UserResponse:
         email=_public_email(user.email),
         display_name=user.display_name,
         role=user.role,
+        workspaces=await effective_workspaces(user, db, managers=managers),
         manager_id=str(user.manager_id) if getattr(user, "manager_id", None) is not None else None,
         is_active=user.is_active,
         created_at=user.created_at.isoformat() if user.created_at else None,
@@ -124,7 +126,7 @@ async def register(req: RegisterRequest, db: AsyncSession = Depends(get_db)):
     token = create_access_token({"sub": str(user.id)})
     return AuthResponse(
         access_token=token,
-        user=_user_response(user),
+        user=await _user_response(user, db),
     )
 
 
@@ -217,14 +219,14 @@ async def login(req: LoginRequest, db: AsyncSession = Depends(get_db)):
     token = create_access_token({"sub": str(user.id)})
     return AuthResponse(
         access_token=token,
-        user=_user_response(user),
+        user=await _user_response(user, db),
     )
 
 
 @router.get("/me", response_model=UserResponse)
-async def me(current_user: User = Depends(get_current_user)):
+async def me(current_user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
     """Return the current authenticated user."""
-    return _user_response(current_user)
+    return await _user_response(current_user, db)
 
 
 @router.get("/users", response_model=list[UserResponse])
@@ -237,7 +239,8 @@ async def list_users(
         select(User).where(user_scope_condition(admin)).order_by(User.created_at)
     )
     users = result.scalars().all()
-    return [_user_response(u, include_private=u.id == admin.id) for u in users]
+    managers = {u.id: u for u in users}
+    return [await _user_response(u, db, include_private=u.id == admin.id, managers=managers) for u in users]
 
 
 @router.post("/users", response_model=UserResponse, status_code=201)
@@ -251,6 +254,7 @@ async def admin_create_user(
     email = _resolve_email(username, req.email)
     display_name = (req.display_name or "").strip() or None
     role = (req.role or "user").strip().lower()
+    workspace_access = requested_manager_workspaces(admin, req, role)
 
     if not username:
         raise HTTPException(status_code=400, detail="Username is required")
@@ -285,10 +289,11 @@ async def admin_create_user(
         role=role,
         is_active=True,
         manager_id=manager_id,
+        workspace_access=workspace_access,
     )
     db.add(user)
     await db.flush()
-    return _user_response(user, include_private=user.id == admin.id)
+    return await _user_response(user, db, include_private=user.id == admin.id)
 
 
 # ---------------------------------------------------------------------------
@@ -306,7 +311,7 @@ async def update_profile(
     if req.display_name is not None:
         current_user.display_name = req.display_name
     await db.flush()
-    return _user_response(current_user)
+    return await _user_response(current_user, db)
 
 
 @router.post("/me/password")
@@ -531,6 +536,7 @@ async def admin_update_user(
     """Edit an accessible account without allowing manager privilege escalation."""
     user = await require_user_access(db, admin, user_id, management=True)
     next_role = req.role if req.role is not None else user.role
+    workspace_access = requested_manager_workspaces(admin, req, next_role)
     next_active = req.is_active if req.is_active is not None else user.is_active
     assignment_set = "manager_id" in req.model_fields_set
     next_manager_id = req.manager_id if assignment_set else getattr(user, "manager_id", None)
@@ -566,13 +572,15 @@ async def admin_update_user(
         user.display_name = req.display_name
     if req.role is not None:
         user.role = next_role
+    if workspace_access is not None:
+        user.workspace_access = workspace_access
     if req.is_active is not None:
         user.is_active = req.is_active
     if assignment_set:
         user.manager_id = next_manager_id
 
     await db.flush()
-    return _user_response(user, include_private=user.id == admin.id)
+    return await _user_response(user, db, include_private=user.id == admin.id)
 
 
 @router.post("/users/{user_id}/reset-password")

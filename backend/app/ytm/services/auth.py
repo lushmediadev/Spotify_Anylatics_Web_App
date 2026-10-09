@@ -4,9 +4,11 @@ from sqlalchemy import select
 from app.services.auth import get_current_user as shared_user
 from app.ytm.database import get_db
 from app.ytm.models.user import User
+from app.services.workspace_access import require_workspace_access
 
 
 async def get_current_user(actor=Depends(shared_user), db=Depends(get_db)):
+    await require_workspace_access(actor, db, "youtube")
     from app.models.user import User as SharedUser
     await db.execute(select(SharedUser.id).where(SharedUser.id == actor.id).with_for_update())
     user = await db.get(User, str(actor.id))

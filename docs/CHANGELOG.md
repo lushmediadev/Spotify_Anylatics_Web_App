@@ -1,5 +1,9 @@
 # Changelog
 
+### 2026-10-09 - Workspace cho manager và user kế thừa
+- Admin tích chọn Youtube, Spotify, Youtube-Spotify khi tạo/sửa manager; user dưới quyền kế thừa live grants, manager không chọn hoặc sửa workspace cho user. Sidebar/default landing và API enforce cùng quyền; refresh/đổi view khi thu hồi.
+- Migration thêm nullable JSON workspace_access, API thêm workspaces array; legacy manager giữ Youtube, admin/standalone user giữ đủ ba; không đổi dữ liệu/ownership hoặc standalone YTM.
+- Kiểm thử: grant combinations, create/edit/prefill, inheritance/reassign/revocation, chống privilege tampering và foreign data access; 561 backend tests passed, UI local chọn hai workspace và edit prefill đúng.
 ### 2026-10-05 - Manager quản lý user dưới quyền
 - Mở Users cho manager; tạo user tự gắn manager_id, admin thấy cùng tài khoản trong danh sách toàn bộ. Admin reset-password mọi tài khoản; manager chỉ sửa/reset-password/activate/delete assigned users, không nâng role hoặc reassign.
 - Khóa/refresh target row khi quản lý để chặn quyền stale sau admin reassign; dữ liệu workspace vẫn own-account-only. Không đổi route/payload/schema; tăng app.js cache version và cập nhật hướng dẫn tạo tài khoản.
