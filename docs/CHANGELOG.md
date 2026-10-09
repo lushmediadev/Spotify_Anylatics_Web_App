@@ -1,5 +1,8 @@
 # Changelog
 
+### 2026-10-09 - Logo cho tài khoản chỉ dùng Youtube
+- Tài khoản có duy nhất workspace Youtube giữ logo YTM trên mọi trang, gồm Settings/Profile/Users; refresh quyền cũng cập nhật branding. Dùng effective grants nên user kế thừa áp dụng cùng manager.
+- Tăng app.js cache version; logo trên tài khoản nhiều workspace tiếp tục theo tab đang mở.
 ### 2026-10-09 - Workspace cho manager và user kế thừa
 - Admin tích chọn Youtube, Spotify, Youtube-Spotify khi tạo/sửa manager; user dưới quyền kế thừa live grants, manager không chọn hoặc sửa workspace cho user. Sidebar/default landing và API enforce cùng quyền; refresh/đổi view khi thu hồi.
 - Migration thêm nullable JSON workspace_access, API thêm workspaces array; legacy manager giữ Youtube, admin/standalone user giữ đủ ba; không đổi dữ liệu/ownership hoặc standalone YTM.

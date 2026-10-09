@@ -24,6 +24,7 @@ function fixture(account) {
   elements['admin-edit-user-id'] = { value: 'target' };
   const local = { spoticheck_user: JSON.stringify(account) };
   const context = vm.createContext({
+    state: { currentView: 'settings' },
     localStorage: { getItem: key => local[key], setItem: (key, value) => { local[key] = value; } },
     document: { getElementById: id => elements[id] || null }, console, setTimeout: () => {},
   });
@@ -110,6 +111,7 @@ test('sidebar and direct view navigation enforce effective assigned-user access'
   const { context, elements, setAccount } = fixture({ role: 'user', manager_id: 'manager', workspaces: ['spotify'] });
   const style = () => ({ removeProperty(name) { delete this[name]; } });
   for (const id of ['nav-channels', 'nav-links', 'nav-ytm', 'nav-users']) elements[id] = { style: style(), classList: { add() {}, remove() {} }, querySelector: () => null };
+  for (const id of ['sidebar-spoticheck-logo', 'sidebar-ytm-logo', 'sidebar-brand-name']) elements[id] = { style: style() };
   context.document.querySelector = () => null;
   context.document.querySelectorAll = () => [];
   context.document.body = { classList: { toggle() {} } };
@@ -130,6 +132,23 @@ test('sidebar and direct view navigation enforce effective assigned-user access'
   assert.equal(context.state.currentView, 'settings');
   context.switchToView('account');
   assert.equal(context.state.currentView, 'account');
+  setAccount({ role: 'manager', workspaces: ['youtube'] });
+  for (const view of ['ytm', 'settings', 'account', 'users']) {
+    context.updateWorkspaceNavigation(view);
+    assert.equal(elements['sidebar-spoticheck-logo'].style.display, 'none');
+    assert.equal(elements['sidebar-ytm-logo'].style.display, undefined);
+    assert.equal(elements['sidebar-brand-name'].textContent, 'YouTube Manager');
+  }
+  setAccount({ role: 'user', manager_id: 'manager', workspaces: ['youtube'] });
+  context.updateWorkspaceNavigation('settings');
+  assert.equal(elements['sidebar-ytm-logo'].style.display, undefined);
+  setAccount({ role: 'manager', workspaces: ['youtube', 'spotify'] });
+  context.updateWorkspaceNavigation('settings');
+  assert.equal(elements['sidebar-ytm-logo'].style.display, 'none');
+  assert.equal(elements['sidebar-spoticheck-logo'].style.display, undefined);
+  assert.equal(elements['sidebar-brand-name'].textContent, 'SpotiCheck');
+  context.updateWorkspaceNavigation('ytm');
+  assert.equal(elements['sidebar-ytm-logo'].style.display, undefined);
 });
 
 test('403 refreshes permissions once, stops revoked Spotify work, switches view, and does not retry mutations', async () => {

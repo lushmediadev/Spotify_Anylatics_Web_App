@@ -180,11 +180,17 @@ function getDefaultWorkspaceView(user = getAuthUser()) {
     return ['channels', 'ytm', 'linkchecker'].find((view) => canAccessView(view, user)) || 'settings';
 }
 
-function updateWorkspaceNavigation() {
+function updateWorkspaceNavigation(view) {
     for (const option of WORKSPACE_OPTIONS) {
         setElementDisplay(document.getElementById(option.nav), canAccessView(option.view) ? null : 'none');
     }
     setElementDisplay(document.getElementById('nav-users'), canManageUsers() ? null : 'none');
+    const workspaces = getEffectiveWorkspaces();
+    const youtubeBrand = view === 'ytm' || (workspaces.length === 1 && workspaces[0] === 'youtube');
+    setElementDisplay(document.getElementById('sidebar-spoticheck-logo'), youtubeBrand ? 'none' : null);
+    setElementDisplay(document.getElementById('sidebar-ytm-logo'), youtubeBrand ? null : 'none');
+    const brandName = document.getElementById('sidebar-brand-name');
+    if (brandName) brandName.textContent = youtubeBrand ? 'YouTube Manager' : 'SpotiCheck';
 }
 
 let authRefreshPromise = null;
@@ -354,7 +360,7 @@ function setupAuthUI() {
         event.preventDefault();
         switchToView('users');
     };
-    updateWorkspaceNavigation();
+    updateWorkspaceNavigation(state.currentView);
 }
 
 
@@ -6754,11 +6760,7 @@ function updateAddLinkAvailability() {
 
 function switchToView(view) {
     if (!canAccessView(view)) view = getDefaultWorkspaceView();
-    updateWorkspaceNavigation();
-    setElementDisplay(document.getElementById('sidebar-spoticheck-logo'), view === 'ytm' ? 'none' : null);
-    setElementDisplay(document.getElementById('sidebar-ytm-logo'), view === 'ytm' ? null : 'none');
-    const brandName = document.getElementById('sidebar-brand-name');
-    if (brandName) brandName.textContent = view === 'ytm' ? 'YouTube Manager' : 'SpotiCheck';
+    updateWorkspaceNavigation(view);
     const ytmPanel = document.getElementById('ytm-panel');
     setElementDisplay(ytmPanel, view === 'ytm' ? 'block' : 'none');
     setElementDisplay(document.querySelector('main > .topbar'), view === 'ytm' ? 'none' : null);
