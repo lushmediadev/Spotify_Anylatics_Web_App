@@ -1,0 +1,15 @@
+# Isolated app/database behind an existing host Nginx; no Caddy or public DB port.
+name: spoticheck
+services:
+  db:
+    extends:
+      file: docker-compose.vps.yml
+      service: db
+  app:
+    extends:
+      file: docker-compose.vps.yml
+      service: app
+    ports:
+      - "127.0.0.1:${APP_BIND_PORT:-8015}:8000"
+volumes:
+  postgres_data:

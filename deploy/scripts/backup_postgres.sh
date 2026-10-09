@@ -3,6 +3,7 @@ set -Eeuo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 DEPLOY_DIR="$(cd "${SCRIPT_DIR}/.." && pwd)"
+source "${SCRIPT_DIR}/runtime_compose.sh"
 cd "${DEPLOY_DIR}"
 
 if [[ ! -f .env ]]; then
@@ -21,7 +22,7 @@ BACKUP_FILE="${BACKUP_ROOT}/${POSTGRES_DB}_${TIMESTAMP}.sql.gz"
 
 mkdir -p "${BACKUP_ROOT}"
 
-docker compose -f docker-compose.vps.yml --env-file .env exec -T db \
+"${SPOTICHECK_COMPOSE[@]}" exec -T db \
   pg_dump -U "${POSTGRES_USER}" -d "${POSTGRES_DB}" --clean --if-exists --no-owner --no-acl \
   | gzip -9 > "${BACKUP_FILE}"
 

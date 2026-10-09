@@ -1,5 +1,15 @@
 # VPS Deployment
 
+## VPS có Nginx dùng chung
+
+- SpotiCheck dùng `/opt/spoticheck/app`, `docker-compose.nginx.yml` (project `spoticheck`) và chỉ publish `127.0.0.1:8015`.
+- Đặt `APP_DOMAIN=ytm.lushmedia.net` trong `.env`, và ghi `docker-compose.nginx.yml` vào `deploy/.compose-file` để helper/backup/update chọn đúng runtime.
+- Nginx host dùng `deploy/nginx/ytm.lushmedia.net.conf`; cấp certificate Let's Encrypt bằng webroot `/var/www/letsencrypt`, kiểm tra `nginx -t` trước reload. Không bật service Caddy từ compose legacy trên máy đã có Nginx.
+- Deploy/health: `docker compose -f docker-compose.nginx.yml --env-file .env up -d --build`, `curl http://127.0.0.1:8015/api/health`, sau đó kiểm tra HTTPS public.
+- Khi chuyển VPS: backup trước, restore thử và đối chiếu; final dump sau khi dừng app cũ, restore bản cuối rồi mới mở app mới. Giữ DB/image cũ để rollback, không cho hai bản nhận ghi cùng lúc.
+
+## Legacy Caddy host
+
 This folder contains the tracked runtime config for the VPS stack:
 
 - `docker-compose.vps.yml`: app + PostgreSQL + Caddy

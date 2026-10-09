@@ -3,12 +3,13 @@ set -Eeuo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 DEPLOY_DIR="$(cd "${SCRIPT_DIR}/.." && pwd)"
+source "${SCRIPT_DIR}/runtime_compose.sh"
 cd "${DEPLOY_DIR}"
 APP_STOPPED=0
 
 cleanup() {
   if [[ "${APP_STOPPED}" == "1" ]]; then
-    docker compose -f docker-compose.vps.yml --env-file .env up -d app >/dev/null 2>&1 || true
+    "${SPOTICHECK_COMPOSE[@]}" up -d app >/dev/null 2>&1 || true
   fi
 }
 
@@ -47,13 +48,13 @@ docker run --rm \
   | gzip -9 > "${DUMP_FILE}"
 
 echo "Restoring dump into local VPS PostgreSQL"
-docker compose -f docker-compose.vps.yml --env-file .env stop app
+"${SPOTICHECK_COMPOSE[@]}" stop app
 APP_STOPPED=1
 gzip -dc "${DUMP_FILE}" \
   | sed '/^SET transaction_timeout = 0;$/d' \
-  | docker compose -f docker-compose.vps.yml --env-file .env exec -T db \
+  | "${SPOTICHECK_COMPOSE[@]}" exec -T db \
       psql -v ON_ERROR_STOP=1 -U "${POSTGRES_USER}" -d "${POSTGRES_DB}"
-docker compose -f docker-compose.vps.yml --env-file .env up -d app
+"${SPOTICHECK_COMPOSE[@]}" up -d app
 APP_STOPPED=0
 
 echo "Migration completed from source URL into ${POSTGRES_DB}"

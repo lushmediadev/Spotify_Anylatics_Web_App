@@ -4,6 +4,7 @@ set -Eeuo pipefail
 SCRIPT_PATH="$(readlink -f "${BASH_SOURCE[0]}")"
 SCRIPT_DIR="$(cd "$(dirname "${SCRIPT_PATH}")" && pwd)"
 DEPLOY_DIR="$(cd "${SCRIPT_DIR}/.." && pwd)"
+source "${SCRIPT_DIR}/runtime_compose.sh"
 
 usage() {
   cat <<'EOF'
@@ -68,7 +69,7 @@ fi
 
 cd "${DEPLOY_DIR}"
 
-docker compose -f docker-compose.vps.yml --env-file .env exec -T app \
+"${SPOTICHECK_COMPOSE[@]}" exec -T app \
   env CURRENT_USERNAME="${current_username}" NEW_USERNAME="${new_username}" NEW_PASSWORD="${new_password}" \
   python - <<'PY'
 import asyncio

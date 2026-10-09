@@ -4,6 +4,7 @@ set -Eeuo pipefail
 SCRIPT_PATH="$(readlink -f "${BASH_SOURCE[0]}")"
 SCRIPT_DIR="$(cd "$(dirname "${SCRIPT_PATH}")" && pwd)"
 DEPLOY_DIR="$(cd "${SCRIPT_DIR}/.." && pwd)"
+source "${SCRIPT_DIR}/runtime_compose.sh"
 APP_DIR="$(cd "${DEPLOY_DIR}/.." && pwd)"
 
 usage() {
@@ -25,14 +26,14 @@ shift || true
 case "${command}" in
   status)
     cd "${DEPLOY_DIR}"
-    docker compose -f docker-compose.vps.yml --env-file .env ps
+    "${SPOTICHECK_COMPOSE[@]}" ps
     ;;
   logs)
     cd "${DEPLOY_DIR}"
     if [[ $# -gt 0 ]]; then
-      docker compose -f docker-compose.vps.yml --env-file .env logs -f "$@"
+      "${SPOTICHECK_COMPOSE[@]}" logs -f "$@"
     else
-      docker compose -f docker-compose.vps.yml --env-file .env logs -f app
+      "${SPOTICHECK_COMPOSE[@]}" logs -f app
     fi
     ;;
   backup)

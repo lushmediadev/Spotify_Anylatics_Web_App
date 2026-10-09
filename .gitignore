@@ -31,6 +31,7 @@ node_modules/
 backend/refresh_all_compare_report.txt
 deploy/mail/docker-data/
 deploy/backups/
+deploy/.compose-file
 deploy/Caddyfile*.bak
 deploy/Caddyfile.backup-*
 deploy/Caddyfile.pre-*
