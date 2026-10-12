@@ -2813,7 +2813,7 @@ function renderGroups(opts = {}) {
                             value="${escapeHtml(g.name)}"
                             class="w-full bg-white/5 border border-primary/50 rounded-lg px-2 py-1 text-[14px] font-semibold text-white focus:outline-none focus:border-primary"
                         >`
-                        : `<span class="text-[14px] font-semibold truncate" data-role="group-name" data-group-id="${escapeHtml(g.id)}">${escapeHtml(g.displayName || g.name)}</span>`
+                        : `<span class="group-rail-name text-[14px] font-semibold truncate" data-role="group-name" data-group-id="${escapeHtml(g.id)}">${escapeHtml(g.displayName || g.name)}</span>`
                     }
                 </div>
                 <div class="group-item-actions flex items-center gap-2">
@@ -2852,11 +2852,11 @@ function renderGroups(opts = {}) {
 
     const createBox = state.isCreatingGroup
         ? `
-        <div class="mt-3 p-3 rounded-lg border border-white/10 bg-white/5">
-            <input data-role="new-group-input" type="text" placeholder="Group name..." class="w-full bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-sm text-white placeholder-secondary-text focus:outline-none focus:border-primary/60">
-            <div class="mt-2 flex gap-2">
-                <button data-action="create-group" class="flex-1 px-3 py-2 rounded-lg bg-white hover:bg-white/90 text-black text-sm font-semibold">Create</button>
-                <button data-action="cancel-create-group" class="flex-1 px-3 py-2 rounded-lg border border-white/20 text-secondary-text hover:text-white text-sm">Cancel</button>
+        <div class="group-rail-create-box">
+            <input data-role="new-group-input" type="text" placeholder="Group name..." class="group-rail-create-input">
+            <div class="group-rail-create-actions">
+                <button data-action="create-group" class="group-rail-create-action is-primary">Create</button>
+                <button data-action="cancel-create-group" class="group-rail-create-action">Cancel</button>
             </div>
         </div>
         `

@@ -454,3 +454,12 @@
 - Preserved: channel group creation remains available from the mobile toolbar; desktop creation sits beside the Groups heading.
 - Affected files: `frontend/group-rail.css`, `frontend/index.html`, `frontend/ytm/index.html`, `frontend/app.js`, `frontend/channels.js`, `frontend/channels.css`, `docs/UI_SYSTEM.md`, `docs/DECISIONS_INDEX.md`
 - Impact/Risk: Low; group-rail visuals and action placement only.
+### 2026-10-12 - Align channel group creation button
+- Changed: keep the Channel & Playlist add-group icon inline with the Groups heading like YouTube Link Checker, with explicit flex utility classes and refreshed asset cache versions.
+- Affected files: `frontend/channels.js`, `frontend/index.html`
+- Impact/Risk: Low; group rail header alignment only.
+### 2026-10-12 - Unify group rail controls and typography
+- Changed: standardize group fonts, icons, row/count styles, add-button placement, and inline create-group forms across Spotify Link Checker, Channel & Playlist, and YTM.
+- Reason: the YTM frame loads its own font/CSS bundle, Channel & Playlist used a modal create flow, and the prior Channel stylesheet cache key was unchanged.
+- Affected files: `frontend/group-rail.css`, `frontend/index.html`, `frontend/ytm/index.html`, `frontend/app.js`, `frontend/channels.js`, `frontend/ytm/app.js`, `docs/UI_SYSTEM.md`
+- Impact/Risk: Low; group-rail presentation and create-group interaction only.

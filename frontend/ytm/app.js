@@ -724,6 +724,15 @@ function groupCount(groupName) {
 function renderInlineGroupEditRow() {
   const edit = state.inlineGroupEdit;
   if (!edit) return '';
+  if (edit.mode === 'create') {
+    return `<div class="group-rail-create-box">
+      <input class="group-rail-create-input" data-inline-group-input value="${escapeHtml(edit.value || '')}" placeholder="New group name" autocomplete="off">
+      <div class="group-rail-create-actions">
+        <button type="button" class="group-rail-create-action is-primary" data-inline-group-save>Create</button>
+        <button type="button" class="group-rail-create-action" data-inline-group-cancel>Cancel</button>
+      </div>
+    </div>`;
+  }
   const label = edit.mode === 'create' ? 'New group name' : 'Rename group';
   return `<div class="group-row group-item group-inline-edit-row w-full">
     <div class="group-row-main group-inline-edit-main w-full flex items-center gap-2 px-3 py-2.5 rounded-lg">
@@ -749,11 +758,10 @@ function renderGroups() {
   const groups = allGroupsFromItems().filter((g) => g.toLowerCase().includes(state.groupSearch.toLowerCase()));
   const activeClass = (id) => id === state.activeGroup ? 'bg-[#f2f2f2] text-[#0f0f0f] font-medium' : 'text-secondary-text hover:text-[#0f0f0f] hover:bg-[#f2f2f2]';
   const rows = [
-    `<button class="group-item w-full flex items-center justify-between px-3 py-2.5 rounded-lg ${activeClass(ALL_GROUP_ID)} ${state.draggingRowKeys.length && state.dragOverGroupId === ALL_GROUP_ID ? 'group-item-drop-target' : ''}" data-group="${ALL_GROUP_ID}">
-      <span class="flex items-center gap-3"><span class="material-symbols-outlined text-[#cc0000] text-sm">folder</span><span class="text-[14px] font-semibold">${ALL_GROUP_LABEL}</span></span>
-      <span class="text-xs font-medium bg-[#e5e5e5] text-[#0f0f0f] px-2 py-0.5 rounded">${groupCount(ALL_GROUP_ID)}</span>
+    `<button class="group-item ${state.activeGroup === ALL_GROUP_ID ? 'group-item-selected' : ''} w-full flex items-center justify-between px-3 py-2.5 rounded-lg ${activeClass(ALL_GROUP_ID)} ${state.draggingRowKeys.length && state.dragOverGroupId === ALL_GROUP_ID ? 'group-item-drop-target' : ''}" data-group="${ALL_GROUP_ID}">
+      <span class="flex items-center gap-3"><span class="material-symbols-outlined text-[#cc0000] text-sm">folder</span><span class="group-rail-name text-[14px] font-semibold">${ALL_GROUP_LABEL}</span></span>
+      <span class="group-row-count text-xs font-medium bg-[#e5e5e5] text-[#0f0f0f] px-2 py-0.5 rounded">${groupCount(ALL_GROUP_ID)}</span>
     </button>`,
-    state.inlineGroupEdit?.mode === 'create' ? renderInlineGroupEditRow() : '',
     ...groups.map((name) => {
       if (state.inlineGroupEdit?.mode === 'rename' && state.inlineGroupEdit.originalName === name) {
         return renderInlineGroupEditRow();
@@ -765,10 +773,10 @@ function renderGroups() {
       const isOver = state.dragOverGroupId === name && !isDragging;
       const dropClass = isOver ? `group-item-drop-target group-drop-${state.dragOverGroupPlacement}` : '';
       return `<div class="group-row group-item w-full ${isDragging ? 'group-item-dragging' : ''} ${dropClass}" draggable="true" data-group-row="${escapeHtml(name)}">
-        <button class="group-row-main w-full flex items-center justify-between px-3 py-2.5 rounded-lg ${activeClass(name)}" data-group="${escapeHtml(name)}" aria-selected="${isAct ? 'true' : 'false'}">
+        <button class="group-row-main group-item ${isAct ? 'group-item-selected' : ''} w-full flex items-center justify-between px-3 py-2.5 rounded-lg ${activeClass(name)}" data-group="${escapeHtml(name)}" aria-selected="${isAct ? 'true' : 'false'}">
           <span class="flex items-center gap-3 min-w-0">
             <span class="material-symbols-outlined text-[#cc0000] text-sm">folder</span>
-            <span class="truncate text-[14px] font-semibold">${escapeHtml(name)}</span>
+            <span class="group-rail-name truncate text-[14px] font-semibold">${escapeHtml(name)}</span>
           </span>
           <span class="group-row-count text-xs font-bold ${badgeClass} px-2 py-0.5 rounded">${count}</span>
         </button>
@@ -776,7 +784,8 @@ function renderGroups() {
           <button type="button" class="group-row-action is-danger" data-delete-group="${escapeHtml(name)}" aria-label="Delete group"><span class="material-symbols-outlined">delete</span></button>
         </div>
       </div>`;
-    })
+    }),
+    state.inlineGroupEdit?.mode === 'create' ? renderInlineGroupEditRow() : '',
   ];
   list.innerHTML = rows.join('');
   if (state.inlineGroupEdit) focusInlineGroupInput();

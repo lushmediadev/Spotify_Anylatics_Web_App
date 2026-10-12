@@ -14,7 +14,7 @@
         preferenceQueue: Promise.resolve(), writePending: 0, scope: 0, drag: null, scrollFrame: null,
         groupSelected: new Set(), playlistSelected: new Set(), focusKind: 'channels', anchors: {}, cut: null,
         runPlaylistAction: null, copyLinks: null, previewImage: null, exportChannels: null, sort: null,
-        widths: null, resize: null
+        widths: null, resize: null, creatingGroup: false
     };
     const escapeHtml = value => String(value ?? '').replace(/[&<>"']/g, ch => ({
         '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
@@ -269,13 +269,23 @@
             state.rail = rail;
             rail.classList.add('chp-group-rail');
             rail.addEventListener('click', event => {
-                if (event.target.closest('[data-chp-action="new-group"]')) { openNewGroup(); return; }
+                if (event.target.closest('[data-chp-action="new-group"]')) { startGroupCreate(); return; }
+                if (event.target.closest('[data-chp-group-cancel]')) { cancelGroupCreate(); return; }
                 const button = event.target.closest('[data-chp-group]');
                 if (!button) return;
                 const name = button.dataset.chpGroup;
                 selectRows('groups', name, event);
                 if (event.ctrlKey || event.metaKey || event.shiftKey) return;
                 state.group = name; changeScope();
+            });
+            rail.addEventListener('submit', event => {
+                if (!event.target.matches('[data-chp-group-create]')) return;
+                event.preventDefault(); saveGroupCreate(event.submitter);
+            });
+            rail.addEventListener('keydown', event => {
+                if (event.key === 'Escape' && event.target.matches('[data-chp-group-name]')) {
+                    event.preventDefault(); cancelGroupCreate();
+                }
             });
             rail.addEventListener('dblclick', event => { const name = event.target.closest('[data-chp-group]')?.dataset.chpGroup; if (name) renameGroup(name); });
             rail.addEventListener('contextmenu', event => {
@@ -289,7 +299,7 @@
         const tools = document.getElementById('channel-group-tools');
         if (tools && state.groupTools !== tools) {
             state.groupTools = tools;
-            tools.innerHTML = `<div class="chp-group-tools-heading"><h2 class="text-[11px] font-bold uppercase tracking-[0.15em] text-white">Groups</h2><button id="btn-new-group" type="button" class="group-rail-add-btn text-secondary-text hover:text-[#202124]" data-chp-action="new-group" aria-label="New group" title="New group"><span class="material-symbols-outlined text-lg" aria-hidden="true">add</span></button></div><div class="relative"><span class="material-icons-round absolute left-2.5 top-1/2 -translate-y-1/2 text-secondary-text text-[18px]">search</span><input type="search" class="group-rail-search chp-group-search w-full bg-white/5 border border-white/10 rounded-lg pl-9 pr-3 py-2 text-sm text-white placeholder-secondary-text focus:outline-none focus:border-primary/50 focus:bg-white/[0.08] transition-all" placeholder="Search groups..." aria-label="Tìm nhóm kênh"></div>`;
+            tools.innerHTML = `<div class="chp-group-tools-heading flex items-center justify-between"><h2 class="text-[11px] font-bold uppercase tracking-[0.15em] text-white">Groups</h2><button id="btn-new-group" type="button" class="group-rail-add-btn text-secondary-text hover:text-[#202124]" data-chp-action="new-group" aria-label="New group" title="New group"><span class="material-symbols-outlined text-lg" aria-hidden="true">add</span></button></div><div class="relative"><span class="material-icons-round group-rail-search-icon absolute left-2.5 top-1/2 -translate-y-1/2 text-secondary-text text-[18px]">search</span><input type="search" class="group-rail-search chp-group-search w-full bg-white/5 border border-white/10 rounded-lg pl-9 pr-3 py-2 text-sm text-white placeholder-secondary-text focus:outline-none focus:border-primary/50 focus:bg-white/[0.08] transition-all" placeholder="Search groups..." aria-label="Tìm nhóm kênh"></div>`;
             tools.addEventListener('click', panelClick);
             tools.querySelector('input').addEventListener('input', event => { state.groupSearch = event.target.value.trim(); renderRail(); });
         }
@@ -306,9 +316,17 @@
         }
         if (rail.contains(document.activeElement)) return;
         const groups = new Map(state.groups.map(group => [group.name, group.count]));
-        const html = [...groups].filter(([name]) => name.toLocaleLowerCase().includes(state.groupSearch.toLocaleLowerCase())).map(([name, count]) => `<button type="button" class="group-item ${state.group === name ? 'group-item-selected' : ''} w-full flex items-center justify-between px-3 py-3 rounded-lg transition-colors text-secondary-text hover:text-white hover:bg-white/5" data-chp-group="${escapeHtml(name)}" aria-pressed="${state.group === name}"><div class="flex items-center gap-3 min-w-0"><span class="material-icons-round text-secondary-text text-sm">folder</span><span class="font-medium truncate">${escapeHtml(name)}</span></div><div class="group-item-actions flex items-center gap-2"><span class="group-count text-xs font-bold ${state.group === name ? 'bg-primary/20 text-primary' : 'bg-white/10 text-secondary-text'} px-2 py-0.5 rounded-full">${number(count)}</span></div></button>`).join('');
-        const content = `<div class="chp-group-list space-y-1">${html}</div>`;
+        const html = [...groups].filter(([name]) => name.toLocaleLowerCase().includes(state.groupSearch.toLocaleLowerCase())).map(([name, count]) => `<button type="button" class="group-item ${state.group === name ? 'group-item-selected' : ''} w-full flex items-center justify-between px-3 py-3 rounded-lg transition-colors text-secondary-text hover:text-white hover:bg-white/5" data-chp-group="${escapeHtml(name)}" aria-pressed="${state.group === name}"><div class="flex items-center gap-3 min-w-0"><span class="material-icons-round text-secondary-text text-sm">folder</span><span class="group-rail-name truncate">${escapeHtml(name)}</span></div><div class="group-item-actions flex items-center gap-2"><span class="group-count text-xs font-bold ${state.group === name ? 'bg-primary/20 text-primary' : 'bg-white/10 text-secondary-text'} px-2 py-0.5 rounded-full">${number(count)}</span></div></button>`).join('');
+        const createBox = state.creatingGroup ? `<form class="group-rail-create-box" data-chp-group-create>
+            <input class="group-rail-create-input" data-chp-group-name type="text" maxlength="128" required placeholder="New group name" aria-label="New group name">
+            <div class="group-rail-create-actions">
+                <button class="group-rail-create-action is-primary" type="submit">Create</button>
+                <button class="group-rail-create-action" type="button" data-chp-group-cancel>Cancel</button>
+            </div>
+        </form>` : '';
+        const content = `<div class="chp-group-list space-y-1">${html}</div>${createBox}`;
         if (rail.innerHTML !== content) rail.innerHTML = content;
+        if (state.creatingGroup) setTimeout(() => rail.querySelector('[data-chp-group-name]')?.focus(), 0);
         for (const row of rail.querySelectorAll('[data-chp-group]')) { row.draggable = true; row.classList.toggle('chp-group-multi', state.groupSelected.has(row.dataset.chpGroup)); }
     }
     function invalidate() {
@@ -320,7 +338,7 @@
         state.scope++; stopDrag();
         clearTimeout(state.debounce);
         invalidate();
-        if (resetGroup) { state.group = ''; state.groups = []; state.collapsed.clear(); state.preferencesLoaded = false; state.preferences = { group_order: [], channel_orders: {}, playlist_orders: {} }; state.groupSelected.clear(); state.cut = null; }
+        if (resetGroup) { state.group = ''; state.groups = []; state.collapsed.clear(); state.preferencesLoaded = false; state.preferences = { group_order: [], channel_orders: {}, playlist_orders: {} }; state.groupSelected.clear(); state.cut = null; state.creatingGroup = false; }
         state.offset = 0;
         state.items = []; state.groupItems = []; state.selected.clear(); state.total = 0;
         state.playlistSelected.clear(); state.anchors = { groups: state.anchors.groups };
@@ -462,7 +480,7 @@
         if (!button || button.disabled) return;
         const action = button.dataset.chpAction;
         if (action === 'add') openAdd();
-        else if (action === 'new-group') openNewGroup();
+        else if (action === 'new-group') startGroupCreate();
         else if (action === 'settings') {
             const nav = document.getElementById('nav-settings');
             if (nav) nav.click(); else message('Mở Settings trong menu ứng dụng để cấu hình YouTube API keys.');
@@ -942,17 +960,39 @@
     }
     const lines = value => [...new Set(value.split(/\r?\n/).map(line => line.trim()).filter(Boolean))];
     function openNewGroup() {
+        startGroupCreate();
+    }
+    function startGroupCreate() {
+        if (state.creatingGroup) return;
+        state.creatingGroup = true;
+        renderRail();
+    }
+    function cancelGroupCreate() {
+        state.creatingGroup = false;
+        if (state.rail?.contains(document.activeElement)) document.activeElement.blur();
+        renderRail();
+    }
+    async function saveGroupCreate(submitButton) {
+        const input = state.rail?.querySelector('[data-chp-group-name]');
+        const name = input?.value.trim() || '';
+        if (!name || name.toLowerCase() === 'all') { message('Nhập tên nhóm thực tế, không dùng All.', true); input?.focus(); return; }
+        if (state.groups.some(group => group.name.toLocaleLowerCase() === name.toLocaleLowerCase())) { message('Nhóm này đã tồn tại.', true); input?.focus(); return; }
         const ownerId = state.userId;
-        dialog('Tạo nhóm Channel & Playlist', '<label>Tên nhóm (bắt buộc)<input name="name" required maxlength="128" placeholder="Nhập tên nhóm"></label>', 'Tạo nhóm', async (node, modal) => {
-            const name = node.querySelector('[name="name"]').value.trim();
-            if (!name || name.toLowerCase() === 'all') throw new Error('Nhập tên nhóm thực tế, không dùng All.');
+        if (submitButton) submitButton.disabled = true;
+        if (input) input.disabled = true;
+        try {
             await api('/youtube/groups', 'POST', { name, ...(ownerId ? { target_user_id: ownerId } : {}) });
-            if (state.modal !== modal || state.userId !== ownerId) return;
-            invalidate();
+            if (state.userId !== ownerId) return;
+            state.creatingGroup = false;
             state.group = name; state.offset = 0; state.items = []; state.total = 0;
-            modal.focus = state.tools?.querySelector('.chp-search');
-            return 'Đã tạo nhóm.';
-        });
+            if (state.rail?.contains(document.activeElement)) document.activeElement.blur();
+            input?.blur();
+            await reload();
+            message('Đã tạo nhóm.');
+        } catch (error) {
+            message(errorText(error), true);
+            if (input?.isConnected) { input.disabled = false; input.focus(); }
+        } finally { if (submitButton?.isConnected) submitButton.disabled = false; }
     }
     function openAdd() {
         if (!state.group) { message('Tạo và chọn nhóm trước khi thêm kênh.'); return; }
@@ -1062,7 +1102,7 @@
         for (const name of ['runPlaylistAction', 'copyLinks', 'previewImage', 'exportChannels']) state[name] = typeof options[name] === 'function' ? options[name] : null;
         state.settingsGeneration++;
         state.userId = ''; state.group = ''; state.search = ''; state.filter = 'all'; state.offset = 0;
-        state.items = []; state.groupItems = []; state.groups = []; state.total = 0; state.collapsed.clear(); state.selected.clear(); state.groupSearch = '';
+        state.items = []; state.groupItems = []; state.groups = []; state.total = 0; state.collapsed.clear(); state.selected.clear(); state.groupSearch = ''; state.creatingGroup = false;
         state.preferencesLoaded = false; state.preferences = { group_order: [], channel_orders: {}, playlist_orders: {} };
         state.groupSelected.clear(); state.playlistSelected.clear(); state.anchors = {}; state.cut = null; state.sort = null; state.focusKind = 'channels';
         if (state.tools) state.tools.querySelector('.chp-search').value = '';
