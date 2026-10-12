@@ -2054,26 +2054,6 @@ function showRowContextMenu(event, rowId) {
   positionContextMenu(menu, event.clientX, event.clientY);
 }
 
-function showGroupContextMenu(event, groupId) {
-  const menu = qs('context-menu');
-  if (!menu) return;
-  state.contextGroup = groupId;
-  state.contextItemIds = [];
-  const isAll = groupId === ALL_GROUP_ID;
-  const label = isAll ? ALL_GROUP_LABEL : groupId;
-  menu.innerHTML = `
-    ${contextButton('select-group', 'folder_open', `Open ${label}`)}
-    ${contextButton('add-group', 'create_new_folder', 'Add Group')}
-    ${isAll ? '' : contextButton('rename-group', 'edit', 'Rename group')}
-    ${contextButton(isAll ? 'refresh-all' : 'refresh-group', 'refresh', isAll ? 'Refresh all channels' : `Refresh channels in ${label}`)}
-    ${contextButton(isAll ? 'delete-dead-all' : 'delete-dead-group', 'playlist_remove', isAll ? 'Delete all dead channels' : `Delete dead channels in ${label}`, 'row-context-danger')}
-    <div class="row-context-separator"></div>
-    ${contextButton('clear-group', 'playlist_remove', isAll ? 'Clear all channels' : 'Clear channels in group')}
-    ${isAll ? '' : contextButton('delete-group', 'delete', 'Delete group', 'row-context-danger')}
-  `;
-  positionContextMenu(menu, event.clientX, event.clientY);
-}
-
 function showWorkspaceContextMenu(event) {
   const menu = qs('context-menu');
   if (!menu) return;
@@ -2093,17 +2073,6 @@ function showWorkspaceContextMenu(event) {
     ${contextButton('delete-dead-all', 'delete_sweep', 'Delete all dead channels', 'row-context-danger')}
     <div class="row-context-separator"></div>
     ${contextButton('clear-current', 'playlist_remove', `Clear ${currentLabel}`, 'row-context-danger')}
-  `;
-  positionContextMenu(menu, event.clientX, event.clientY);
-}
-
-function showGroupPanelContextMenu(event) {
-  const menu = qs('context-menu');
-  if (!menu) return;
-  state.contextGroup = ALL_GROUP_ID;
-  state.contextItemIds = [];
-  menu.innerHTML = `
-    ${contextButton('add-group', 'create_new_folder', 'Add Group')}
   `;
   positionContextMenu(menu, event.clientX, event.clientY);
 }
@@ -2789,15 +2758,13 @@ function bindEvents() {
     }
   });
 
-  qs('group-list').addEventListener('contextmenu', (e) => {
-    const group = e.target.closest('[data-group]');
-    e.preventDefault();
-    e.stopPropagation();
-    if (!group) {
-      showGroupPanelContextMenu(e);
-      return;
-    }
-    showGroupContextMenu(e, group.dataset.group);
+  window.GroupRailUI?.bindContextMenu(qs('group-list'), {
+    groupSelector: '[data-group]',
+    getGroupName: element => element.dataset.group,
+    isProtectedGroup: name => name === ALL_GROUP_ID,
+    onCreate: () => createGroup(),
+    onRename: name => renameGroup(name),
+    onDelete: name => deleteGroups([name])
   });
 
   qs('group-list').addEventListener('dragstart', (e) => {

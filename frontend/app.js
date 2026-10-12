@@ -7691,6 +7691,20 @@ document.addEventListener('DOMContentLoaded', async () => {
     const groupList = document.getElementById('group-list');
     document.getElementById('btn-new-linkchecker-group')?.addEventListener('click', startCreateGroupFlow);
     if (groupList) {
+        window.GroupRailUI?.bindContextMenu(groupList, {
+            groupSelector: '[data-group]',
+            getGroupName: element => normalizeGroupName(element.getAttribute('data-group')),
+            isProtectedGroup: name => name.toLowerCase() === ALL_GROUP_ID,
+            onOpenGroup: name => {
+                if (!name || name.toLowerCase() === ALL_GROUP_ID || state.selectedGroupIds.has(name)) return;
+                state.selectedGroupIds.clear();
+                state.selectedGroupIds.add(name);
+                renderGroups();
+            },
+            onCreate: () => startCreateGroupFlow(),
+            onRename: name => startRenameGroupFlow(name),
+            onDelete: name => handleDeleteGroup(name)
+        });
         groupList.addEventListener('mousedown', () => {
             state.selectionScope = 'groups';
         });

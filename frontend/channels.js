@@ -288,10 +288,13 @@
                 }
             });
             rail.addEventListener('dblclick', event => { const name = event.target.closest('[data-chp-group]')?.dataset.chpGroup; if (name) renameGroup(name); });
-            rail.addEventListener('contextmenu', event => {
-                event.preventDefault(); const name = event.target.closest('[data-chp-group]')?.dataset.chpGroup;
-                if (name && !state.groupSelected.has(name)) selectRows('groups', name);
-                openGroupMenu(name, event.clientX, event.clientY);
+            window.GroupRailUI?.bindContextMenu(rail, {
+                groupSelector: '[data-chp-group]',
+                getGroupName: element => element.dataset.chpGroup,
+                onOpenGroup: name => { if (name && !state.groupSelected.has(name)) selectRows('groups', name); },
+                onCreate: () => startGroupCreate(),
+                onRename: name => renameGroup(name),
+                onDelete: () => deleteGroups()
             });
             bindDrag(rail);
             rail.addEventListener('focusout', () => setTimeout(flushRender, 0));
@@ -623,17 +626,6 @@
                 await api('/youtube/groups/delete', 'POST', { names: names.slice(offset, offset + 500) });
             }
             if (scope === state.scope) { state.groupSelected.clear(); state.preferencesLoaded = false; }
-        });
-    }
-    function openGroupMenu(name, x, y) {
-        const actions = [['new', 'New Group']];
-        if (name) actions.push(['rename', 'Đổi tên nhóm'], ['delete', 'Xóa nhóm đã chọn']);
-        if (name === state.group) actions.push(['clear', 'Clear Group']);
-        actionMenu(actions, x, y, action => {
-            if (action === 'new') openNewGroup();
-            if (action === 'rename') renameGroup(name);
-            if (action === 'delete') deleteGroups();
-            if (action === 'clear') clearGroup();
         });
     }
     function clearGroup() {

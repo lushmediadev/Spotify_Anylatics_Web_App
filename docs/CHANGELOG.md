@@ -463,3 +463,7 @@
 - Reason: the YTM frame loads its own font/CSS bundle, Channel & Playlist used a modal create flow, and the prior Channel stylesheet cache key was unchanged.
 - Affected files: `frontend/group-rail.css`, `frontend/index.html`, `frontend/ytm/index.html`, `frontend/app.js`, `frontend/channels.js`, `frontend/ytm/app.js`, `docs/UI_SYSTEM.md`
 - Impact/Risk: Low; group-rail presentation and create-group interaction only.
+### 2026-10-12 - Share group context menu
+- Changed: route right-clicks in all three workspace group rails through `frontend/group-rail.js`; menu always contains only Create Group, Rename Group, and Delete Group, with rename/delete disabled for blank space and protected aggregate groups.
+- Affected files: `frontend/group-rail.js`, `frontend/group-rail.css`, `frontend/index.html`, `frontend/ytm/index.html`, `frontend/app.js`, `frontend/channels.js`, `frontend/ytm/app.js`, `docs/UI_SYSTEM.md`, `docs/DECISIONS.md`, `docs/DECISIONS_INDEX.md`
+- Impact/Risk: Low; group context-menu interactions only.
