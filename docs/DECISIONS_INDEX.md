@@ -4,7 +4,7 @@ Canonical detail lives in `docs/DECISIONS.md`. This file lists active decisions 
 
 | Area | Active decision | Detail source |
 | --- | --- | --- |
-| SEO metadata | Dashboard/login brand as YoutubeCheck; all HTML pages declare robots `nofollow`. | `docs/DECISIONS.md` |
+| Brand/SEO metadata | Dashboard/login use YoutubeCheck, login uses the YouTube play logo; all HTML pages declare robots `nofollow`. | `docs/DECISIONS.md` |
 | UI source | Preserve Shine dashboard layout and do targeted changes only. | `docs/DECISIONS.md` |
 | Palette | Use YouTube Manager light grayscale tokens; retain the green Spotify logo. | `docs/UI_SYSTEM.md` |
 | Roles | Admin quản lý tất cả tài khoản và gán workspace cho manager; assigned users kế thừa live grants, dữ liệu vẫn own-only. | `docs/modules/access-control.md` |

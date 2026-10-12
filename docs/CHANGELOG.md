@@ -430,3 +430,8 @@
 - Preserved: standalone YTM page title and description.
 - Affected files: `frontend/index.html`, `frontend/login.html`, `frontend/ytm/index.html`, `docs/DECISIONS.md`, `docs/DECISIONS_INDEX.md`
 - Impact/Risk: Low; crawler instructions affect search engines that honor the robots meta directive.
+### 2026-10-12 - Replace login branding with the supplied YouTube logo
+- Changed: login header and footer now use YoutubeCheck branding and the supplied blue YouTube play mark.
+- Preserved: sign-in fields, form behavior, and centered card layout.
+- Affected files: `frontend/login.html`, `frontend/youtubecheck-logo.svg`, `docs/UI_SYSTEM.md`, `docs/DECISIONS.md`, `docs/DECISIONS_INDEX.md`
+- Impact/Risk: Low; visual-only login change.

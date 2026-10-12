@@ -23,6 +23,7 @@
 - Headings use `Inter Tight`
 - Body text is compact, mostly `13px` to `15px`
 - Existing uppercase micro-labels and table labels should only be adjusted when the task explicitly changes copy structure
+- Login branding uses the provided blue YouTube play mark with the YoutubeCheck name; retain the compact centered brand header and the existing sign-in form layout.
 
 ## Layout and spacing
 
