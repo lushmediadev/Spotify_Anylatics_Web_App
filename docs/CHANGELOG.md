@@ -445,3 +445,7 @@
 - Preserved: accounts without YouTube access still land on the first workspace they are permitted to use.
 - Affected files: `frontend/app.js`, `frontend/index.html`, `docs/UI_SYSTEM.md`, `docs/DECISIONS.md`, `docs/DECISIONS_INDEX.md`
 - Impact/Risk: Low; changes the post-login landing view only.
+### 2026-10-12 - Use the supplied red YouTube mark across the site
+- Changed: synchronize favicon, login, dashboard sidebar, and YTM brand images to the supplied `youtube-mark.svg`.
+- Affected files: `frontend/favicon.svg`, `frontend/youtubecheck-logo.svg`, `frontend/index.html`, `frontend/login.html`, `frontend/ytm/favicon.svg`, `frontend/ytm/index.html`, `frontend/ytm/youtube-mark.svg`, `docs/UI_SYSTEM.md`, `docs/DECISIONS.md`, `docs/DECISIONS_INDEX.md`
+- Impact/Risk: Low; brand artwork only.

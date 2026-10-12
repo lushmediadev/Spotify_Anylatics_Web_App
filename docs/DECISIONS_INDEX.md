@@ -4,7 +4,7 @@ Canonical detail lives in `docs/DECISIONS.md`. This file lists active decisions 
 
 | Area | Active decision | Detail source |
 | --- | --- | --- |
-| Brand/navigation | YoutubeCheck logo is used for the login and site favicon; YouTube Link Checker is first in the shared sidebar and the default after login when permitted. | `docs/DECISIONS.md` |
+| Brand/navigation | The supplied red YouTube play logo is used for all site brand marks and favicons; YouTube Link Checker is first in the shared sidebar and the default after login when permitted. | `docs/DECISIONS.md` |
 | UI source | Preserve Shine dashboard layout and do targeted changes only. | `docs/DECISIONS.md` |
 | Palette | Use YouTube Manager light grayscale tokens; retain the green Spotify logo. | `docs/UI_SYSTEM.md` |
 | Roles | Admin quản lý tất cả tài khoản và gán workspace cho manager; assigned users kế thừa live grants, dữ liệu vẫn own-only. | `docs/modules/access-control.md` |
