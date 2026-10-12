@@ -10,6 +10,7 @@
     <script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
     <link href="https://fonts.googleapis.com/css2?family=Roboto:wght@300;400;500;700&family=Inter:wght@400;500;600;700&family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@20..48,300..400,0..1,0&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="style.css?v=ytm-24">
+    <link rel="stylesheet" href="/group-rail.css?v=20261012-shared-1">
     <style>aside#sidebar { display: none !important; }</style>
     <script>
         tailwind.config = {
@@ -72,12 +73,12 @@
         <div class="p-5 pb-3 border-b border-black/8 space-y-3">
             <div class="flex items-center justify-between">
                 <h2 class="text-[11px] font-bold uppercase tracking-[0.15em] text-[#202124]">Groups</h2>
-                <button id="btn-new-group" class="text-secondary-text hover:text-[#202124]"><span class="material-symbols-outlined text-lg">add</span></button>
+                <button id="btn-new-group" type="button" class="group-rail-add-btn text-secondary-text hover:text-[#202124]" aria-label="New group" title="New group"><span class="material-symbols-outlined text-lg" aria-hidden="true">add</span></button>
             </div>
             <div id="manager-filter-wrap" class="hidden"></div>
             <div class="relative">
                 <span class="material-symbols-outlined absolute left-2.5 top-1/2 -translate-y-1/2 text-secondary-text text-[18px]">search</span>
-                <input id="group-search" type="text" placeholder="Search groups..." class="w-full bg-[#f1f3f4] border border-[#e5e5e5] rounded-lg pl-9 pr-3 py-2 text-sm text-[#202124] placeholder-[#909090] focus:outline-none focus:border-[#d8d8d8]">
+                <input id="group-search" type="text" placeholder="Search groups..." class="group-rail-search w-full bg-[#f1f3f4] border border-[#e5e5e5] rounded-lg pl-9 pr-3 py-2 text-sm text-[#202124] placeholder-[#909090] focus:outline-none focus:border-[#d8d8d8]">
             </div>
         </div>
         <div id="group-list" class="flex-1 overflow-y-auto p-3 space-y-1"></div>

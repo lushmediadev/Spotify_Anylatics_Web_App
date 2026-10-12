@@ -1,0 +1,67 @@
+/* Shared group-rail controls for the root dashboard and isolated YTM workspace. */
+.group-panel {
+    background: var(--surface-1, #f9f9f9) !important;
+    border-color: var(--stroke-soft, rgba(0, 0, 0, .08)) !important;
+}
+
+.group-panel .group-rail-search,
+#group-search.group-rail-search {
+    border: 1px solid var(--stroke-mid, rgba(0, 0, 0, .14)) !important;
+    border-radius: 14px !important;
+    background: var(--surface-2, #f2f2f2) !important;
+    color: var(--text-main, #0f0f0f) !important;
+    box-shadow: none !important;
+}
+
+.group-panel .group-rail-search::placeholder {
+    color: var(--text-muted, #606060) !important;
+}
+
+.group-panel .group-rail-search:focus,
+#group-search.group-rail-search:focus {
+    border-color: var(--text-main, #0f0f0f) !important;
+    outline: none;
+}
+
+.group-rail-add-btn {
+    display: inline-grid;
+    flex: 0 0 28px;
+    place-items: center;
+    width: 28px;
+    height: 28px;
+    padding: 0 !important;
+    border: 0;
+    border-radius: 6px;
+    background: transparent;
+    color: var(--text-muted, #606060);
+    cursor: pointer;
+    transition: background-color 120ms ease, color 120ms ease;
+}
+
+.group-rail-add-btn:hover {
+    background: var(--surface-2, #f2f2f2);
+    color: var(--text-main, #0f0f0f);
+}
+
+.group-rail-add-btn:focus-visible {
+    outline: 2px solid var(--text-main, #0f0f0f);
+    outline-offset: 2px;
+}
+
+.group-rail-add-btn .material-symbols-outlined {
+    font-size: 18px;
+}
+
+.group-item-selected,
+.group-item-selected:hover,
+.group-item-selected:focus-visible {
+    border-color: transparent !important;
+    background: var(--surface-3, #e5e5e5) !important;
+    color: var(--text-main, #0f0f0f) !important;
+    box-shadow: none !important;
+}
+
+.group-item-selected .material-icons-round:first-child,
+.group-item-selected .material-symbols-outlined:first-child {
+    color: var(--text-main, #0f0f0f) !important;
+}

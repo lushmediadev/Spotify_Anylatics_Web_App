@@ -2864,10 +2864,6 @@ function renderGroups(opts = {}) {
 
     container.innerHTML = `
         ${groupButtons}
-        <button class="w-full flex items-center gap-3 px-3 py-3 rounded-lg text-secondary-text hover:text-primary transition-colors mt-4 cursor-pointer" data-action="new-group">
-            <span class="material-icons-round text-sm">add</span>
-            <span class="font-medium">New Group</span>
-        </button>
         ${createBox}
     `;
 }
@@ -7693,6 +7689,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         });
     }
     const groupList = document.getElementById('group-list');
+    document.getElementById('btn-new-linkchecker-group')?.addEventListener('click', startCreateGroupFlow);
     if (groupList) {
         groupList.addEventListener('mousedown', () => {
             state.selectionScope = 'groups';

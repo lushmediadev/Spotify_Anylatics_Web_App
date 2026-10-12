@@ -449,3 +449,8 @@
 - Changed: synchronize favicon, login, dashboard sidebar, and YTM brand images to the supplied `youtube-mark.svg`.
 - Affected files: `frontend/favicon.svg`, `frontend/youtubecheck-logo.svg`, `frontend/index.html`, `frontend/login.html`, `frontend/ytm/favicon.svg`, `frontend/ytm/index.html`, `frontend/ytm/youtube-mark.svg`, `docs/UI_SYSTEM.md`, `docs/DECISIONS.md`, `docs/DECISIONS_INDEX.md`
 - Impact/Risk: Low; brand artwork only.
+### 2026-10-12 - Align workspace group rails
+- Changed: share group-rail surfaces, search inputs, selected rows, and compact add-group buttons across Spotify Link Checker, Channel & Playlist, and YTM.
+- Preserved: channel group creation remains available from the mobile toolbar; desktop creation sits beside the Groups heading.
+- Affected files: `frontend/group-rail.css`, `frontend/index.html`, `frontend/ytm/index.html`, `frontend/app.js`, `frontend/channels.js`, `frontend/channels.css`, `docs/UI_SYSTEM.md`, `docs/DECISIONS_INDEX.md`
+- Impact/Risk: Low; group-rail visuals and action placement only.
