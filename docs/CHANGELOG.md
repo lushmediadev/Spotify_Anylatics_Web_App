@@ -424,3 +424,9 @@
 - Fixed: removed deployment drift from the prior direct-copy workflow; the VPS now follows the GitHub release path.
 - Affected files: `.gitignore`, `docs/WORKLOG.md`, `docs/CHANGELOG.md`, and VPS helper file modes.
 - Impact/Risk: Low; runtime secrets/data remain untouched and the public Spotify health endpoint remains `200 OK`.
+### 2026-10-12 - Rebrand site metadata and disable crawler link following
+- Changed: dashboard title and description now identify YoutubeCheck; login metadata uses the same brand.
+- Added: robots `nofollow` metadata to dashboard, login, and the isolated YTM page.
+- Preserved: standalone YTM page title and description.
+- Affected files: `frontend/index.html`, `frontend/login.html`, `frontend/ytm/index.html`, `docs/DECISIONS.md`, `docs/DECISIONS_INDEX.md`
+- Impact/Risk: Low; crawler instructions affect search engines that honor the robots meta directive.
