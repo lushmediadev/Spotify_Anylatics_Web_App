@@ -28,7 +28,8 @@
             if (!button || button.disabled) return;
             const action = button.dataset.groupRailAction;
             closeMenu();
-            callbacks[action]?.(groupName);
+            const callbackName = { create: 'onCreate', rename: 'onRename', delete: 'onDelete' }[action];
+            callbacks[callbackName]?.(groupName);
         });
         document.body.appendChild(menu);
         const padding = 8;
