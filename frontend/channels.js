@@ -8,13 +8,13 @@
         items: [], groups: [], total: 0, collapsed: new Set(), generation: 0,
         controller: null, timer: null, debounce: null, modal: null, menu: null,
         loading: false, pendingRender: false, settingsGeneration: 0, rail: null, hasKeys: true, bulkBusy: false,
-        tools: null, groupTools: null, groupSearch: '', groupItems: [], selected: new Set(), onGroupChanged: null,
+        tools: null, groupSearch: '', groupItems: [], selected: new Set(), onGroupChanged: null,
         formatChecked: null, formatUpdatedAt: null, renderUserCell: null, renderPlaylistOwnerCell: null,
         preferences: { group_order: [], channel_orders: {}, playlist_orders: {} }, preferencesLoaded: false,
         preferenceQueue: Promise.resolve(), writePending: 0, scope: 0, drag: null, scrollFrame: null,
         groupSelected: new Set(), playlistSelected: new Set(), focusKind: 'channels', anchors: {}, cut: null,
         runPlaylistAction: null, copyLinks: null, previewImage: null, exportChannels: null, sort: null,
-        widths: null, resize: null, creatingGroup: false
+        widths: null, resize: null
     };
     const escapeHtml = value => String(value ?? '').replace(/[&<>"']/g, ch => ({
         '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
@@ -79,9 +79,9 @@
         state.tools.innerHTML = `<div class="relative group"><span class="material-icons-round absolute left-3 top-1/2 -translate-y-1/2 text-secondary-text text-xl">search</span><input class="chp-search search-pill bg-row-hover border-none rounded-full pl-10 pr-4 py-2 text-sm w-64 focus:ring-1 focus:ring-primary placeholder:text-secondary-text transition-all" type="search" placeholder="Tìm kênh YouTube" aria-label="Tìm kênh YouTube"></div>
             <button type="button" class="btn-ghost flex items-center gap-2 px-4 py-2 rounded-full border border-white/20 hover:border-white transition-colors text-sm font-bold cursor-pointer" data-chp-action="refresh-all"><span class="material-icons-round text-lg">refresh</span>Refresh All</button>
             <button type="button" class="btn-accent flex items-center gap-2 px-6 py-2 rounded-full bg-primary hover:bg-primary/90 text-white transition-all text-sm font-bold cursor-pointer" data-chp-action="add"><span class="material-icons-round text-lg">add</span>Add Channel</button>
-            <label class="chp-mobile-groups">Nhóm <select class="chp-groups" aria-label="Nhóm kênh"></select></label><button type="button" class="chp-new-group-toolbar group-rail-add-btn" data-chp-action="new-group" aria-label="New group" title="New group"><span class="material-symbols-outlined text-lg" aria-hidden="true">add</span></button>`;
+            <label class="chp-mobile-groups">Nhóm <select class="chp-groups" aria-label="Nhóm kênh"></select></label><button type="button" class="chp-new-group-toolbar group-rail-add-btn" data-chp-action="new-group" aria-label="New group" title="New group"><span class="material-icons-round" aria-hidden="true">add</span></button>`;
         state.tools.addEventListener('click', panelClick);
-        host.innerHTML = `<section class="playlist-hero px-5 py-8 mb-0"><div class="flex items-end justify-between gap-6"><div><p class="text-[11px] uppercase tracking-[0.16em] text-secondary-text font-bold">Live Monitoring</p><h2 class="text-[30px] leading-none font-bold mt-2">Channel &amp; Playlist Monitoring</h2><p class="text-sm text-secondary-text mt-2">Theo dõi kênh YouTube và playlist Spotify liên kết.</p></div><div class="chp-kpis flex items-center gap-4 text-xs">${['Channels', 'Active', 'Errors', 'Crawling', 'Selected'].map(key => `<span class="hero-kpi"><b data-chp-kpi="${key}">0</b><em>${key}</em></span>`).join('')}</div></div></section>
+        host.innerHTML = `<section class="playlist-hero px-5 py-8 mb-0"><div class="flex items-end justify-between gap-6"><div><p class="text-[11px] uppercase tracking-[0.16em] text-secondary-text font-bold">Live Monitoring</p><h2 class="text-[30px] leading-none font-bold mt-2">Channel &amp; Playlist</h2><p class="text-sm text-secondary-text mt-2">Theo dõi kênh YouTube và playlist Spotify liên kết.</p></div><div class="chp-kpis flex items-center gap-4 text-xs">${['Channels', 'Active', 'Errors', 'Crawling', 'Selected'].map(key => `<span class="hero-kpi"><b data-chp-kpi="${key}">0</b><em>${key}</em></span>`).join('')}</div></div></section>
             <div class="chp-key-warning" hidden></div><div class="chp-status" role="status" aria-live="polite"></div><div class="chp-list" aria-label="Danh sách kênh"></div>`;
         host.addEventListener('click', panelClick);
         host.addEventListener('contextmenu', event => {
@@ -171,7 +171,7 @@
             const selected = state.playlistSelected.has(row.dataset.chpPlaylist);
             row.classList.toggle('row-selected', selected); row.setAttribute('aria-selected', String(selected));
         }
-        for (const row of state.rail?.querySelectorAll('[data-chp-group]') || []) row.classList.toggle('chp-group-multi', state.groupSelected.has(row.dataset.chpGroup));
+        renderRail();
         updateHero();
     }
     function toCssImageUrl(value) {
@@ -229,8 +229,8 @@
         const collapsed = state.collapsed.has(item.id);
         const url = item.youtube_url || (item.youtube_id ? `https://www.youtube.com/channel/${encodeURIComponent(item.youtube_id)}` : item.query);
         return `<section data-chp-block="${escapeHtml(item.id)}"><div class="list-grid"><div class="custom-grid-row chp-grid chp-channel px-4 py-3 bg-white/5 rounded-lg border border-transparent transition-colors group ${state.selected.has(item.id) ? 'row-selected' : ''}" data-chp-channel="${escapeHtml(item.id)}" draggable="true" tabindex="0" aria-selected="${state.selected.has(item.id)}">
-            <div class="meta-cell stt-cell text-secondary-text">${index + 1}</div><div class="list-asset-cell flex items-center gap-4">${image(item.image)}<div><div class="chp-channel-labels"><span class="list-type-badge">channel</span><span class="chp-playlist-count text-secondary-text">${(item.playlists || []).length} playlists</span></div><h3 class="list-asset-title">${link(url, item.name || item.query || 'Kênh YouTube')}</h3><div class="list-asset-meta"><p class="list-asset-uri text-secondary-text">${escapeHtml(item.youtube_id || item.query || '')}</p></div></div></div>
-            <div class="meta-cell chp-owner-empty">${collapsed ? number((item.playlists || []).length) : ''}</div><div class="meta-cell"><span class="metric-main">${number(item.view_count)}</span></div><div class="meta-cell">${metricDelta(item.view_count_delta, item.delta_days) || '<span class="metric-empty">-</span>'}</div><div class="meta-cell text-right">${checked(item)}</div></div></div>
+            <div class="meta-cell stt-cell text-secondary-text">${index + 1}</div><div class="list-asset-cell flex items-center gap-4">${image(item.image)}<div><div class="chp-channel-labels"><span class="list-type-badge badge-channel">channel</span><span class="chp-playlist-count text-secondary-text">${(item.playlists || []).length} playlists</span></div><h3 class="list-asset-title">${link(url, item.name || item.query || 'Kênh YouTube')}</h3><div class="list-asset-meta"><p class="list-asset-uri text-secondary-text">${escapeHtml(item.youtube_id || item.query || '')}</p></div></div></div>
+            <div class="meta-cell chp-owner-empty">${collapsed ? number((item.playlists || []).length) : ''}</div><div class="meta-cell"><div class="metric-stack"><span class="metric-main">${number(item.view_count)}</span></div></div><div class="meta-cell">${metricDelta(item.view_count_delta, item.delta_days) || '<span class="metric-empty">-</span>'}</div><div class="meta-cell text-right">${checked(item)}</div></div></div>
             <div class="chp-children"${collapsed ? ' hidden' : ''} aria-label="Playlists của ${escapeHtml(item.name || item.query)}"><div class="list-grid">${(item.playlists || []).map((playlist, position) => playlistRow(playlist, position, item.id)).join('') || '<p class="chp-empty">Chưa liên kết playlist. Nhấp chuột phải vào kênh để chọn Edit playlists.</p>'}</div></div></section>`;
     }
     function listHead(labels, grid, filter = false) {
@@ -264,73 +264,37 @@
     }
     function renderRail() {
         const rail = document.getElementById('channel-group-rail');
-        if (!rail) return;
+        if (!rail || !window.GroupRailUI) return;
         if (state.rail !== rail) {
             state.rail = rail;
-            rail.classList.add('chp-group-rail');
-            rail.addEventListener('click', event => {
-                if (event.target.closest('[data-chp-action="new-group"]')) { startGroupCreate(); return; }
-                if (event.target.closest('[data-chp-group-cancel]')) { cancelGroupCreate(); return; }
-                const button = event.target.closest('[data-chp-group]');
-                if (!button) return;
-                const name = button.dataset.chpGroup;
-                selectRows('groups', name, event);
-                if (event.ctrlKey || event.metaKey || event.shiftKey) return;
-                state.group = name; changeScope();
-            });
-            rail.addEventListener('submit', event => {
-                if (!event.target.matches('[data-chp-group-create]')) return;
-                event.preventDefault(); saveGroupCreate(event.submitter);
-            });
-            rail.addEventListener('keydown', event => {
-                if (event.key === 'Escape' && event.target.matches('[data-chp-group-name]')) {
-                    event.preventDefault(); cancelGroupCreate();
-                }
-            });
-            rail.addEventListener('dblclick', event => { const name = event.target.closest('[data-chp-group]')?.dataset.chpGroup; if (name) renameGroup(name); });
-            window.GroupRailUI?.bindContextMenu(rail, {
-                groupSelector: '[data-chp-group]',
-                getGroupName: element => element.dataset.chpGroup,
-                onOpenGroup: name => { if (name && !state.groupSelected.has(name)) selectRows('groups', name); },
-                onCreate: () => startGroupCreate(),
-                onRename: name => renameGroup(name),
-                onDelete: () => deleteGroups()
+            window.GroupRailUI.mount(rail, {
+                keyAttr: 'data-chp-group',
+                emptyText: 'Chưa có nhóm. Nhấn + để tạo nhóm.',
+                deleteNote: 'Kênh được chuyển vào Ungrouped, Spotify Item vẫn được giữ nguyên.',
+                onSelect: (name, event) => {
+                    selectRows('groups', name, event);
+                    if (event.ctrlKey || event.metaKey || event.shiftKey) return;
+                    state.group = name; changeScope();
+                },
+                onContextOpen: name => { if (!state.groupSelected.has(name)) selectRows('groups', name); },
+                onCreate: name => createGroup(name),
+                onRename: (name, next) => renameGroup(name, next),
+                deleteTargets: name => state.groupSelected.has(name) ? visibleIds('groups').filter(value => state.groupSelected.has(value)) : [name],
+                onDelete: names => deleteGroups(names),
+                onError: error => message(errorText(error), true),
             });
             bindDrag(rail);
-            rail.addEventListener('focusout', () => setTimeout(flushRender, 0));
         }
-        const tools = document.getElementById('channel-group-tools');
-        if (tools && state.groupTools !== tools) {
-            state.groupTools = tools;
-            tools.innerHTML = `<div class="chp-group-tools-heading flex items-center justify-between"><h2 class="text-[11px] font-bold uppercase tracking-[0.15em] text-white">Groups</h2><button id="btn-new-group" type="button" class="group-rail-add-btn text-secondary-text hover:text-[#202124]" data-chp-action="new-group" aria-label="New group" title="New group"><span class="material-symbols-outlined text-lg" aria-hidden="true">add</span></button></div><div class="relative"><span class="material-icons-round group-rail-search-icon absolute left-2.5 top-1/2 -translate-y-1/2 text-secondary-text text-[18px]">search</span><input type="search" class="group-rail-search chp-group-search w-full bg-white/5 border border-white/10 rounded-lg pl-9 pr-3 py-2 text-sm text-white placeholder-secondary-text focus:outline-none focus:border-primary/50 focus:bg-white/[0.08] transition-all" placeholder="Search groups..." aria-label="Tìm nhóm kênh"></div>`;
-            tools.addEventListener('click', panelClick);
-            tools.querySelector('input').addEventListener('input', event => { state.groupSearch = event.target.value.trim(); renderRail(); });
-        }
-        if (tools) tools.hidden = !state.visible;
-        rail.hidden = !state.visible;
-        for (const button of rail.querySelectorAll('[data-chp-group]')) {
-            const active = button.dataset.chpGroup === state.group;
-            button.setAttribute('aria-pressed', String(active)); button.classList.toggle('group-item-selected', active);
-            const count = button.querySelector('.group-count');
-            if (count) {
-                count.classList.toggle('bg-primary/20', active); count.classList.toggle('text-primary', active);
-                count.classList.toggle('bg-white/10', !active); count.classList.toggle('text-secondary-text', !active);
-            }
-        }
-        if (rail.contains(document.activeElement)) return;
-        const groups = new Map(state.groups.map(group => [group.name, group.count]));
-        const html = [...groups].filter(([name]) => name.toLocaleLowerCase().includes(state.groupSearch.toLocaleLowerCase())).map(([name, count]) => `<button type="button" class="group-item ${state.group === name ? 'group-item-selected' : ''} w-full flex items-center justify-between px-3 py-3 rounded-lg transition-colors text-secondary-text hover:text-white hover:bg-white/5" data-chp-group="${escapeHtml(name)}" aria-pressed="${state.group === name}"><div class="flex items-center gap-3 min-w-0"><span class="material-icons-round text-secondary-text text-sm">folder</span><span class="group-rail-name truncate">${escapeHtml(name)}</span></div><div class="group-item-actions flex items-center gap-2"><span class="group-count text-xs font-bold ${state.group === name ? 'bg-primary/20 text-primary' : 'bg-white/10 text-secondary-text'} px-2 py-0.5 rounded-full">${number(count)}</span></div></button>`).join('');
-        const createBox = state.creatingGroup ? `<form class="group-rail-create-box" data-chp-group-create>
-            <input class="group-rail-create-input" data-chp-group-name type="text" maxlength="128" required placeholder="New group name" aria-label="New group name">
-            <div class="group-rail-create-actions">
-                <button class="group-rail-create-action is-primary" type="submit">Create</button>
-                <button class="group-rail-create-action" type="button" data-chp-group-cancel>Cancel</button>
-            </div>
-        </form>` : '';
-        const content = `<div class="chp-group-list space-y-1">${html}</div>${createBox}`;
-        if (rail.innerHTML !== content) rail.innerHTML = content;
-        if (state.creatingGroup) setTimeout(() => rail.querySelector('[data-chp-group-name]')?.focus(), 0);
-        for (const row of rail.querySelectorAll('[data-chp-group]')) { row.draggable = true; row.classList.toggle('chp-group-multi', state.groupSelected.has(row.dataset.chpGroup)); }
+        rail.__groupRail.render(state.groups
+            .filter(group => group.name.toLocaleLowerCase().includes(state.groupSearch.toLocaleLowerCase()))
+            .map(group => ({
+                key: group.name,
+                label: group.name,
+                count: number(group.count),
+                selected: state.group === group.name,
+                multi: state.groupSelected.has(group.name) && state.group !== group.name,
+                draggable: true,
+            })));
     }
     function invalidate() {
         state.generation++;
@@ -341,7 +305,7 @@
         state.scope++; stopDrag();
         clearTimeout(state.debounce);
         invalidate();
-        if (resetGroup) { state.group = ''; state.groups = []; state.collapsed.clear(); state.preferencesLoaded = false; state.preferences = { group_order: [], channel_orders: {}, playlist_orders: {} }; state.groupSelected.clear(); state.cut = null; state.creatingGroup = false; }
+        if (resetGroup) { state.group = ''; state.groups = []; state.collapsed.clear(); state.preferencesLoaded = false; state.preferences = { group_order: [], channel_orders: {}, playlist_orders: {} }; state.groupSelected.clear(); state.cut = null; }
         state.offset = 0;
         state.items = []; state.groupItems = []; state.selected.clear(); state.total = 0;
         state.playlistSelected.clear(); state.anchors = { groups: state.anchors.groups };
@@ -417,16 +381,6 @@
     }
     function notifyItems() {
         try { Promise.resolve(state.onItemChanged?.()).catch(() => {}); } catch (_) { /* Shell callback must not mask a successful mutation. */ }
-    }
-    async function mutate(button, path, method, body, affectsItems = false) {
-        const generation = state.generation;
-        if (button) button.disabled = true;
-        try {
-            await api(path, method, body);
-            if (affectsItems) notifyItems();
-            if (generation === state.generation && state.visible) { await reload(); message('Đã gửi yêu cầu.'); }
-        } catch (error) { if (generation === state.generation) message(errorText(error), true); }
-        finally { if (button?.isConnected) button.disabled = false; }
     }
     async function refreshAll(button) {
         if (state.bulkBusy) return;
@@ -604,29 +558,31 @@
         });
         return menu;
     }
-    function renameGroup(name) {
+    async function renameGroup(name, next) {
+        if (next.toLowerCase() === 'all' || state.groups.some(group => group.name !== name && group.name.toLocaleLowerCase() === next.toLocaleLowerCase())) {
+            message('Nhóm này đã tồn tại.', true);
+            return false;
+        }
         const scope = state.scope;
-        dialog('Đổi tên nhóm', `<label>Tên nhóm<input name="name" required maxlength="128" value="${escapeHtml(name)}"></label>`, 'Lưu', async node => {
-            const new_name = node.querySelector('[name="name"]').value.trim();
-            if (!new_name || new_name.toLowerCase() === 'all') throw new Error('Nhập tên nhóm thực tế.');
-            await api('/youtube/groups', 'PATCH', { old_name: name, new_name });
-            if (scope !== state.scope) return;
-            state.preferencesLoaded = false;
-            state.groupSelected.delete(name); state.groupSelected.add(new_name);
-            if (state.group === name) state.group = new_name;
-        });
+        await api('/youtube/groups', 'PATCH', { old_name: name, new_name: next });
+        if (scope !== state.scope) return true;
+        state.preferencesLoaded = false;
+        state.groupSelected.delete(name); state.groupSelected.add(next);
+        if (state.group === name) state.group = next;
+        await reload();
+        return true;
     }
-    function deleteGroups() {
-        const names = visibleIds('groups').filter(name => state.groupSelected.has(name));
-        if (!names.length) return;
+    async function deleteGroups(names) {
         const scope = state.scope;
-        dialog('Xóa nhóm', `<p>Xóa ${names.length} nhóm đã chọn? Kênh được chuyển vào Ungrouped, Spotify Item vẫn được giữ nguyên.</p>`, 'Xóa nhóm', async () => {
-            for (let offset = 0; offset < names.length; offset += 500) {
-                if (scope !== state.scope) return;
-                await api('/youtube/groups/delete', 'POST', { names: names.slice(offset, offset + 500) });
-            }
-            if (scope === state.scope) { state.groupSelected.clear(); state.preferencesLoaded = false; }
-        });
+        for (let offset = 0; offset < names.length; offset += 500) {
+            if (scope !== state.scope) return;
+            await api('/youtube/groups/delete', 'POST', { names: names.slice(offset, offset + 500) });
+        }
+        if (scope !== state.scope) return;
+        state.groupSelected.clear(); state.preferencesLoaded = false;
+        if (names.includes(state.group)) state.group = '';
+        await reload();
+        message(`Đã xóa ${number(names.length)} nhóm.`);
     }
     function clearGroup() {
         const name = state.group;
@@ -659,25 +615,6 @@
             await reload();
         } catch (error) { if (scope === state.scope) { await reload(); message(errorText(error), true); } }
         finally { state.writePending--; }
-    }
-    function unlinkPlaylists() {
-        const pairs = selectedPlaylists();
-        if (!pairs.length) return;
-        const channels = new Map();
-        for (const { channel, item } of pairs) {
-            if (!channels.has(channel.id)) channels.set(channel.id, { channel, ids: new Set() });
-            channels.get(channel.id).ids.add(item.id);
-        }
-        const scope = state.scope;
-        dialog('Gỡ liên kết playlist', `<p>Gỡ ${pairs.length} liên kết đã chọn? Spotify Item không bị xóa.</p>`, 'Gỡ liên kết', async () => {
-            for (const [id, { channel, ids }] of channels) {
-                if (scope !== state.scope) return;
-                const item_ids = (channel.playlists || []).filter(item => !ids.has(item.id)).map(item => item.id);
-                if (item_ids.length > 500) throw new Error('Tối đa 500 playlist trong mỗi lần lưu liên kết.');
-                await api(`/youtube/channels/${encodeURIComponent(id)}/playlists`, 'PUT', { item_ids, urls: [] });
-            }
-            notifyItems(); state.playlistSelected.clear();
-        });
     }
     function openPlaylistMenu(row, x, y) {
         if (!state.playlistSelected.has(row.dataset.chpPlaylist)) selectRows('playlist', row.dataset.chpPlaylist);
@@ -879,7 +816,7 @@
             if (drag.kind === 'channels' && row.hasAttribute('data-chp-group')) { moveChannels(drag.ids, row.dataset.chpGroup); return; }
             if (drag.kind === 'channelgroup') {
                 const ids = reorderedVisible(state.groups.map(group => group.name), visibleIds('groups'), drag.ids, row.dataset.chpGroup, after);
-                state.groups = ordered(state.groups, ids); persistPreferences({ group_order: ids });
+                state.groups = ordered(state.groups, ids, group => group.name); persistPreferences({ group_order: ids });
             } else if (drag.kind === 'channels') {
                 const ids = reorderedVisible(state.groupItems.map(item => item.id), visibleIds('channels'), drag.ids, row.dataset.chpChannel, after);
                 state.groupItems = ordered(state.groupItems, ids); state.items = ordered(state.items, ids);
@@ -898,7 +835,7 @@
         host.addEventListener('dragend', () => { stopDrag(); if (state.pendingRender) flushRender(); });
     }
     function keyboard(event) {
-        if (!state.visible || state.host?.hidden || state.modal || state.menu || state.userId !== String(state.getUser()?.id || '') || event.target.closest('input, textarea, select, [contenteditable]:not([contenteditable="false"]), [role="dialog"]')) return;
+        if (!state.visible || state.host?.hidden || state.modal || state.menu || state.userId !== String(state.getUser()?.id || '') || event.target.closest('input, textarea, select, [contenteditable]:not([contenteditable="false"]), [role="dialog"], [role="alertdialog"]')) return;
         const focus = document.activeElement;
         if (focus?.closest('[data-chp-playlist]')) state.focusKind = 'playlist';
         else if (focus?.closest('[data-chp-channel]')) state.focusKind = 'channels';
@@ -908,8 +845,8 @@
         let run;
         if (modifier && key === 'a') run = () => { const selected = selection(kind); selected.clear(); visibleIds(kind).forEach(id => selected.add(id)); paintSelection(); };
         if (key === 'escape') run = () => { state.selected.clear(); state.playlistSelected.clear(); state.groupSelected.clear(); state.cut = null; paintSelection(); };
-        if (key === 'delete' && selection(kind).size) run = () => kind === 'playlist' ? deleteSpotifyLinks() : kind === 'groups' ? deleteGroups() : deleteChannels();
-        if (key === 'f2' && kind === 'groups' && state.groupSelected.size === 1) run = () => renameGroup([...state.groupSelected][0]);
+        // Group F2/Delete are handled by the shared GroupRailUI so every workspace behaves the same.
+        if (key === 'delete' && kind !== 'groups' && selection(kind).size) run = () => kind === 'playlist' ? deleteSpotifyLinks() : deleteChannels();
         if (modifier && key === 'c' && kind !== 'groups' && selection(kind).size) run = () => kind === 'playlist' ? runAction('copy-selected-links') : copyChannels().catch(error => message(errorText(error), true));
         if (modifier && key === 'x' && kind === 'channels' && state.selected.size) run = () => { state.cut = { owner: state.userId, ids: selectedChannels().map(item => item.id) }; message('Đã cắt kênh. Chọn nhóm đích và nhấn Ctrl/Cmd+V.'); };
         if (modifier && key === 'v' && state.cut && state.group) run = () => moveChannels(state.cut.ids, state.group, state.cut.owner);
@@ -951,40 +888,22 @@
         return modal;
     }
     const lines = value => [...new Set(value.split(/\r?\n/).map(line => line.trim()).filter(Boolean))];
-    function openNewGroup() {
-        startGroupCreate();
+    async function createGroup(name) {
+        if (name.toLowerCase() === 'all' || state.groups.some(group => group.name.toLocaleLowerCase() === name.toLocaleLowerCase())) {
+            message('Nhóm này đã tồn tại.', true);
+            return false;
+        }
+        const ownerId = state.userId;
+        await api('/youtube/groups', 'POST', { name, ...(ownerId ? { target_user_id: ownerId } : {}) });
+        if (state.userId !== ownerId) return true;
+        state.group = name; state.offset = 0; state.items = []; state.total = 0;
+        await reload();
+        message('Đã tạo nhóm.');
+        return true;
     }
     function startGroupCreate() {
-        if (state.creatingGroup) return;
-        state.creatingGroup = true;
         renderRail();
-    }
-    function cancelGroupCreate() {
-        state.creatingGroup = false;
-        if (state.rail?.contains(document.activeElement)) document.activeElement.blur();
-        renderRail();
-    }
-    async function saveGroupCreate(submitButton) {
-        const input = state.rail?.querySelector('[data-chp-group-name]');
-        const name = input?.value.trim() || '';
-        if (!name || name.toLowerCase() === 'all') { message('Nhập tên nhóm thực tế, không dùng All.', true); input?.focus(); return; }
-        if (state.groups.some(group => group.name.toLocaleLowerCase() === name.toLocaleLowerCase())) { message('Nhóm này đã tồn tại.', true); input?.focus(); return; }
-        const ownerId = state.userId;
-        if (submitButton) submitButton.disabled = true;
-        if (input) input.disabled = true;
-        try {
-            await api('/youtube/groups', 'POST', { name, ...(ownerId ? { target_user_id: ownerId } : {}) });
-            if (state.userId !== ownerId) return;
-            state.creatingGroup = false;
-            state.group = name; state.offset = 0; state.items = []; state.total = 0;
-            if (state.rail?.contains(document.activeElement)) document.activeElement.blur();
-            input?.blur();
-            await reload();
-            message('Đã tạo nhóm.');
-        } catch (error) {
-            message(errorText(error), true);
-            if (input?.isConnected) { input.disabled = false; input.focus(); }
-        } finally { if (submitButton?.isConnected) submitButton.disabled = false; }
+        state.rail?.__groupRail.startCreate();
     }
     function openAdd() {
         if (!state.group) { message('Tạo và chọn nhóm trước khi thêm kênh.'); return; }
@@ -997,9 +916,6 @@
             const data = await api('/youtube/channels', 'POST', { urls, group, ...(ownerId ? { target_user_id: ownerId } : {}) });
             return `Đã thêm: ${number(data.accepted ?? data.items?.length ?? 0)}; bỏ qua: ${number(Array.isArray(data.skipped) ? data.skipped.length : data.skipped ?? 0)}.`;
         });
-    }
-    function openDelete(item) {
-        dialog('Xóa kênh', `<p>Xóa ${escapeHtml(item.name || item.query)}? Các Spotify Item đã liên kết vẫn được giữ nguyên.</p>`, 'Xóa kênh', () => api(`/youtube/channels/${encodeURIComponent(item.id)}`, 'DELETE'));
     }
     async function openEdit(item) {
         if (String(item.user_id) !== state.userId || state.userId !== String(state.getUser()?.id || '')) return;
@@ -1080,9 +996,7 @@
         clearInterval(state.timer); clearTimeout(state.debounce);
         closeModal(); closeMenu();
         if (state.host) state.host.hidden = true;
-        if (state.rail) state.rail.hidden = true;
         if (state.tools) state.tools.hidden = true;
-        if (state.groupTools) state.groupTools.hidden = true;
     }
     function init(options) {
         if (typeof options?.request !== 'function' || typeof options?.getUser !== 'function') throw new TypeError('init requires request and getUser functions');
@@ -1094,11 +1008,10 @@
         for (const name of ['runPlaylistAction', 'copyLinks', 'previewImage', 'exportChannels']) state[name] = typeof options[name] === 'function' ? options[name] : null;
         state.settingsGeneration++;
         state.userId = ''; state.group = ''; state.search = ''; state.filter = 'all'; state.offset = 0;
-        state.items = []; state.groupItems = []; state.groups = []; state.total = 0; state.collapsed.clear(); state.selected.clear(); state.groupSearch = ''; state.creatingGroup = false;
+        state.items = []; state.groupItems = []; state.groups = []; state.total = 0; state.collapsed.clear(); state.selected.clear(); state.groupSearch = '';
         state.preferencesLoaded = false; state.preferences = { group_order: [], channel_orders: {}, playlist_orders: {} };
         state.groupSelected.clear(); state.playlistSelected.clear(); state.anchors = {}; state.cut = null; state.sort = null; state.focusKind = 'channels';
         if (state.tools) state.tools.querySelector('.chp-search').value = '';
-        if (state.groupTools) state.groupTools.querySelector('input').value = '';
         return window.ChannelPlaylists;
     }
     document.addEventListener('pointerdown', event => {
@@ -1116,5 +1029,9 @@
     }, true);
     document.addEventListener('pointerdown', event => { if (state.menu && !state.menu.contains(event.target)) closeMenu(); });
     document.addEventListener('focusin', event => { if (state.menu && !state.menu.contains(event.target)) closeMenu(); });
-    window.ChannelPlaylists = { init, show, hide, reload, showKeySettings, syncAccountScope };
+    function setGroupSearch(text) {
+        state.groupSearch = String(text || '');
+        renderRail();
+    }
+    window.ChannelPlaylists = { init, show, hide, reload, showKeySettings, syncAccountScope, setGroupSearch };
 }());

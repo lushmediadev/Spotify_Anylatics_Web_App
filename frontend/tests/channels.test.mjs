@@ -8,6 +8,8 @@ const require = createRequire(import.meta.url);
 const source = await readFile(new URL('../channels.js', import.meta.url), 'utf8');
 const css = await readFile(new URL('../channels.css', import.meta.url), 'utf8');
 const sharedCss = await readFile(new URL('../style.css', import.meta.url), 'utf8');
+const railSource = await readFile(new URL('../group-rail.js', import.meta.url), 'utf8');
+const railCss = await readFile(new URL('../group-rail.css', import.meta.url), 'utf8');
 
 function loadPlaywright() {
     const candidates = ['playwright', process.env.PLAYWRIGHT_MODULE_PATH];
@@ -36,17 +38,18 @@ test('ChannelPlaylists isolated browser behavior', async t => {
     async function fixture() {
         const page = await browser.newPage({ viewport: { width: 997, height: 900 } });
         page.setDefaultTimeout(6000);
-        const html = '<html data-theme="light"><head><meta charset="UTF-8"></head><body><header class="topbar"><div><h1 id="page-title"></h1><span id="breadcrumb-group"></span></div><div id="channel-header-tools"></div></header><aside id="group-panel"><div id="channel-group-tools" class="p-5 pb-3"></div><div id="channel-group-rail"></div></aside><div id="channels-panel"></div>' +
+        const html = '<html data-theme="light"><head><meta charset="UTF-8"></head><body><header class="topbar"><div><h1 id="page-title"></h1><span id="breadcrumb-group"></span></div><div id="channel-header-tools"></div></header><aside id="group-panel" class="group-panel"><div id="channel-group-rail" class="group-rail"></div></aside><div id="channels-panel"></div>' +
             '<div id="youtube-key-settings"></div><button id="nav-settings">Settings</button>';
         await page.route('http://channel.test/', route => route.fulfill({ contentType: 'text/html; charset=utf-8', body: html }));
         await page.goto('http://channel.test/');
-        await page.addStyleTag({ content: sharedCss + css + '\n.flex{display:flex}.items-center{align-items:center}.gap-4{gap:16px}.px-4{padding-left:16px;padding-right:16px}.py-3{padding-top:12px;padding-bottom:12px}.px-5{padding-left:20px;padding-right:20px}.py-8{padding-top:32px;padding-bottom:32px}.text-right{text-align:right}.relative{position:relative}.absolute{position:absolute}.topbar{height:auto;flex-wrap:wrap}body{display:block;overflow:auto}@media(max-width:767px){#group-panel{display:none}}' });
+        await page.addStyleTag({ content: sharedCss + railCss + css + '\n.flex{display:flex}.items-center{align-items:center}.gap-4{gap:16px}.px-4{padding-left:16px;padding-right:16px}.py-3{padding-top:12px;padding-bottom:12px}.px-5{padding-left:20px;padding-right:20px}.py-8{padding-top:32px;padding-bottom:32px}.text-right{text-align:right}.relative{position:relative}.absolute{position:absolute}.topbar{height:auto;flex-wrap:wrap}body{display:block;overflow:auto}@media(max-width:767px){#group-panel{display:none}}' });
         await page.evaluate(() => {
             window.polls = new Map();
             let timerId = 0;
             window.setInterval = callback => { window.polls.set(++timerId, callback); return timerId; };
             window.clearInterval = id => window.polls.delete(id);
         });
+        await page.addScriptTag({ content: railSource });
         await page.addScriptTag({ content: source });
         await page.evaluate(() => {
             window.calls = [];
@@ -227,12 +230,12 @@ test('ChannelPlaylists isolated browser behavior', async t => {
         const page = await workspaceFixture();
         try {
             await page.locator('[data-chp-group="G"]').dblclick();
-            await page.locator('[name="name"]').fill('Renamed'); await page.getByRole('button', { name: 'Lưu', exact: true }).click();
+            await page.locator('[data-rail-input]').fill('Renamed'); await page.keyboard.press('Enter');
             await page.waitForSelector('[data-chp-group="Renamed"]');
             assert.deepEqual(await page.evaluate(() => JSON.parse(window.calls.find(call => call.path === '/youtube/groups' && call.method === 'PATCH').body)), { old_name: 'G', new_name: 'Renamed' });
             await page.locator('[data-chp-group="Renamed"]').click();
             await page.locator('[data-chp-group="Target"]').click({ modifiers: ['Shift'] });
-            assert.equal(await page.locator('.chp-group-multi').count(), 3);
+            assert.equal(await page.locator('#channel-group-rail .group-item-multi, #channel-group-rail .group-item-selected').count(), 3);
             await page.keyboard.press('Delete');
             await page.getByRole('button', { name: 'Xóa nhóm', exact: true }).click();
             await page.waitForSelector('[data-chp-group="Ungrouped"]');
@@ -285,13 +288,13 @@ test('ChannelPlaylists isolated browser behavior', async t => {
     await t.test('group DnD persists a full order and New Group remains appended', async () => {
         const page = await workspaceFixture();
         try {
-            await page.locator('#channel-group-tools input').fill('G');
+            await page.evaluate(() => ChannelPlaylists.setGroupSearch('G'));
             await drag(page, '[data-chp-group="Hidden Group"]', '[data-chp-group="G"]', false);
             await page.waitForFunction(() => window.prefs.group_order.length === 3);
             assert.deepEqual(await page.evaluate(() => window.prefs.group_order), ['Hidden Group', 'G', 'Target']);
-            await page.locator('#channel-group-tools input').fill('');
-            await page.locator('#channel-group-rail [data-chp-action="new-group"]').click();
-            await page.locator('[name="name"]').fill('New'); await page.getByRole('button', { name: 'Tạo nhóm', exact: true }).click();
+            await page.evaluate(() => ChannelPlaylists.setGroupSearch(''));
+            await page.evaluate(() => document.getElementById('channel-group-rail').__groupRail.startCreate());
+            await page.locator('[data-rail-input]').fill('New'); await page.keyboard.press('Enter');
             await page.waitForSelector('[data-chp-group="New"]');
             assert.deepEqual(await page.locator('[data-chp-group]').evaluateAll(rows => rows.map(row => row.dataset.chpGroup)), ['Hidden Group', 'G', 'Target', 'New']);
         } finally { await page.close(); }
@@ -507,13 +510,13 @@ test('ChannelPlaylists isolated browser behavior', async t => {
             });
             assert.equal(await page.locator('[data-chp-group="Nhóm Việt"]').getAttribute('aria-pressed'), 'true');
             assert.equal(await page.locator('[data-chp-group=""]').count(), 0);
-            await page.locator('#channel-group-rail [data-chp-action="new-group"]').click();
-            await page.locator('[name="name"]').fill('   ');
-            await page.getByRole('button', { name: 'Tạo nhóm', exact: true }).click();
-            await page.waitForFunction(() => document.querySelector('.chp-dialog-status').textContent.includes('Nhập tên nhóm'));
+            await page.evaluate(() => document.getElementById('channel-group-rail').__groupRail.startCreate());
+            await page.locator('[data-rail-input]').fill('   ');
+            await page.locator('[data-rail-save]').click();
             assert.equal(await page.evaluate(() => window.calls.filter(call => call.path === '/youtube/groups').length), 0);
-            await page.locator('[name="name"]').fill('  Nhóm mới  ');
-            await page.getByRole('button', { name: 'Tạo nhóm', exact: true }).click();
+            await page.evaluate(() => document.getElementById('channel-group-rail').__groupRail.startCreate());
+            await page.locator('[data-rail-input]').fill('  Nhóm mới  ');
+            await page.keyboard.press('Enter');
             await page.waitForSelector('[data-chp-group="Nhóm mới"]');
             const call = await page.evaluate(() => window.calls.find(entry => entry.path === '/youtube/groups'));
             assert.equal(call.method, 'POST');
@@ -526,7 +529,7 @@ test('ChannelPlaylists isolated browser behavior', async t => {
             await page.setViewportSize({ width: 600, height: 900 });
             assert.equal(await page.locator('.chp-new-group-toolbar').isVisible(), true);
             await page.locator('.chp-new-group-toolbar').click();
-            assert.equal(await page.locator('[name="name"]').isVisible(), true);
+            assert.equal(await page.locator('.group-rail-prompt-input').isVisible(), true);
         } finally { await page.close(); }
     });
 
@@ -605,7 +608,7 @@ test('ChannelPlaylists isolated browser behavior', async t => {
             assert.equal(await page.locator('.chp-groups').isDisabled(), true);
             assert.equal(await page.locator('.chp-groups option').isDisabled(), true);
             assert.equal(await page.locator('.chp-list [data-chp-action="new-group"]').count(), 0);
-            assert.equal(await page.locator('#channel-group-rail [data-chp-action="new-group"]').isVisible(), true);
+            assert.equal(await page.locator('#channel-group-rail .group-rail-empty').isVisible(), true);
             assert.equal(await page.locator('[data-chp-action="add"]').isDisabled(), true);
             assert.equal(await page.evaluate(() => window.calls.filter(call => call.path.startsWith('/youtube/channels?')).length), 1);
             await page.evaluate(() => ChannelPlaylists.reload());
@@ -637,7 +640,7 @@ test('ChannelPlaylists isolated browser behavior', async t => {
             assert.equal(await page.evaluate(() => window.focused === document.activeElement && window.focused.isConnected), true);
             await page.evaluate(() => ChannelPlaylists.hide());
             assert.equal(await page.evaluate(() => window.polls.size), 0);
-            assert.equal(await page.locator('#channel-group-rail').isVisible(), false);
+            assert.equal(await page.locator('#channels-panel').isVisible(), false);
         } finally { await page.close(); }
     });
 
@@ -762,15 +765,15 @@ test('ChannelPlaylists isolated browser behavior', async t => {
             assert.equal(await page.locator('#channel-header-tools .search-pill').count(), 1);
             assert.equal(await page.locator('#channel-header-tools .btn-ghost[data-chp-action="refresh-all"]').count(), 1);
             assert.equal(await page.locator('#channel-header-tools .btn-accent[data-chp-action="add"]').count(), 1);
-            assert.equal(await page.locator('#channel-group-tools input').count(), 1);
-            assert.equal(await page.locator('#channel-group-rail .group-item .material-icons-round').textContent(), 'folder');
+            assert.equal(await page.locator('#channel-group-rail .group-item .group-rail-icon').textContent(), 'folder');
             assert.equal(await page.locator('#channel-group-rail .group-item-selected .group-count').textContent(), '1');
             assert.equal(await page.locator('.chp-mobile-groups').isVisible(), false);
             assert.equal(await page.locator('.playlist-hero').evaluate(node => getComputedStyle(node).minHeight), '230px');
             assert.equal(await page.locator('.playlist-hero h2').evaluate(node => getComputedStyle(node).fontSize), '52px');
             assert.deepEqual(await page.locator('.chp-channel .list-asset-title').evaluate(node => [getComputedStyle(node).fontSize, getComputedStyle(node).fontWeight]), ['15px', '700']);
-            assert.equal(await page.locator('.chp-channel .list-cover-image').evaluate(node => getComputedStyle(node).width), '44px');
-            assert.equal(await page.locator('.chp-children .list-cover-image').evaluate(node => getComputedStyle(node).width), '44px');
+            // Same row geometry as Link Checker / YouTube Link Checker.
+            assert.equal(await page.locator('.chp-channel .list-cover-image').evaluate(node => getComputedStyle(node).width), '70px');
+            assert.equal(await page.locator('.chp-children .list-cover-image').evaluate(node => getComputedStyle(node).width), '70px');
             assert.equal(await page.locator('.chp-channel .status-dot.active').count(), 1);
             assert.equal(await page.locator('.chp-children .list-columns-head').count(), 0);
             assert.equal(await page.locator('.chp-list > .list-head .head-cell-label').allTextContents().then(labels => labels.join('|')), 'STT|Channel|Owner|View|Delta / Days|Checked');
@@ -787,9 +790,9 @@ test('ChannelPlaylists isolated browser behavior', async t => {
             const bounds = await page.locator('.chp-channel-labels').evaluate(node => [...node.children].map(child => child.getBoundingClientRect().toJSON()));
             assert.ok(Math.abs(bounds[0].top - bounds[1].top) < 3);
             assert.ok(bounds[1].left > bounds[0].right);
-            assert.ok(await page.locator('.chp-channel').evaluate(node => node.getBoundingClientRect().height <= 80));
-            assert.ok(await page.locator('.chp-playlist-grid').evaluate(node => node.getBoundingClientRect().height <= 80));
-            assert.ok(await page.locator('.chp-list > .list-head .list-columns-head').evaluate(node => node.getBoundingClientRect().height <= 50));
+            assert.equal(await page.locator('.chp-channel').evaluate(node => getComputedStyle(node).minHeight), '104px');
+            assert.equal(await page.locator('.chp-playlist-grid').evaluate(node => getComputedStyle(node).minHeight), '104px');
+            assert.equal(await page.locator('.chp-list > .list-head .head-cell').first().evaluate(node => getComputedStyle(node).minHeight), '46px');
         } finally { await page.close(); }
     });
 
@@ -924,7 +927,7 @@ test('ChannelPlaylists isolated browser behavior', async t => {
         } finally { await page.close(); }
     });
 
-    await t.test('390px channel topbar grows with controls, never clips or overlaps hero; Spotify is untouched', async () => {
+    await t.test('390px topbar grows with controls and never clips or overlaps hero in every workspace', async () => {
         const page = await fixture();
         try {
             await page.setViewportSize({ width: 390, height: 844 });
@@ -951,8 +954,9 @@ test('ChannelPlaylists isolated browser behavior', async t => {
             assert.equal(geometry.warningFont, '14px');
             assert.ok(geometry.heroTop >= geometry.header.bottom);
             assert.ok(geometry.controls.every(rect => rect.left >= 0 && rect.right <= 390 && rect.top >= 0 && rect.bottom <= geometry.header.bottom));
+            // The narrow-screen topbar layout is shared by every workspace, not only Channel & Playlist.
             await page.evaluate(() => document.body.classList.remove('channels-view'));
-            assert.deepEqual(await page.locator('.topbar').evaluate(node => [getComputedStyle(node).height, getComputedStyle(node).flexDirection]), ['80px', 'row']);
+            assert.equal(await page.locator('.topbar').evaluate(node => getComputedStyle(node).flexDirection), 'column');
             await page.evaluate(() => document.body.classList.add('channels-view'));
             await page.setViewportSize({ width: 1440, height: 900 });
             assert.deepEqual(await page.locator('.topbar').evaluate(node => [getComputedStyle(node).height, getComputedStyle(node).flexDirection]), ['80px', 'row']);
@@ -991,7 +995,6 @@ test('ChannelPlaylists isolated browser behavior', async t => {
             });
             assert.equal(await page.evaluate(() => window.groupChanges.length === window.hiddenCallbackCount), true);
             assert.equal(await page.locator('#channel-header-tools').isVisible(), false);
-            assert.equal(await page.locator('#channel-group-tools').isVisible(), false);
         } finally { await page.close(); }
     });
 });

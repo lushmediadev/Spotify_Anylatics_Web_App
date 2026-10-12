@@ -1,11 +1,11 @@
 ﻿/**
- * SpotiCheck â€” Frontend Application
- * Káº¿t ná»‘i API backend, render dynamic rows, quáº£n lÃ½ state
+ * SpotiCheck — Frontend Application
+ * Kết nối API backend, render dynamic rows, quản lý state
  */
 
-// â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+// ═══════════════════════════════════════════════════════════════════
 // CONFIG
-// â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+// ═══════════════════════════════════════════════════════════════════
 const CONFIG = {
     API_BASE: window.location.hostname === 'localhost'
         ? 'http://localhost:8010/api'
@@ -212,7 +212,6 @@ async function refreshAuthUser() {
             state.pendingJobs.clear();
             state.pendingJobToItem.clear();
         }
-        if (!canAccessView('ytm', user)) document.getElementById('ytm-frame')?.removeAttribute('src');
         if (!canAccessView(state.currentView, user)) switchToView(getDefaultWorkspaceView(user));
         return user;
     })().finally(() => { authRefreshPromise = null; });
@@ -364,18 +363,17 @@ function setupAuthUI() {
 }
 
 
-// â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+// ═══════════════════════════════════════════════════════════════════
 // STATE
-// â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+// ═══════════════════════════════════════════════════════════════════
 const state = {
     items: [],
     filteredItems: [],
     groups: [],
     customGroups: [],
     groupSearchQuery: '',
+    groupSearchByView: {},
     activeGroup: ALL_GROUP_ID,
-    isCreatingGroup: false,
-    renamingGroupId: null,
     searchQuery: '',
     pendingJobs: new Set(),
     pendingJobToItem: new Map(),
@@ -439,13 +437,12 @@ const state = {
     checkedSortMenuOpen: false,
     dataLoadRequestId: 0,
     listRenderToken: 0,
-    lastGroupRenderSignature: '',
     lastListRenderSignature: '',
 };
 
-// â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+// ═══════════════════════════════════════════════════════════════════
 // API CLIENT
-// â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+// ═══════════════════════════════════════════════════════════════════
 class SpotiCheckAPI {
     constructor(baseUrl) {
         this.base = baseUrl;
@@ -630,23 +627,9 @@ class SpotiCheckAPI {
 const api = new SpotiCheckAPI(CONFIG.API_BASE);
 const channelPlaylistAPI = new SpotiCheckAPI(CONFIG.API_BASE + '/channel-playlists');
 
-// â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+// ═══════════════════════════════════════════════════════════════════
 // UTILITY HELPERS
-// â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
-
-/** Format large numbers with suffix (1.2k, 3.4M) */
-function formatNumber(n) {
-    if (n == null || isNaN(n)) return '-';
-    if (n >= 1_000_000) return (n / 1_000_000).toFixed(1).replace(/\.0$/, '') + 'M';
-    if (n >= 1_000) return (n / 1_000).toFixed(1).replace(/\.0$/, '') + 'k';
-    return n.toLocaleString();
-}
-
-/** Format full number with separators: 1000000 -> 1.000.000 */
-function formatDetailedNumber(n) {
-    if (n == null || isNaN(n)) return '-';
-    return Number(n).toLocaleString('vi-VN');
-}
+// ═══════════════════════════════════════════════════════════════════
 
 function formatDetailedMetric(n) {
     if (n == null || isNaN(n)) return '-';
@@ -1662,38 +1645,6 @@ function syncSelectedItemsWithState() {
     }
 }
 
-function mergeItemsKeepOrder(existingItems, incomingItems) {
-    const existing = Array.isArray(existingItems) ? existingItems : [];
-    const incoming = Array.isArray(incomingItems) ? incomingItems : [];
-
-    const incomingBySelectionKey = new Map();
-    incoming.forEach((it) => {
-        const key = selectionKey(it);
-        if (!incomingBySelectionKey.has(key)) {
-            incomingBySelectionKey.set(key, []);
-        }
-        incomingBySelectionKey.get(key).push(it);
-    });
-
-    const merged = [];
-    for (const oldItem of existing) {
-        const key = selectionKey(oldItem);
-        const queue = incomingBySelectionKey.get(key);
-        if (!queue || !queue.length) continue;
-        const next = queue.shift();
-        merged.push({ ...oldItem, ...next });
-        if (!queue.length) {
-            incomingBySelectionKey.delete(key);
-        }
-    }
-
-    incomingBySelectionKey.forEach((queue) => {
-        queue.forEach((it) => merged.push(it));
-    });
-
-    return merged;
-}
-
 function normalizeGroupName(name) {
     return String(name || '').trim();
 }
@@ -1793,14 +1744,6 @@ function getSearchMatchGroupCounts() {
         counts.set(groupName, (counts.get(groupName) || 0) + 1);
     });
     return counts;
-}
-
-function escapeAttrSelectorValue(value) {
-    const input = String(value || '');
-    if (window.CSS && typeof window.CSS.escape === 'function') {
-        return window.CSS.escape(input);
-    }
-    return input.replace(/\\/g, '\\\\').replace(/"/g, '\\"');
 }
 
 function loadCustomGroups() {
@@ -2365,40 +2308,6 @@ function moveItemsByKeys(draggedKeys, targetKey, placement = 'before') {
     return true;
 }
 
-function moveCustomGroupBefore(draggedGroupId, targetGroupId, placement = 'before') {
-    const dragged = normalizeGroupName(draggedGroupId);
-    const target = normalizeGroupName(targetGroupId);
-    if (!dragged || !target || dragged === target) return false;
-    if (dragged.toLowerCase() === ALL_GROUP_ID || target.toLowerCase() === ALL_GROUP_ID) return false;
-
-    const draggedEntry = getGroupEntryById(dragged) || parseGroupEntryId(dragged);
-    const targetEntry = getGroupEntryById(target) || parseGroupEntryId(target);
-    const draggedGroupName = normalizeStoredGroupName(draggedEntry?.name || dragged);
-    const targetGroupName = normalizeStoredGroupName(targetEntry?.name || target);
-    if (!draggedGroupName || !targetGroupName || draggedGroupName.toLowerCase() === targetGroupName.toLowerCase()) return false;
-
-    const current = Array.from(new Set((state.customGroups || []).map(normalizeStoredGroupName).filter(Boolean)));
-    const next = current.slice();
-
-    if (!next.some((name) => name.toLowerCase() === draggedGroupName.toLowerCase())) {
-        next.push(draggedGroupName);
-    }
-    if (!next.some((name) => name.toLowerCase() === targetGroupName.toLowerCase())) {
-        next.push(targetGroupName);
-    }
-
-    const draggedIndex = next.findIndex((name) => name.toLowerCase() === draggedGroupName.toLowerCase());
-    const [movedName] = next.splice(draggedIndex, 1);
-    const targetIndex = next.findIndex((name) => name.toLowerCase() === targetGroupName.toLowerCase());
-    if (targetIndex === -1) return false;
-    const insertIndex = placement === 'after' ? targetIndex + 1 : targetIndex;
-    next.splice(insertIndex, 0, movedName);
-
-    state.customGroups = next;
-    saveCustomGroups();
-    return true;
-}
-
 function syncRowDragUi(container) {
     const host = container || document.getElementById('link-list');
     if (!host) return;
@@ -2410,19 +2319,6 @@ function syncRowDragUi(container) {
         row.classList.toggle('row-drop-target', isDropTarget);
         row.classList.toggle('row-drop-before', isDropTarget && state.dragOverRowPlacement !== 'after');
         row.classList.toggle('row-drop-after', isDropTarget && state.dragOverRowPlacement === 'after');
-    });
-}
-
-function syncGroupDragUi(container) {
-    const host = container || document.getElementById('group-list');
-    if (!host) return;
-    host.querySelectorAll('.group-item[data-group]').forEach((groupBtn) => {
-        const groupId = normalizeGroupName(groupBtn.getAttribute('data-group'));
-        const isDropTarget = Boolean(groupId && state.dragOverGroupId === groupId && state.draggingGroupId !== groupId);
-        groupBtn.classList.toggle('group-item-dragging', Boolean(groupId && state.draggingGroupIds.includes(groupId)));
-        groupBtn.classList.toggle('group-item-drop-target', isDropTarget);
-        groupBtn.classList.toggle('group-drop-before', isDropTarget && state.dragOverGroupPlacement !== 'after');
-        groupBtn.classList.toggle('group-drop-after', isDropTarget && state.dragOverGroupPlacement === 'after');
     });
 }
 
@@ -2749,123 +2645,101 @@ function rebuildGroups() {
     state.activeGroup = remapped ? remapped.id : (groups[0]?.id || ALL_GROUP_ID);
 }
 
-function getGroupRenderSignature(groups, searchMatchCounts = new Map()) {
-    return JSON.stringify({
-        activeGroup: normalizeGroupName(state.activeGroup) || ALL_GROUP_ID,
-        selectedGroupIds: Array.from(state.selectedGroupIds).sort(),
-        renamingGroupId: state.renamingGroupId || '',
-        isCreatingGroup: Boolean(state.isCreatingGroup),
-        draggingGroupIds: state.draggingGroupIds.slice(),
-        dragOverGroupId: state.dragOverGroupId || '',
-        dragOverGroupPlacement: state.dragOverGroupPlacement || '',
-        groupSearchQuery: state.groupSearchQuery || '',
-        searchQuery: state.searchQuery || '',
-        groups: groups.map((group) => [
-            String(group.id || ''),
-            String(group.name || ''),
-            String(group.displayName || group.name || ''),
-            String(group.ownerUserId || ''),
-            Number(group.count || 0),
-            Number(searchMatchCounts.get(normalizeStoredGroupName(group.name || group.displayName || '')) || 0),
-        ].join('|')),
+const GROUP_RAIL_BY_VIEW = { linkchecker: 'group-list', channels: 'channel-group-rail', ytm: 'ytm-group-list' };
+
+function getActiveGroupRail(view = state.currentView) {
+    return document.getElementById(GROUP_RAIL_BY_VIEW[view])?.__groupRail || null;
+}
+
+/** One header (title, + button, search) serves the rail of whichever workspace is visible. */
+function bindGroupPanelHeader() {
+    document.getElementById('btn-new-group')?.addEventListener('click', () => getActiveGroupRail()?.startCreate());
+    document.getElementById('group-search')?.addEventListener('input', (e) => {
+        const value = e.target.value || '';
+        state.groupSearchByView[state.currentView] = value;
+        applyGroupSearch(state.currentView, value);
     });
 }
 
-function renderGroups(opts = {}) {
-    const container = document.getElementById('group-list');
-    if (!container) return;
+function applyGroupSearch(view, value) {
+    if (view === 'linkchecker') {
+        state.groupSearchQuery = value;
+        renderGroups();
+    } else if (view === 'channels') {
+        window.ChannelPlaylists?.setGroupSearch(value);
+    } else if (view === 'ytm') {
+        window.YouTubeChecker?.setGroupSearch(value);
+    }
+}
 
-    const groups = getVisibleSidebarGroups();
-    const searchMatchCounts = getSearchMatchGroupCounts();
-    const nextSignature = getGroupRenderSignature(groups, searchMatchCounts);
-    const hasRenderedContent = container.childElementCount > 0;
-    if (!opts.force && hasRenderedContent && nextSignature === state.lastGroupRenderSignature) {
+function syncGroupPanel(view) {
+    const panel = document.getElementById('group-panel');
+    if (!panel) return;
+    const hasRail = Boolean(GROUP_RAIL_BY_VIEW[view]);
+    setElementDisplay(panel, hasRail ? null : 'none');
+    Object.entries(GROUP_RAIL_BY_VIEW).forEach(([railView, id]) => {
+        const rail = document.getElementById(id);
+        if (rail) rail.hidden = railView !== view;
+    });
+    const search = document.getElementById('group-search');
+    if (search && hasRail) search.value = state.groupSearchByView[view] || '';
+}
+
+function selectLinkCheckerGroup(rawGroupId, event) {
+    if (state.suppressNextGroupClick) {
+        state.suppressNextGroupClick = false;
         return;
     }
-    state.lastGroupRenderSignature = nextSignature;
+    const groupId = normalizeGroupName(rawGroupId) || ALL_GROUP_ID;
+    handleGroupSelection(groupId, event);
+    clearRowSelection();
+    updateAddLinkAvailability();
+    if (state.currentView !== 'linkchecker') {
+        switchToView('linkchecker');
+        return;
+    }
+    updateGroupHeader();
+    renderGroups();
+    showInstantListOrLoading(getBackendListParams(), {
+        keepCurrentOnMiss: true,
+        preserveScroll: false,
+    });
+    loadData({ preserveScroll: false, force: true });
+}
 
-    const groupButtons = groups.map((g) => {
-        const isActive = g.id === state.activeGroup;
-        const isSelected = state.selectedGroupIds.has(g.id);
-        const canDelete = canManageGroupEntry(g);
+function getLinkGroupRail() {
+    return document.getElementById('group-list')?.__groupRail || null;
+}
+
+function renderGroups() {
+    const rail = getLinkGroupRail();
+    if (!rail) return;
+    const searchMatchCounts = getSearchMatchGroupCounts();
+    rail.render(getVisibleSidebarGroups().map((g) => {
+        const isAll = g.id === ALL_GROUP_ID;
         const isDragging = state.draggingGroupIds.includes(g.id);
         const isDropTarget = state.dragOverGroupId === g.id && !isDragging;
-        const isRenaming = Boolean(
-            state.renamingGroupId
-            && state.renamingGroupId.toLowerCase() === g.id.toLowerCase()
-        );
-        const normalizedGroupName = normalizeStoredGroupName(g.name || g.displayName || '');
-        const hasSearchMatch = g.id !== ALL_GROUP_ID && (searchMatchCounts.get(normalizedGroupName) || 0) > 0;
-        const accentStyle = g.id !== ALL_GROUP_ID ? buildGroupAccentStyle(normalizedGroupName) : '';
-        return `
-            <button
-                class="group-item ${canDelete ? 'group-item-has-delete' : ''} ${isSelected ? 'group-item-selected' : ''} ${isDragging ? 'group-item-dragging' : ''} ${isDropTarget ? 'group-item-drop-target' : ''} ${hasSearchMatch ? 'group-item-search-match' : ''} w-full flex items-center justify-between px-3 py-3 rounded-lg transition-colors ${isActive ? 'bg-primary/10 text-white' : 'text-secondary-text hover:text-white hover:bg-white/5'}"
-                data-group="${escapeHtml(g.id)}"
-                draggable="${canDelete ? 'true' : 'false'}"
-                style="${accentStyle}"
-            >
-                <div class="flex items-center gap-3 min-w-0">
-                    <span class="material-icons-round ${isActive ? 'text-primary' : 'text-secondary-text'} text-sm">folder</span>
-                    ${isRenaming
-                        ? `<input
-                            data-role="rename-group-input"
-                            data-group-id="${escapeHtml(g.id)}"
-                            value="${escapeHtml(g.name)}"
-                            class="w-full bg-white/5 border border-primary/50 rounded-lg px-2 py-1 text-[14px] font-semibold text-white focus:outline-none focus:border-primary"
-                        >`
-                        : `<span class="group-rail-name text-[14px] font-semibold truncate" data-role="group-name" data-group-id="${escapeHtml(g.id)}">${escapeHtml(g.displayName || g.name)}</span>`
-                    }
-                </div>
-                <div class="group-item-actions flex items-center gap-2">
-                    ${isRenaming
-                        ? `
-                            <span
-                                class="material-icons-round text-secondary-text hover:text-white text-[18px] cursor-pointer"
-                                title="Save group name"
-                                data-action="save-rename-group"
-                                data-group-id="${escapeHtml(g.id)}"
-                                tabindex="0"
-                            >check</span>
-                            <span
-                                class="material-icons-round text-secondary-text hover:text-white text-[18px] cursor-pointer"
-                                title="Cancel rename"
-                                data-action="cancel-rename-group"
-                                data-group-id="${escapeHtml(g.id)}"
-                                tabindex="0"
-                            >close</span>
-                        `
-                        : `
-                            <span ${g.id === ALL_GROUP_ID ? 'id="group-count-all"' : ''} class="group-count text-xs font-bold ${isActive ? 'bg-primary/20 text-primary' : 'bg-white/10 text-secondary-text'} ${hasSearchMatch ? 'group-count-search-match' : ''} px-2 py-0.5 rounded-full">${g.count}</span>
-                            ${canDelete ? `
-                            <span
-                                class="group-delete-btn material-icons-round"
-                                title="${isSelected && state.selectedGroupIds.size > 1 && !state.selectedGroupIds.has(ALL_GROUP_ID) ? 'Delete selected groups' : 'Delete group'}"
-                                data-action="delete-group"
-                                data-group-id="${escapeHtml(g.id)}"
-                            >delete</span>` : ''}
-                        `
-                    }
-                </div>
-            </button>
-        `;
-    }).join('');
-
-    const createBox = state.isCreatingGroup
-        ? `
-        <div class="group-rail-create-box">
-            <input data-role="new-group-input" type="text" placeholder="Group name..." class="group-rail-create-input">
-            <div class="group-rail-create-actions">
-                <button data-action="create-group" class="group-rail-create-action is-primary">Create</button>
-                <button data-action="cancel-create-group" class="group-rail-create-action">Cancel</button>
-            </div>
-        </div>
-        `
-        : '';
-
-    container.innerHTML = `
-        ${groupButtons}
-        ${createBox}
-    `;
+        const groupName = normalizeStoredGroupName(g.name || g.displayName || '');
+        const hasSearchMatch = !isAll && (searchMatchCounts.get(groupName) || 0) > 0;
+        return {
+            key: g.id,
+            label: g.displayName || g.name,
+            count: g.count,
+            countId: isAll ? 'group-count-all' : '',
+            countClass: hasSearchMatch ? 'group-count-search-match' : '',
+            selected: g.id === state.activeGroup,
+            multi: state.selectedGroupIds.size > 1 && state.selectedGroupIds.has(g.id),
+            protected: !canManageGroupEntry(g),
+            draggable: canManageGroupEntry(g),
+            style: isAll ? '' : buildGroupAccentStyle(groupName),
+            className: [
+                isDragging ? 'group-item-dragging' : '',
+                isDropTarget ? 'group-item-drop-target' : '',
+                isDropTarget ? (state.dragOverGroupPlacement === 'after' ? 'group-drop-after' : 'group-drop-before') : '',
+                hasSearchMatch ? 'group-item-search-match' : '',
+            ].filter(Boolean).join(' '),
+        };
+    }));
 }
 
 function populateGroupSelect() {
@@ -2943,10 +2817,6 @@ function resolveSelectedGroupContext() {
         group: resolvedGroup || null,
         targetUserId: canManageUsers(currentUser) ? (resolvedTargetUserId || null) : null,
     };
-}
-
-function resolveSelectedGroup() {
-    return resolveSelectedGroupContext().group;
 }
 
 function getCurrentListScope() {
@@ -3313,7 +3183,7 @@ function handleGroupSelection(groupId, event) {
     state.activeGroup = normalizedGroupId;
 }
 
-async function handleDeleteGroups(groupIds, opts = {}) {
+async function handleDeleteGroups(groupIds) {
     const normalizedIds = Array.from(new Set((groupIds || [])
         .map((groupId) => normalizeGroupName(groupId))
         .filter(Boolean)))
@@ -3330,14 +3200,6 @@ async function handleDeleteGroups(groupIds, opts = {}) {
         return;
     }
 
-    const confirmed = opts.confirm === false
-        ? true
-        : window.confirm(
-            targets.length > 1
-                ? `Delete ${targets.length} selected groups?\nTheir links will move to Ungrouped.`
-                : `Delete group "${targets[0].name}"?\nIts links will move to Ungrouped.`
-        );
-    if (!confirmed) return;
 
     for (const target of targets) {
         const groupId = normalizeGroupName(target.id);
@@ -3381,10 +3243,6 @@ async function handleDeleteGroups(groupIds, opts = {}) {
     if (deletedIdSet.has(String(state.activeGroup))) {
         state.activeGroup = ALL_GROUP_ID;
     }
-    if (state.renamingGroupId && deletedIdSet.has(String(state.renamingGroupId))) {
-        state.renamingGroupId = null;
-    }
-    state.isCreatingGroup = false;
     state.itemSummary = null;
     syncGroupUI(true);
     await loadData({ preserveScroll: true, force: true });
@@ -3448,10 +3306,10 @@ async function moveCustomGroupsBefore(draggedGroupIds, targetGroupId, placement 
 
 function handleCreateGroup(rawName) {
     const name = normalizeGroupName(rawName);
-    if (!name) return;
+    if (!name) return false;
     if (name.toLowerCase() === ALL_GROUP_ID) {
         showToast('"All Links" is reserved', 'error');
-        return;
+        return false;
     }
 
     const scopedOwnerUserId = getScopedGroupOwnerUserId();
@@ -3461,8 +3319,6 @@ function handleCreateGroup(rawName) {
     ));
     if (existing) {
         state.activeGroup = existing.id;
-        state.isCreatingGroup = false;
-        state.renamingGroupId = null;
         updateGroupHeader();
         renderGroups();
         renderList();
@@ -3477,8 +3333,6 @@ function handleCreateGroup(rawName) {
     state.customGroups.push(name);
     saveCustomGroups();
     state.activeGroup = buildGroupEntryId(name, scopedOwnerUserId);
-    state.isCreatingGroup = false;
-    state.renamingGroupId = null;
     rebuildGroups();
     updateGroupHeader();
     renderGroups();
@@ -3490,57 +3344,13 @@ function handleCreateGroup(rawName) {
     loadData({ force: true });
 }
 
-async function handleDeleteGroup(rawGroupId) {
+/** Groups affected by a delete request on one group: the whole multi-selection when it includes that group. */
+function getGroupDeleteTargets(rawGroupId) {
     const groupId = normalizeGroupName(rawGroupId);
-    if (!groupId || groupId.toLowerCase() === ALL_GROUP_ID) return;
-    const selected = state.selectedGroupIds.has(groupId)
+    if (!groupId || groupId.toLowerCase() === ALL_GROUP_ID) return [];
+    return state.selectedGroupIds.has(groupId)
         ? Array.from(state.selectedGroupIds).filter((id) => String(id).toLowerCase() !== ALL_GROUP_ID)
         : [groupId];
-    await handleDeleteGroups(selected);
-}
-
-function startCreateGroupFlow() {
-    state.isCreatingGroup = true;
-    state.renamingGroupId = null;
-    renderGroups();
-    setTimeout(() => {
-        const input = document.querySelector('#group-list [data-role="new-group-input"]');
-        if (input) input.focus();
-    }, 0);
-}
-
-function cancelCreateGroupFlow() {
-    state.isCreatingGroup = false;
-    renderGroups();
-}
-
-function startRenameGroupFlow(rawGroupId) {
-    const groupId = normalizeGroupName(rawGroupId);
-    if (!groupId || groupId.toLowerCase() === ALL_GROUP_ID) return;
-
-    const target = state.groups.find((g) => normalizeGroupName(g.id).toLowerCase() === groupId.toLowerCase());
-    if (!target) return;
-    if (!canManageGroupEntry(target)) {
-        showToast('You can only rename your own groups', 'info');
-        return;
-    }
-
-    state.isCreatingGroup = false;
-    state.renamingGroupId = target.id;
-    renderGroups();
-    setTimeout(() => {
-        const input = document.querySelector('#group-list [data-role="rename-group-input"]');
-        if (!input) return;
-        input.focus();
-        const len = input.value.length;
-        input.setSelectionRange(len, len);
-    }, 0);
-}
-
-function cancelRenameGroupFlow() {
-    if (!state.renamingGroupId) return;
-    state.renamingGroupId = null;
-    renderGroups();
 }
 
 async function syncGroupItemsToServer(oldName, newName, ownerUserId = null, oldNameVariants = null) {
@@ -3567,35 +3377,22 @@ async function syncGroupItemsToServer(oldName, newName, ownerUserId = null, oldN
     }
 }
 
-function handleRenameGroup(rawGroupId, rawName, opts = {}) {
+function handleRenameGroup(rawGroupId, rawName) {
     const groupId = normalizeGroupName(rawGroupId);
-    if (!groupId || groupId.toLowerCase() === ALL_GROUP_ID) return;
+    if (!groupId || groupId.toLowerCase() === ALL_GROUP_ID) return false;
 
     const target = state.groups.find((g) => normalizeGroupName(g.id).toLowerCase() === groupId.toLowerCase());
-    if (!target) {
-        state.renamingGroupId = null;
-        renderGroups();
-        return;
-    }
+    if (!target) return true;
     if (!canManageGroupEntry(target)) {
         showToast('You can only rename your own groups', 'info');
-        state.renamingGroupId = null;
-        renderGroups();
-        return;
+        return true;
     }
 
     const nextName = normalizeGroupName(rawName);
-    if (!nextName) {
-        if (opts.onBlur) {
-            cancelRenameGroupFlow();
-        } else {
-            showToast('Group name cannot be empty', 'error');
-        }
-        return;
-    }
+    if (!nextName) return true;
     if (nextName.toLowerCase() === ALL_GROUP_ID) {
         showToast('"All Links" is reserved', 'error');
-        return;
+        return false;
     }
 
     const oldKey = normalizeStoredGroupName(target.name).toLowerCase();
@@ -3607,7 +3404,7 @@ function handleRenameGroup(rawGroupId, rawName, opts = {}) {
     ));
     if (duplicate) {
         showToast(`Group "${duplicate.name}" already exists`, 'error');
-        return;
+        return false;
     }
 
     if (!sameByCaseInsensitive || nextName !== target.name) {
@@ -3639,12 +3436,12 @@ function handleRenameGroup(rawGroupId, rawName, opts = {}) {
         syncGroupItemsToServer(oldName, nextName, ownerUserId || null);
     }
 
-    state.renamingGroupId = null;
     syncGroupUI(true);
     renderList({ preserveScroll: true });
     if (!sameByCaseInsensitive || nextName !== target.name) {
-        showToast(`Renamed group: ${target.name} â†’ ${nextName}`, 'success');
+        showToast(`Renamed group: ${target.name} → ${nextName}`, 'success');
     }
+    return true;
 }
 
 function syncGroupUI(syncSelect = false) {
@@ -3660,104 +3457,6 @@ function syncGroupUI(syncSelect = false) {
 function getBadgeClass(type) {
     const map = { playlist: 'badge-playlist', track: 'badge-track', album: 'badge-album', artist: 'badge-artist' };
     return map[type] || 'badge-error';
-}
-
-/** Get dynamic metric labels based on item type */
-function getMetricLabels(type) {
-    switch (type) {
-        case 'artist':   return { metric1: 'Monthly Listeners', metric2: 'Followers' };
-        case 'track':    return { metric1: 'Monthly Plays',     metric2: 'Total Plays' };
-        case 'album':    return { metric1: '-',                 metric2: 'Total Plays' };
-        case 'playlist': return { metric1: 'Followers',         metric2: 'Total Plays' };
-        default:         return { metric1: 'Metric 1',          metric2: 'Metric 2' };
-    }
-}
-
-function getReleaseYear(item) {
-    const candidates = [
-        item?.release_year,
-        item?.release_date,
-        item?.album_release_date,
-        item?.year,
-    ];
-    for (const value of candidates) {
-        if (value == null) continue;
-        const s = String(value).trim();
-        if (!s) continue;
-        const m = s.match(/\b(19|20)\d{2}\b/);
-        if (m) return m[0];
-    }
-    return '-';
-}
-
-/** Get stat icons based on type */
-function getStatIcons(item) {
-    switch (item.type) {
-        case 'playlist':
-            return `
-                <div class="flex items-center gap-1">
-                    <span class="material-icons-round list-stat-icon">favorite_border</span>
-                    <span class="list-stat-value">${formatNumber(item.followers || item.saves)}</span>
-                </div>
-                <div class="flex items-center gap-1">
-                    <span class="material-icons-round list-stat-icon">music_note</span>
-                    <span class="list-stat-value">${formatNumber(item.track_count)}</span>
-                </div>`;
-        case 'track':
-            return `
-                <div class="flex items-center gap-1">
-                    <span class="material-icons-round list-stat-icon">schedule</span>
-                    <span class="list-stat-value">${item.duration || '-'}</span>
-                </div>
-                <div class="flex items-center gap-1">
-                    <span class="material-icons-round list-stat-icon">calendar_today</span>
-                    <span class="list-stat-value">${getReleaseYear(item)}</span>
-                </div>`;
-        case 'album':
-            return `
-                <div class="flex items-center gap-1">
-                    <span class="material-icons-round list-stat-icon">music_note</span>
-                    <span class="list-stat-value">${formatNumber(item.track_count)}</span>
-                </div>
-                <div class="flex items-center gap-1">
-                    <span class="material-icons-round list-stat-icon">calendar_today</span>
-                    <span class="list-stat-value">${getReleaseYear(item)}</span>
-                </div>`;
-        case 'artist':
-            return `
-                <div class="flex items-center gap-1">
-                    <span class="material-icons-round list-stat-icon">people</span>
-                    <span class="list-stat-value">${formatNumber(item.followers)}</span>
-                </div>
-                <div class="flex items-center gap-1">
-                    <span class="material-icons-round list-stat-icon">library_music</span>
-                    <span class="list-stat-value">${formatNumber(item.album_count)} albums</span>
-                </div>`;
-        default:
-            return '';
-    }
-}
-
-/** Get metric 1 value (context-aware) */
-function getMetric1(item) {
-    switch (item.type) {
-        case 'artist':   return formatDetailedMetric(item.monthly_listeners);
-        case 'track':    return formatDetailedMetric(item.monthly_plays);
-        case 'playlist': return formatDetailedMetric(item.followers || item.saves);
-        case 'album':    return '-';
-        default:         return '-';
-    }
-}
-
-/** Get metric 2 value (context-aware) */
-function getMetric2(item) {
-    switch (item.type) {
-        case 'artist':   return formatDetailedMetric(item.total_plays);
-        case 'track':    return formatDetailedMetric(item.playcount);
-        case 'playlist': return formatDetailedMetric(item.total_plays);
-        case 'album':    return formatDetailedMetric(item.total_plays);
-        default:         return '-';
-    }
 }
 
 /** Get status info */
@@ -3817,9 +3516,9 @@ function normalizeJobResult(result, fallback = {}) {
     };
 }
 
-// â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+// ═══════════════════════════════════════════════════════════════════
 // ROW RENDERER
-// â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+// ═══════════════════════════════════════════════════════════════════
 
 function renderRow(item, rowIndex = 0) {
     const status = getStatusInfo(item);
@@ -4525,9 +4224,9 @@ function queueVirtualPagesForRange(start, end) {
     }
 }
 
-// â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+// ═══════════════════════════════════════════════════════════════════
 // RENDER ENGINE
-// â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+// ═══════════════════════════════════════════════════════════════════
 
 function renderList(opts = {}) {
     const preserveScroll = Boolean(opts?.preserveScroll);
@@ -4709,9 +4408,9 @@ function updateApiStatus() {
     }
 }
 
-// â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+// ═══════════════════════════════════════════════════════════════════
 // LINK / PREVIEW HELPERS
-// â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+// ═══════════════════════════════════════════════════════════════════
 
 async function copyToClipboard(value, successMessage) {
     if (!value) return;
@@ -5055,23 +4754,6 @@ function getClipboardContextLabel(items) {
     return 'Clipboard';
 }
 
-function dedupeSubmittedUrls(urls) {
-    const seen = new Set();
-    const deduped = [];
-    let removed = 0;
-    (urls || []).forEach((rawUrl) => {
-        const parsed = parseSpotifyUrl(rawUrl);
-        const key = parsed ? `${parsed.type}:${parsed.id}` : rawUrl.toLowerCase();
-        if (seen.has(key)) {
-            removed += 1;
-            return;
-        }
-        seen.add(key);
-        deduped.push(rawUrl);
-    });
-    return { urls: deduped, removed };
-}
-
 function buildListViewExportRows(items) {
     return (items || []).map((item) => {
         const excel = getExcelColumnValues(item);
@@ -5262,7 +4944,7 @@ async function runStructuredExport(action, items, destination) {
         ? getClipboardRowsForAction(action, payload.rows)
         : payload.rows;
     if (!rows.length) {
-        showToast('KhÃ´ng cÃ³ dá»¯ liá»‡u phÃ¹ há»£p cho kiá»ƒu xuáº¥t nÃ y', 'info');
+        showToast('Không có dữ liệu phù hợp cho kiểu xuất này', 'info');
         return;
     }
     const text = rowsToDelimitedText(rows, '\t');
@@ -5327,10 +5009,13 @@ async function runServerExport(contextAction, selectedItems, exportAPI = api) {
         showToast(`Skipping ${selectedCount - stableItemIds.length} row(s) still crawling`, 'info');
     }
 
-    const confirmText = `Export ${stableItemIds.length} selected row(s)?`;
-    if (!window.confirm(confirmText)) {
-        return true;
-    }
+    const confirmed = await window.GroupRailUI.confirm({
+        title: 'Export',
+        message: `Export ${stableItemIds.length} selected row(s)?`,
+        confirmLabel: 'Export',
+        danger: false,
+    });
+    if (!confirmed) return true;
 
     setExportInProgress(true, 'Exporting data...');
     try {
@@ -5717,10 +5402,14 @@ async function handleDeleteItems(items, opts = {}) {
     const firstLabel = targets[0].name || `${targets[0].type}:${targets[0].spotify_id}`;
     const requireConfirm = opts.confirm !== false;
     if (requireConfirm) {
-        const confirmMessage = deletingMany
-            ? `Delete ${targets.length} selected links?\nThis action cannot be undone.`
-            : `Delete "${firstLabel}"?\nThis action cannot be undone.`;
-        if (!window.confirm(confirmMessage)) return;
+        const confirmed = await window.GroupRailUI.confirm({
+            title: deletingMany ? 'Delete links' : 'Delete link',
+            message: deletingMany
+                ? `Delete ${targets.length} selected links? This action cannot be undone.`
+                : `Delete "${firstLabel}"? This action cannot be undone.`,
+            confirmLabel: 'Delete',
+        });
+        if (!confirmed) return;
     }
     const targetSelectionKeys = new Set(targets.map((item) => selectionKey(item)));
     const targetIdentitySet = new Set(targets.map((item) => itemIdentity(item)));
@@ -5796,11 +5485,6 @@ async function handleDeleteItems(items, opts = {}) {
     showToast(`Deleted ${targets.length - failed}/${targets.length} links (some failed to sync)`, 'info');
 }
 
-async function handleDeleteItem(item) {
-    if (!item) return;
-    await handleDeleteItems([item]);
-}
-
 function markItemAsRefreshing(item, nowIso) {
     return {
         ...item,
@@ -5827,7 +5511,7 @@ function updateLoadedItemsById(itemIds, updater) {
 async function handleRefreshItem(item) {
     if (!item) return;
     if (item.id && String(item.id).startsWith('temp-')) {
-        showToast('Link nÃ y Ä‘ang crawl, Ä‘á»£i hoÃ n táº¥t rá»“i refresh láº¡i', 'info');
+        showToast('Link này đang crawl, đợi hoàn tất rồi refresh lại', 'info');
         return;
     }
     if (!state.apiOnline) {
@@ -5875,11 +5559,13 @@ async function clearList() {
         showToast('List is already empty', 'info');
         return;
     }
-    const confirmed = window.confirm(
-        scope.group
-            ? `Clear all links in "${scope.label}"?\nThis action cannot be undone.`
-            : 'Clear all links in the current scope?\nThis action cannot be undone.'
-    );
+    const confirmed = await window.GroupRailUI.confirm({
+        title: 'Clear list',
+        message: scope.group
+            ? `Clear all links in "${scope.label}"? This action cannot be undone.`
+            : 'Clear all links in the current scope? This action cannot be undone.',
+        confirmLabel: 'Clear',
+    });
     if (!confirmed) return;
 
     const scopedIdentitySet = new Set(scope.items.map((item) => itemIdentity(item)));
@@ -6006,22 +5692,9 @@ async function refreshAllItems() {
     }
 }
 
-function openSpotifyPopup(url) {
-    const w = CONFIG.POPUP_WIDTH;
-    const h = CONFIG.POPUP_HEIGHT;
-    const left = window.screenX + window.outerWidth - w - 30;
-    const top = window.screenY + 60;
-
-    window.open(
-        url,
-        'spotify_preview',
-        `width=${w},height=${h},left=${left},top=${top},resizable=yes,scrollbars=yes,toolbar=no,menubar=no,location=yes,status=no`
-    );
-}
-
-// â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+// ═══════════════════════════════════════════════════════════════════
 // MODAL HANDLERS
-// â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+// ═══════════════════════════════════════════════════════════════════
 
 function openModal() {
     if (state.activeGroup === ALL_GROUP_ID) {
@@ -6153,11 +5826,8 @@ async function submitSingle() {
     }
 }
 
-async function submitBatch() {
-    return submitSingle();
-}
 // TOAST NOTIFICATIONS
-// â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+// ═══════════════════════════════════════════════════════════════════
 
 function showToast(message, type = 'info') {
     const container = document.getElementById('toast-container');
@@ -6174,9 +5844,9 @@ function showToast(message, type = 'info') {
     }, 4000);
 }
 
-// â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
-// POLLING â€” Check pending job status
-// â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+// ═══════════════════════════════════════════════════════════════════
+// POLLING — Check pending job status
+// ═══════════════════════════════════════════════════════════════════
 
 function startPolling() {
     if (!canAccessView('linkchecker')) return;
@@ -6353,9 +6023,9 @@ async function pollJobs() {
     }
 }
 
-// â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+// ═══════════════════════════════════════════════════════════════════
 // SEARCH
-// â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+// ═══════════════════════════════════════════════════════════════════
 
 const handleSearch = debounce((query) => {
     state.searchQuery = query;
@@ -6370,11 +6040,11 @@ function reloadListAfterQueryStateChange() {
     loadData({ preserveScroll: false, force: true });
 }
 
-// â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+// ═══════════════════════════════════════════════════════════════════
 // DATA LOADING (with demo fallback)
-// â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+// ═══════════════════════════════════════════════════════════════════
 
-/** Demo data â€” shown when backend is not available */
+/** Demo data — shown when backend is not available */
 function getDemoData() {
     return [
         {
@@ -6388,7 +6058,7 @@ function getDemoData() {
         },
         {
             id: 'demo-2', spotify_id: '5Rrf7iqB3Pjx', type: 'playlist',
-            name: 'Winter Jazz CafÃ© â€” Cozy Fireplace Ambience',
+            name: 'Winter Jazz Café — Cozy Fireplace Ambience',
             image: 'https://picsum.photos/seed/jazz2/128/128',
             owner_name: 'David Jazz', owner_image: 'https://randomuser.me/api/portraits/women/68.jpg',
             added_date: '10/02 11:20', followers: 4200, saves: 4200, track_count: 95,
@@ -6398,7 +6068,7 @@ function getDemoData() {
         },
         {
             id: 'demo-3', spotify_id: '2N3D9rE', type: 'album',
-            name: 'Midnight Sax â€” Smooth Saxophone Sessions',
+            name: 'Midnight Sax — Smooth Saxophone Sessions',
             image: 'https://picsum.photos/seed/jazz3/128/128',
             owner_name: 'Marc C.', owner_image: null,
             added_date: '09/02 14:44', followers: 1800, saves: 1800, track_count: 12,
@@ -6407,7 +6077,7 @@ function getDemoData() {
         },
         {
             id: 'demo-4', spotify_id: '1A4K', type: 'playlist',
-            name: 'Bebop Essentials â€” Classic Bebop Jazz Standards',
+            name: 'Bebop Essentials — Classic Bebop Jazz Standards',
             image: 'https://picsum.photos/seed/jazz4/128/128',
             owner_name: 'Erik Vance', owner_image: 'https://randomuser.me/api/portraits/men/75.jpg',
             added_date: '06/02 14:29', followers: 28400, saves: 28400, track_count: 210,
@@ -6416,7 +6086,7 @@ function getDemoData() {
         },
         {
             id: 'demo-5', spotify_id: '9Vb2', type: 'playlist',
-            name: 'Nu Jazz Waves â€” Future Jazz & Electronic Grooves',
+            name: 'Nu Jazz Waves — Future Jazz & Electronic Grooves',
             image: 'https://picsum.photos/seed/jazz5/128/128',
             owner_name: 'Liam Stone', owner_image: 'https://randomuser.me/api/portraits/men/22.jpg',
             added_date: '06/02 14:29', followers: 5900, saves: 5900, track_count: 88,
@@ -6425,7 +6095,7 @@ function getDemoData() {
         },
         {
             id: 'demo-6', spotify_id: '6rqhFg', type: 'track',
-            name: "I Won't Never Go â€” Smooth Jazz Ballad",
+            name: "I Won't Never Go — Smooth Jazz Ballad",
             image: 'https://picsum.photos/seed/track1/128/128',
             owner_name: 'Tony Blues', owner_image: 'https://randomuser.me/api/portraits/men/55.jpg',
             added_date: '10/02 11:20', saves: 18200, duration: '4:32',
@@ -6434,7 +6104,7 @@ function getDemoData() {
         },
         {
             id: 'demo-7', spotify_id: '8mXk2j', type: 'track',
-            name: 'All Night Long â€” Saxophone Lounge Mix',
+            name: 'All Night Long — Saxophone Lounge Mix',
             image: 'https://picsum.photos/seed/track2/128/128',
             owner_name: 'Nina Sax', owner_image: 'https://randomuser.me/api/portraits/women/31.jpg',
             added_date: '10/02 11:20', saves: 7400, duration: '3:48',
@@ -6443,7 +6113,7 @@ function getDemoData() {
         },
         {
             id: 'demo-8', spotify_id: '3kLmNp', type: 'track',
-            name: 'Slow Tunes â€” Late Night Jazz Session',
+            name: 'Slow Tunes — Late Night Jazz Session',
             image: 'https://picsum.photos/seed/track3/128/128',
             owner_name: 'Jazz Keys', owner_image: 'https://randomuser.me/api/portraits/men/42.jpg',
             added_date: '10/02 11:20', saves: 12100, duration: '5:12',
@@ -6452,7 +6122,7 @@ function getDemoData() {
         },
         {
             id: 'demo-9', spotify_id: 'Xp4qR8', type: 'playlist',
-            name: 'Late Night Bar â€” Smooth Saxophone & Whiskey Blues',
+            name: 'Late Night Bar — Smooth Saxophone & Whiskey Blues',
             image: 'https://picsum.photos/seed/jazz7/128/128',
             owner_name: 'Chris Miller', owner_image: 'https://randomuser.me/api/portraits/men/85.jpg',
             added_date: '10/02 11:20', followers: 1200, saves: 1200, track_count: 122,
@@ -6461,7 +6131,7 @@ function getDemoData() {
         },
         {
             id: 'demo-10', spotify_id: '0Pq2', type: 'playlist',
-            name: 'Jazz Morning â˜• Positive Energy Bossa Nova & CafÃ© Music',
+            name: 'Jazz Morning ☕ Positive Energy Bossa Nova & Café Music',
             image: 'https://picsum.photos/seed/lofi8/128/128',
             owner_name: 'JazzBot', owner_image: null,
             added_date: '10/02 11:24', followers: 92500, saves: 92500, track_count: 450,
@@ -6627,9 +6297,9 @@ async function loadData(opts = {}) {
     }
 }
 
-// â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+// ═══════════════════════════════════════════════════════════════════
 // HERO IMAGE
-// â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+// ═══════════════════════════════════════════════════════════════════
 
 async function runBackgroundSync(opts = {}) {
     if (!canAccessView('linkchecker')) return;
@@ -6686,9 +6356,9 @@ function updateHeroImage() {
     hero.style.setProperty('--hero-image', `url('${heroImage}')`);
 }
 
-// â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+// ═══════════════════════════════════════════════════════════════════
 // STICKY HEADER
-// â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+// ═══════════════════════════════════════════════════════════════════
 
 function initStickyHeader() {
     const listWrap = document.querySelector('.list-wrap');
@@ -6724,7 +6394,7 @@ function initVirtualListScroll() {
 
 
 // ===================================================================
-// VIEW MANAGEMENT â€” single source of truth for panel switching
+// VIEW MANAGEMENT — single source of truth for panel switching
 // ===================================================================
 
 state.currentView = 'ytm'; // linkchecker | channels | settings | account | users
@@ -6754,123 +6424,90 @@ function updateAddLinkAvailability() {
     });
 }
 
+function setWorkspaceTitle(title) {
+    const breadcrumb = document.getElementById('breadcrumb-group');
+    const pageTitle = document.getElementById('page-title');
+    if (breadcrumb) breadcrumb.textContent = title;
+    if (pageTitle) pageTitle.textContent = title;
+}
+
 function switchToView(view) {
     if (!canAccessView(view)) view = getDefaultWorkspaceView();
     updateWorkspaceNavigation(view);
+    const listWrap = document.querySelector('.list-wrap');
+    const settingsPanel = document.getElementById('settings-panel');
+    const accountPanel = document.getElementById('account-panel');
+    const channelsPanel = document.getElementById('channels-panel');
     const ytmPanel = document.getElementById('ytm-panel');
-    setElementDisplay(ytmPanel, view === 'ytm' ? 'block' : 'none');
-    setElementDisplay(document.querySelector('main > .topbar'), view === 'ytm' ? 'none' : null);
-    const ytmFrame = document.getElementById('ytm-frame');
-    if (view === 'ytm' && ytmFrame && !ytmFrame.getAttribute('src')) ytmFrame.src = '/ytm/index.html?v=20261009-workspaces-1';
-    var listWrap = document.querySelector('.list-wrap');
-    var settingsPanel = document.getElementById('settings-panel');
-    var accountPanel = document.getElementById('account-panel');
-    var channelsPanel = document.getElementById('channels-panel');
-    var adminPanel = document.getElementById('admin-users-panel');
-    var btnRefresh = document.getElementById('btn-refresh');
-    var btnAddLink = document.getElementById('btn-add-link');
-    var searchWrap = document.getElementById('search-input') ? document.getElementById('search-input').parentElement : null;
-    var breadcrumb = document.getElementById('breadcrumb-group');
-    var pageTitle = document.getElementById('page-title');
-    // Find the breadcrumb parent label (e.g. "Link Checker" > "All Links")
-    var breadcrumbParent = breadcrumb && breadcrumb.previousElementSibling
-        ? breadcrumb.previousElementSibling.previousElementSibling
-        : null;
+    const adminPanel = document.getElementById('admin-users-panel');
+    const breadcrumb = document.getElementById('breadcrumb-group');
+    const pageTitle = document.getElementById('page-title');
+    const breadcrumbParent = document.getElementById('breadcrumb-parent');
 
-    // 1) Hide ALL panels
-    setElementDisplay(listWrap, 'none');
-    setElementDisplay(settingsPanel, 'none');
-    setElementDisplay(accountPanel, 'none');
-    setElementDisplay(channelsPanel, 'none');
-    window.ChannelPlaylists?.hide();
-    setElementDisplay(document.getElementById('spotify-header-tools'), view === 'linkchecker' ? null : 'none');
+    // 1) Hide every panel and per-workspace toolbar, then show the requested one.
+    [listWrap, settingsPanel, accountPanel, channelsPanel, ytmPanel, adminPanel].forEach((panel) => setElementDisplay(panel, 'none'));
+    if (view !== 'channels') window.ChannelPlaylists?.hide();
+    if (view !== 'ytm') window.YouTubeChecker?.hide();
+    setElementDisplay(document.getElementById('spotify-header-tools'), view === 'linkchecker' ? 'flex' : 'none');
     setElementDisplay(document.getElementById('channel-header-tools'), view === 'channels' ? 'flex' : 'none');
-    setElementDisplay(adminPanel, 'none');
+    setElementDisplay(document.getElementById('ytm-header-tools'), view === 'ytm' ? 'flex' : 'none');
+    setElementDisplay(document.querySelector('main > footer'), view === 'linkchecker' ? null : 'none');
 
-    // 2) Update sidebar nav active state
-    var navMap = { ytm: 'nav-ytm', linkchecker: 'nav-links', channels: 'nav-channels', settings: 'nav-settings', account: 'nav-settings', users: 'nav-users' };
-    document.querySelectorAll('#sidebar nav a').forEach(function(a) {
-        a.classList.remove('text-white', 'bg-white/10');
-        a.classList.add('text-secondary-text');
-        var icon = a.querySelector('.material-icons-round');
-        if (icon) icon.classList.remove('text-primary');
+    // 2) Sidebar active state
+    const navMap = { ytm: 'nav-ytm', linkchecker: 'nav-links', channels: 'nav-channels', settings: 'nav-settings', account: 'nav-settings', users: 'nav-users' };
+    document.querySelectorAll('#sidebar nav a').forEach((a) => {
+        const active = a.id === navMap[view];
+        a.classList.toggle('text-white', active);
+        a.classList.toggle('bg-white/10', active);
+        a.classList.toggle('text-secondary-text', !active);
+        a.querySelector('.material-icons-round')?.classList.toggle('text-primary', active);
     });
-    var activeNav = document.getElementById(navMap[view]);
-    if (activeNav) {
-        activeNav.classList.add('text-white', 'bg-white/10');
-        activeNav.classList.remove('text-secondary-text');
-        var icon = activeNav.querySelector('.material-icons-round');
-        if (icon) icon.classList.add('text-primary');
-    }
 
-    // 3) Show/hide toolbar (only for linkchecker)
-    var showToolbar = (view === 'linkchecker');
-    setElementDisplay(btnRefresh, showToolbar ? null : 'none');
-    setElementDisplay(btnAddLink, showToolbar ? null : 'none');
-    setElementDisplay(searchWrap, showToolbar ? null : 'none');
-
-    // 4) Show the correct panel and load its data
+    // 3) Group rail + data for the selected panel
     state.currentView = view;
     document.body.classList.toggle('channels-view', view === 'channels');
     updateAddLinkAvailability();
-    const groupPanel = document.getElementById('group-panel');
-    if (groupPanel) {
-        setElementDisplay(groupPanel, ['linkchecker', 'channels'].includes(view) ? null : 'none');
-        Array.from(groupPanel.children).forEach((child) => {
-            setElementDisplay(child, ['channel-group-rail', 'channel-group-tools'].includes(child.id)
-                ? (view === 'channels' ? null : 'none')
-                : (view === 'linkchecker' ? null : 'none'));
-        });
-    }
-    setElementDisplay(document.querySelector('main > footer'), view === 'linkchecker' ? null : 'none');
+    syncGroupPanel(view);
+    const setHeader = (parent, crumb, title = crumb) => {
+        if (breadcrumbParent) breadcrumbParent.textContent = parent;
+        if (breadcrumb && crumb != null) breadcrumb.textContent = crumb;
+        if (pageTitle && title != null) pageTitle.textContent = title;
+    };
 
     if (view === 'linkchecker') {
         setElementDisplay(listWrap, null);
         rebuildGroups();
+        renderGroups();
         renderList({ preserveScroll: true, force: true });
-        if (breadcrumbParent) breadcrumbParent.textContent = 'Link Checker';
+        setHeader('Link Checker', null, null);
         updateGroupHeader();
         showInstantListOrLoading(getBackendListParams(), {
             keepCurrentOnMiss: true,
             preserveScroll: true,
         });
         loadData({ preserveScroll: true });
+    } else if (view === 'ytm') {
+        setElementDisplay(ytmPanel, 'flex');
+        setHeader('YouTube', null, null);
+        window.YouTubeChecker?.show();
+    } else if (view === 'channels') {
+        setElementDisplay(channelsPanel, 'block');
+        setHeader('YouTube', 'Channel & Playlist');
+        window.ChannelPlaylists?.show();
     } else if (view === 'settings') {
         setElementDisplay(settingsPanel, 'block');
-        if (breadcrumbParent) breadcrumbParent.textContent = 'YouTube';
-        if (breadcrumb) breadcrumb.textContent = 'Settings';
-        if (pageTitle) pageTitle.textContent = 'API & Export Settings';
+        setHeader('YouTube', 'Settings', 'API & Export Settings');
         loadSettingsData();
         window.ChannelPlaylists?.showKeySettings(document.getElementById('youtube-key-settings'));
     } else if (view === 'account') {
         setElementDisplay(accountPanel, 'block');
-        if (breadcrumbParent) breadcrumbParent.textContent = 'Account';
-        if (breadcrumb) breadcrumb.textContent = 'Profile';
-        if (pageTitle) pageTitle.textContent = 'Account Settings';
+        setHeader('Account', 'Profile', 'Account Settings');
         loadSettingsData();
-    } else if (view === 'channels') {
-        setElementDisplay(channelsPanel, 'block');
-        if (breadcrumbParent) breadcrumbParent.textContent = 'YouTube';
-        if (breadcrumb) breadcrumb.textContent = 'Channel & Playlist';
-        if (pageTitle) pageTitle.textContent = 'Channel & Playlist';
-        window.ChannelPlaylists?.show();
     } else if (view === 'users') {
         setElementDisplay(adminPanel, 'block');
-        if (breadcrumbParent) breadcrumbParent.textContent = getRoleLabel(getAuthUser()?.role);
-        if (breadcrumb) breadcrumb.textContent = 'Users';
-        if (pageTitle) pageTitle.textContent = 'User Management';
+        setHeader(getRoleLabel(getAuthUser()?.role), 'Users', 'User Management');
         loadAdminUsers({ force: true });
     }
-}
-
-// Legacy wrappers for backward compatibility
-function showSettings() { switchToView('settings'); }
-function hideSettings() {
-    if (state.currentView === 'settings') switchToView('linkchecker');
-}
-function showAdminUsers() { switchToView('users'); }
-function hideAdminUsers() {
-    if (state.currentView === 'users') switchToView('linkchecker');
 }
 
 function loadSettingsData() {
@@ -7062,9 +6699,9 @@ async function handleAvatarRemove() {
 
 
 
-// â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+// ═══════════════════════════════════════════════════════════════════
 // CUSTOM DROPDOWN COMPONENT
-// â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+// ═══════════════════════════════════════════════════════════════════
 
 /**
  * Creates a custom dropdown replacing a native <select>
@@ -7172,9 +6809,9 @@ document.addEventListener('click', function() {
 });
 
 
-// â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+// ═══════════════════════════════════════════════════════════════════
 // ADMIN USER MANAGEMENT
-// â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+// ═══════════════════════════════════════════════════════════════════
 
 let _adminUsersCache = [];
 
@@ -7609,13 +7246,11 @@ window.closeAdminPwModal = closeAdminPwModal;
 window.submitAdminResetPassword = submitAdminResetPassword;
 window.adminToggleActive = adminToggleActive;
 window.adminDeleteUser = adminDeleteUser;
-window.showAdminUsers = showAdminUsers;
-window.hideAdminUsers = hideAdminUsers;
 
 
-// â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+// ═══════════════════════════════════════════════════════════════════
 // INIT
-// â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+// ═══════════════════════════════════════════════════════════════════
 
 document.addEventListener('DOMContentLoaded', async () => {
     if (!requireAuth()) return;
@@ -7626,12 +7261,6 @@ document.addEventListener('DOMContentLoaded', async () => {
         console.warn('[Auth] Could not refresh account:', err.message);
     }
     setupAuthUI();
-    window.addEventListener('message', (event) => {
-        const frame = document.getElementById('ytm-frame');
-        if (event.origin !== location.origin || event.source !== frame?.contentWindow) return;
-        if (event.data?.type !== 'spoticheck-workspace-forbidden' || event.data.workspace !== 'youtube') return;
-        refreshAuthUser().catch((err) => console.warn('[Auth] Could not refresh permissions:', err.message));
-    });
     const refreshPermissions = () => {
         if (!document.hidden) refreshAuthUser().catch((err) => console.warn('[Auth] Could not refresh permissions:', err.message));
     };
@@ -7681,159 +7310,31 @@ document.addEventListener('DOMContentLoaded', async () => {
     if (adminCreateBtn) {
         adminCreateBtn.addEventListener('click', openAdminCreateModal);
     }
-    const groupSearchInput = document.getElementById('group-search');
-    if (groupSearchInput) {
-        groupSearchInput.addEventListener('input', (e) => {
-            state.groupSearchQuery = e.target.value || '';
-            renderGroups();
-        });
-    }
+    bindGroupPanelHeader();
     const groupList = document.getElementById('group-list');
-    document.getElementById('btn-new-linkchecker-group')?.addEventListener('click', startCreateGroupFlow);
     if (groupList) {
-        window.GroupRailUI?.bindContextMenu(groupList, {
-            groupSelector: '[data-group]',
-            getGroupName: element => normalizeGroupName(element.getAttribute('data-group')),
-            isProtectedGroup: name => name.toLowerCase() === ALL_GROUP_ID,
-            onOpenGroup: name => {
-                if (!name || name.toLowerCase() === ALL_GROUP_ID || state.selectedGroupIds.has(name)) return;
-                state.selectedGroupIds.clear();
-                state.selectedGroupIds.add(name);
-                renderGroups();
+        window.GroupRailUI.mount(groupList, {
+            keyAttr: 'data-group',
+            emptyText: 'Chưa có nhóm. Nhấn + để tạo nhóm.',
+            deleteNote: 'Link trong nhóm sẽ được chuyển về Ungrouped.',
+            onSelect: (groupId, event) => selectLinkCheckerGroup(groupId, event),
+            onContextOpen: (groupId) => {
+                if (state.selectedGroupIds.has(groupId)) return;
+                selectLinkCheckerGroup(groupId, {});
             },
-            onCreate: () => startCreateGroupFlow(),
-            onRename: name => startRenameGroupFlow(name),
-            onDelete: name => handleDeleteGroup(name)
+            onCreate: (name) => handleCreateGroup(name),
+            onRename: (groupId, name) => handleRenameGroup(groupId, name),
+            deleteTargets: getGroupDeleteTargets,
+            onDelete: (groupIds) => handleDeleteGroups(groupIds),
+            onError: (err) => showToast(err.message || String(err), 'error'),
         });
+        renderGroups();
         groupList.addEventListener('mousedown', () => {
             state.selectionScope = 'groups';
         });
-        groupList.addEventListener('click', (e) => {
-            const deleteGroupBtn = e.target.closest('[data-action="delete-group"]');
-            const saveRenameBtn = e.target.closest('[data-action="save-rename-group"]');
-            const cancelRenameBtn = e.target.closest('[data-action="cancel-rename-group"]');
-            const groupBtn = e.target.closest('[data-group]');
-            const newGroupBtn = e.target.closest('[data-action="new-group"]');
-            const createGroupBtn = e.target.closest('[data-action="create-group"]');
-            const cancelCreateBtn = e.target.closest('[data-action="cancel-create-group"]');
-            if (deleteGroupBtn) {
-                e.preventDefault();
-                e.stopPropagation();
-                handleDeleteGroup(deleteGroupBtn.getAttribute('data-group-id'));
-                return;
-            }
-            if (saveRenameBtn) {
-                e.preventDefault();
-                e.stopPropagation();
-                const groupId = saveRenameBtn.getAttribute('data-group-id');
-                const selectorGroupId = escapeAttrSelectorValue(groupId || '');
-                const input = groupList.querySelector(`[data-role="rename-group-input"][data-group-id="${selectorGroupId}"]`);
-                handleRenameGroup(groupId, input?.value || '');
-                return;
-            }
-            if (cancelRenameBtn) {
-                e.preventDefault();
-                e.stopPropagation();
-                cancelRenameGroupFlow();
-                return;
-            }
-            if (createGroupBtn) {
-                const input = groupList.querySelector('[data-role="new-group-input"]');
-                handleCreateGroup(input?.value);
-                return;
-            }
-            if (cancelCreateBtn) {
-                cancelCreateGroupFlow();
-                return;
-            }
-            if (newGroupBtn) {
-                startCreateGroupFlow();
-                return;
-            }
-            if (e.target.closest('[data-role="rename-group-input"]')) return;
-            if (!groupBtn) return;
-            if (state.suppressNextGroupClick) {
-                state.suppressNextGroupClick = false;
-                return;
-            }
-            const groupId = normalizeGroupName(groupBtn.getAttribute('data-group')) || ALL_GROUP_ID;
-            const groupName = e.target.closest('[data-role="group-name"]');
-            const currentGroupId = normalizeGroupName(state.activeGroup) || ALL_GROUP_ID;
-            const isPurePrimaryClick = !e.shiftKey && !e.ctrlKey && !e.metaKey;
-            if (
-                groupName
-                && e.detail >= 2
-                && isPurePrimaryClick
-                && groupId.toLowerCase() !== ALL_GROUP_ID
-                && groupId.toLowerCase() === currentGroupId.toLowerCase()
-            ) {
-                e.preventDefault();
-                e.stopPropagation();
-                startRenameGroupFlow(groupId);
-                return;
-            }
-            if (state.renamingGroupId) return;
-            handleGroupSelection(groupId, e);
-            state.isCreatingGroup = false;
-            clearRowSelection();
-            updateAddLinkAvailability();
-            // If currently on Settings or Users tab, navigate back to Link Checker
-            if (state.currentView !== 'linkchecker') {
-                switchToView('linkchecker');
-            } else {
-                updateGroupHeader();
-                renderGroups();
-                showInstantListOrLoading(getBackendListParams(), {
-                    keepCurrentOnMiss: true,
-                    preserveScroll: false,
-                });
-                loadData({ preserveScroll: false, force: true });
-            }
-        });
-        groupList.addEventListener('dblclick', (e) => {
-            const groupName = e.target.closest('[data-role="group-name"]');
-            if (!groupName) return;
-            const groupId = normalizeGroupName(groupName.getAttribute('data-group-id'));
-            if (!groupId || groupId.toLowerCase() === ALL_GROUP_ID) return;
-            const currentGroupId = normalizeGroupName(state.activeGroup) || ALL_GROUP_ID;
-            if (groupId.toLowerCase() !== currentGroupId.toLowerCase()) return;
-            e.preventDefault();
-            e.stopPropagation();
-            startRenameGroupFlow(groupId);
-        });
-        groupList.addEventListener('keydown', (e) => {
-            const renameInput = e.target.closest('[data-role="rename-group-input"]');
-            if (renameInput) {
-                if (e.key === 'Enter') {
-                    e.preventDefault();
-                    handleRenameGroup(renameInput.getAttribute('data-group-id'), renameInput.value);
-                    return;
-                }
-                if (e.key === 'Escape') {
-                    e.preventDefault();
-                    cancelRenameGroupFlow();
-                    return;
-                }
-            }
-
-            if (e.key !== 'Enter') return;
-            const input = e.target.closest('[data-role="new-group-input"]');
-            if (!input) return;
-            e.preventDefault();
-            handleCreateGroup(input.value);
-        });
-        groupList.addEventListener('focusout', (e) => {
-            const renameInput = e.target.closest('[data-role="rename-group-input"]');
-            if (!renameInput || !state.renamingGroupId) return;
-            const related = e.relatedTarget;
-            if (related && related.closest('[data-action="save-rename-group"], [data-action="cancel-rename-group"]')) {
-                return;
-            }
-            handleRenameGroup(renameInput.getAttribute('data-group-id'), renameInput.value, { onBlur: true });
-        });
         groupList.addEventListener('dragstart', (e) => {
             const groupBtn = e.target.closest('[data-group][draggable="true"]');
-            if (!groupBtn || e.target.closest('[data-action="delete-group"], [data-role="rename-group-input"]')) {
+            if (!groupBtn || e.target.closest('[data-rail-delete], [data-rail-input]')) {
                 e.preventDefault();
                 return;
             }
@@ -7854,7 +7355,7 @@ document.addEventListener('DOMContentLoaded', async () => {
                 e.dataTransfer.effectAllowed = 'move';
                 e.dataTransfer.setData('text/plain', selectedGroupIds.join(','));
             }
-            syncGroupDragUi(groupList);
+            renderGroups();
         });
         groupList.addEventListener('dragover', (e) => {
             const groupBtn = e.target.closest('[data-group]');
@@ -7870,7 +7371,7 @@ document.addEventListener('DOMContentLoaded', async () => {
                 if (targetGroupId === state.dragOverGroupId) return;
                 state.dragOverGroupId = targetGroupId;
                 state.dragOverGroupPlacement = 'before';
-                syncGroupDragUi(groupList);
+                renderGroups();
                 return;
             }
             if (targetGroupId.toLowerCase() === ALL_GROUP_ID) return;
@@ -7879,7 +7380,7 @@ document.addEventListener('DOMContentLoaded', async () => {
             if (targetGroupId === state.dragOverGroupId && placement === state.dragOverGroupPlacement) return;
             state.dragOverGroupId = targetGroupId;
             state.dragOverGroupPlacement = placement;
-            syncGroupDragUi(groupList);
+            renderGroups();
         });
         groupList.addEventListener('drop', async (e) => {
             const groupBtn = e.target.closest('[data-group]');
@@ -7898,7 +7399,7 @@ document.addEventListener('DOMContentLoaded', async () => {
                 state.dragOverRowPlacement = 'before';
                 state.dragOverGroupId = null;
                 state.dragOverGroupPlacement = 'before';
-                syncGroupDragUi(groupList);
+                renderGroups();
                 renderList({ preserveScroll: true });
                 window.setTimeout(() => {
                     state.suppressNextRowClick = false;
@@ -7927,7 +7428,7 @@ document.addEventListener('DOMContentLoaded', async () => {
             state.draggingGroupId = null;
             state.dragOverGroupId = null;
             state.dragOverGroupPlacement = 'before';
-            syncGroupDragUi(groupList);
+            renderGroups();
             window.setTimeout(() => {
                 state.suppressNextGroupClick = false;
             }, 0);
@@ -8077,7 +7578,7 @@ document.addEventListener('DOMContentLoaded', async () => {
             state.dragOverRowPlacement = 'before';
             state.dragOverGroupId = null;
             syncRowDragUi(listElForDelete);
-            syncGroupDragUi(document.getElementById('group-list'));
+            renderGroups();
             window.setTimeout(() => {
                 state.suppressNextRowClick = false;
             }, 0);
@@ -8143,16 +7644,30 @@ document.addEventListener('DOMContentLoaded', async () => {
         runPlaylistAction: runChannelPlaylistAction,
         exportChannels: exportChannelRows,
         onGroupChanged: (name) => {
-            if (state.currentView !== 'channels') return;
-            const title = name || 'Channel & Playlist';
-            const breadcrumb = document.getElementById('breadcrumb-group');
-            const pageTitle = document.getElementById('page-title');
-            if (breadcrumb) breadcrumb.textContent = title;
-            if (pageTitle) pageTitle.textContent = title;
+            if (state.currentView === 'channels') setWorkspaceTitle(name || 'Channel & Playlist');
         },
         onItemChanged: () => {
             state.listScopeCache?.clear();
             state.itemSummary = null;
+        },
+    });
+    window.YouTubeChecker?.init({
+        request: (path, options) => api._fetchRaw(path, options),
+        getUser: getAuthUser,
+        toast: showToast,
+        copyText: (text) => copyToClipboard(text, 'Copied link'),
+        previewImage: openImagePreview,
+        createDropdown: createCustomDropdown,
+        updateDropdown: updateCustomDropdownOptions,
+        onTitle: (title) => {
+            if (state.currentView === 'ytm') setWorkspaceTitle(title);
+        },
+        cells: {
+            owner: (item) => renderOwnerUpdatedCell(item, '', formatUpdatedAt(item.last_checked || item.created_at)),
+            metric: (value) => renderMetricCell(value, null, null),
+            delta: renderDeltaBadge,
+            timeAgo,
+            status: getStatusInfo,
         },
     });
     document.getElementById('nav-channels')?.addEventListener('click', (e) => {
@@ -8266,7 +7781,7 @@ document.addEventListener('DOMContentLoaded', async () => {
             const deletableGroupIds = Array.from(state.selectedGroupIds).filter((groupId) => String(groupId).toLowerCase() !== ALL_GROUP_ID);
             if (!typingTarget && deletableGroupIds.length > 0) {
                 e.preventDefault();
-                handleDeleteGroups(deletableGroupIds);
+                getLinkGroupRail()?.requestDelete(deletableGroupIds[0]);
                 return;
             }
         }
@@ -8289,7 +7804,8 @@ document.addEventListener('DOMContentLoaded', async () => {
         }
         if ((e.ctrlKey || e.metaKey) && e.key === 'k') {
             e.preventDefault();
-            document.getElementById('search-input').focus();
+            // Focus the search box of whichever workspace is visible.
+            [...document.querySelectorAll('.topbar .search-pill')].find((input) => input.offsetParent)?.focus();
         }
     });
     const handleOutsideSelectionClear = (e) => {

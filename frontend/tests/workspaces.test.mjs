@@ -35,9 +35,9 @@ function fixture(account) {
 test('effective workspaces preserve legacy defaults, inheritance, empty access, and the independent combined workspace', () => {
   const { context } = fixture({ role: 'admin' });
   const cases = [
-    [{ role: 'admin' }, ['youtube', 'spotify', 'youtube-spotify'], 'channels'],
+    [{ role: 'admin' }, ['youtube', 'spotify', 'youtube-spotify'], 'ytm'],
     [{ role: 'manager' }, ['youtube'], 'ytm'],
-    [{ role: 'user' }, ['youtube', 'spotify', 'youtube-spotify'], 'channels'],
+    [{ role: 'user' }, ['youtube', 'spotify', 'youtube-spotify'], 'ytm'],
     [{ role: 'manager', workspaces: ['spotify'] }, ['spotify'], 'linkchecker'],
     [{ role: 'user', manager_id: 'manager', workspaces: ['youtube-spotify'] }, ['youtube-spotify'], 'channels'],
     [{ role: 'user', manager_id: 'inactive-manager', workspaces: [] }, [], 'settings'],
@@ -119,8 +119,9 @@ test('sidebar and direct view navigation enforce effective assigned-user access'
     state: {}, ALL_GROUP_ID: 'all', window: { ChannelPlaylists: { hide() {}, show() { throw new Error('forbidden combined view'); }, showKeySettings() {} } },
     updateAddLinkAvailability() {}, rebuildGroups() {}, renderList() {}, updateGroupHeader() {},
     showInstantListOrLoading() {}, getBackendListParams: () => ({}), loadData() {}, loadSettingsData() {},
+    syncGroupPanel() {}, renderGroups() {},
   });
-  vm.runInContext(source.slice(source.indexOf('function setElementDisplay('), source.indexOf('// Legacy wrappers')), context);
+  vm.runInContext(source.slice(source.indexOf('function setElementDisplay('), source.indexOf('function loadSettingsData()')), context);
   context.switchToView('channels');
   assert.equal(context.state.currentView, 'linkchecker');
   assert.equal(elements['nav-channels'].style.display, 'none');
@@ -241,17 +242,22 @@ test('a periodic role refresh creates a working Users link without duplicate cli
   assert.equal(prevented, true);
 });
 
-test('YTM 403 notifies its same-origin parent with throttling for API and downloads', async () => {
+test('YTM requests go through the shared API client so 401/403 handling is identical to other workspaces', async () => {
   const ytmSource = fs.readFileSync(new URL('../ytm/app.js', import.meta.url), 'utf8');
-  const messages = [];
-  const context = vm.createContext({ CONFIG: { API_BASE: '/api/ytm' }, token: () => 'token',
-    window: { location: { origin: 'http://localhost' }, parent: { postMessage: (...args) => messages.push(args) } },
-    fetch: async () => ({ status: 403, ok: false, clone: () => ({ json: async () => ({ detail: 'Forbidden' }) }) }),
+  const calls = [];
+  const context = vm.createContext({
+    state: { options: { request: async (requestPath, options) => {
+      calls.push([requestPath, options?.method || 'GET']);
+      if (requestPath.endsWith('/forbidden')) throw new Error('Forbidden');
+      return { json: async () => ({ ok: true }), blob: async () => 'blob' };
+    } } },
   });
-  vm.runInContext(ytmSource.slice(ytmSource.indexOf('let lastForbiddenNotification'), ytmSource.indexOf('function buildQuery(')), context);
-  await assert.rejects(() => context.apiFetch('/items'), /Forbidden/);
-  await assert.rejects(() => context.apiDownload('/export'), /Forbidden/);
-  assert.equal(messages.length, 1);
-  assert.deepEqual(json(messages[0]), [{ type: 'spoticheck-workspace-forbidden', workspace: 'youtube' }, 'http://localhost']);
-  assert.match(source, /event\.origin !== location\.origin \|\| event\.source !== frame\?\.contentWindow/);
+  vm.runInContext(ytmSource.slice(ytmSource.indexOf('async function apiFetch('), ytmSource.indexOf('function buildQuery(')), context);
+  assert.deepEqual(json(await context.apiFetch('/items')), { ok: true });
+  assert.equal(await context.apiDownload('/items/export', { method: 'POST' }), 'blob');
+  await assert.rejects(() => context.apiFetch('/forbidden'), /Forbidden/);
+  assert.deepEqual(calls, [['/ytm/items', 'GET'], ['/ytm/items/export', 'POST'], ['/ytm/forbidden', 'GET']]);
+  assert.match(source, /window\.YouTubeChecker\?\.init\(\{\s*request: \(path, options\) => api\._fetchRaw\(path, options\)/);
+  assert.match(source, /res\.status === 403 && path !== '\/auth\/me'/);
+  assert.doesNotMatch(ytmSource, /postMessage|window\.parent/);
 });

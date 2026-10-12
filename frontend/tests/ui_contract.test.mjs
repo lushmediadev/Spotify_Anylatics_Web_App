@@ -4,10 +4,13 @@ import fs from "node:fs";
 import path from "node:path";
 import vm from "node:vm";
 
-const root = "D:/Spotify_AnylaticsWeb_App/frontend";
+const root = path.resolve(path.dirname(new URL(import.meta.url).pathname.replace(/^\/([A-Za-z]:)/, "$1")), "..");
 const appJs = fs.readFileSync(path.join(root, "app.js"), "utf8");
 const indexHtml = fs.readFileSync(path.join(root, "index.html"), "utf8");
 const styleCss = fs.readFileSync(path.join(root, "style.css"), "utf8");
+const groupRailCss = fs.readFileSync(path.join(root, "group-rail.css"), "utf8");
+const groupRailJs = fs.readFileSync(path.join(root, "group-rail.js"), "utf8");
+const ytmJs = fs.readFileSync(path.join(root, "ytm", "app.js"), "utf8");
 
 test("channel playlist actions reuse Spotify exporters and refresh exactly selected owned items", async () => {
   const calls = [];
@@ -34,9 +37,10 @@ test("channel playlist actions reuse Spotify exporters and refresh exactly selec
   assert.deepEqual(calls, ['p1']);
 });
 
-test("channels is the first navigation item and the default landing view", () => {
+test("YouTube Link Checker is the first navigation item and the default landing view", () => {
+  assert.ok(indexHtml.indexOf('id="nav-ytm"') < indexHtml.indexOf('id="nav-channels"'));
   assert.ok(indexHtml.indexOf('id="nav-channels"') < indexHtml.indexOf('id="nav-links"'));
-  assert.match(appJs, /state\.currentView = 'channels'/);
+  assert.match(appJs, /state\.currentView = 'ytm'/);
   const init = appJs.slice(appJs.indexOf("document.addEventListener('DOMContentLoaded'"));
   assert.match(init, /switchToView\(getDefaultWorkspaceView\(\)\)/);
   assert.doesNotMatch(init, /loadData\(\)\.then/);
@@ -63,7 +67,6 @@ test("YouTube page reuses the shell and leaves own profile accessible", () => {
   assert.match(indexHtml, /id="youtube-key-settings"/);
   assert.match(indexHtml, /id="account-panel"/);
   assert.match(indexHtml, /id="channel-header-tools"/);
-  assert.match(indexHtml, /id="channel-group-tools"/);
   assert.ok(indexHtml.indexOf('src="channels.js?') < indexHtml.indexOf('src="app.js?'));
   assert.match(appJs, /profileWrap\.onclick = \(\) => switchToView\('account'\)/);
   assert.match(appJs, /exportHost\.appendChild\(exportPanel\)/);
@@ -125,7 +128,7 @@ test("Spotify group navigation excludes aggregate and selects a named group", ()
     isAdminAllUsersMode: () => false,
     getAdminGroupDisplayName: name => name,
   });
-  vm.runInContext(appJs.slice(appJs.indexOf('function rebuildGroups()'), appJs.indexOf('function getGroupRenderSignature(')), context);
+  vm.runInContext(appJs.slice(appJs.indexOf('function rebuildGroups()'), appJs.indexOf('const GROUP_RAIL_BY_VIEW')), context);
   context.rebuildGroups();
   assert.equal(state.activeGroup, 'Jazz');
   assert.equal(state.groups.some(group => group.id === 'all'), false);
@@ -327,7 +330,7 @@ test("all-links search highlights rows and group cards by group accent", () => {
   assert.doesNotMatch(appJs, /GROUP_ACCENT_PALETTE/);
   assert.match(appJs, /group-item-search-match/);
   assert.match(appJs, /row-group-search-match/);
-  assert.match(styleCss, /\.group-item-search-match/);
+  assert.match(groupRailCss, /\.group-item-search-match/);
   assert.match(styleCss, /\.row-group-search-match/);
   assert.match(appJs, /loadData\(\{ preserveScroll: false, force: true \}\)/);
 });
@@ -407,4 +410,44 @@ test("refresh all loads the full virtual scope before batching", () => {
   assert.match(appJs, /showToast\(`Loading \$\{state\.listTotal\} links before refresh\.\.\.`/);
   assert.match(appJs, /targetItems = await loadAllVirtualItemsForCurrentScope\(\)/);
   assert.match(appJs, /updateLoadedItemsById\(refreshableItems\.map\(\(item\) => item\.id\)/);
+});
+
+test("YouTube Link Checker renders in-page with the shared shell instead of an iframe", () => {
+  assert.doesNotMatch(indexHtml, /<iframe|ytm-frame/);
+  assert.doesNotMatch(appJs, /ytm-frame|spoticheck-workspace-forbidden/);
+  for (const id of ['ytm-panel', 'ytm-header-tools', 'ytm-group-list', 'ytm-link-list', 'ytm-add-modal']) {
+    assert.match(indexHtml, new RegExp(`id="${id}"`));
+  }
+  assert.ok(indexHtml.indexOf('src="ytm/app.js?') < indexHtml.indexOf('src="app.js?'));
+  assert.match(indexHtml, /href="ytm\/style\.css\?/);
+  assert.doesNotMatch(indexHtml, /Roboto|Material\+Symbols\+Outlined/);
+  assert.match(appJs, /window\.YouTubeChecker\?\.init\(/);
+  assert.match(ytmJs, /window\.YouTubeChecker = \{/);
+  assert.doesNotMatch(ytmJs, /window\.parent|postMessage|localStorage\.getItem\('spoticheck_token'\)/);
+  // Rows reuse the Link Checker row component.
+  for (const cls of ['custom-grid-row', 'list-asset-cell', 'list-asset-title', 'list-asset-uri', 'checked-stack']) {
+    assert.match(ytmJs, new RegExp(cls));
+  }
+});
+
+test("every workspace uses the shared group rail with one interaction model", () => {
+  assert.match(indexHtml, /id="btn-new-group"/);
+  assert.match(indexHtml, /id="group-search"/);
+  assert.equal((indexHtml.match(/class="group-rail /g) || []).length, 3);
+  assert.match(appJs, /window\.GroupRailUI\.mount\(groupList/);
+  assert.match(ytmJs, /window\.GroupRailUI\.mount\(list/);
+  assert.match(fs.readFileSync(path.join(root, 'channels.js'), 'utf8'), /window\.GroupRailUI\.mount\(rail/);
+  // click selects immediately, dblclick/F2 renames inline, Delete/trash/context menu delete with shared confirm
+  assert.match(groupRailJs, /addEventListener\('dblclick'/);
+  assert.match(groupRailJs, /event\.key === 'F2'/);
+  assert.match(groupRailJs, /event\.key === 'Delete'/);
+  assert.doesNotMatch(groupRailJs + ytmJs, /window\.(confirm|prompt)\(|[^.\w](confirm|prompt)\(/);
+  assert.doesNotMatch(appJs, /window\.confirm\(|window\.prompt\(/);
+  assert.doesNotMatch(ytmJs, /groupClickTimer|setTimeout\([^)]*250\)/);
+});
+
+test("source files keep Vietnamese text as valid UTF-8 (no mojibake)", () => {
+  for (const source of [appJs, indexHtml, ytmJs, groupRailJs]) {
+    assert.doesNotMatch(source, /Ã.|á».|Ä‘|â€|â•/);
+  }
 });

@@ -1,5 +1,11 @@
 # Changelog
 
+### 2026-10-12 - Đồng bộ giao diện YouTube Link Checker, Channel & Playlist, Link Checker
+- YouTube Link Checker bỏ iframe, render trực tiếp trong `#ytm-panel` (`ytm/app.js` → `window.YouTubeChecker`) với topbar, hero, KPI, footer, row component và API client dùng chung; font Inter/Inter Tight, icon Rounded, nút pill như Link Checker. Xóa `ytm/index.html`, phần quản lý user/settings/sidebar chết; `ytm/style.css` từ 4105 còn ~40 dòng.
+- Group rail dùng chung `GroupRailUI` cho cả 3 mục: click chọn ngay (bỏ trễ 250ms), double-click/F2 đổi tên inline, tạo nhóm inline, xóa qua trash/Delete/chuột phải với dialog xác nhận chung (thay `window.confirm`/`prompt`), một header Groups/+/search duy nhất; fallback dialog khi rail ẩn trên mobile.
+- Sửa lỗi: Channel & Playlist xóa nhầm toàn bộ nhóm đang chọn khi chuột phải một nhóm khác; thứ tự nhóm sau kéo thả chỉ cập nhật ở lần poll kế tiếp; chuỗi tiếng Việt bị mojibake trong `app.js`; header cột Link Checker xuống dòng, tiêu đề hero gãy dòng; topbar tràn trên màn hình hẹp.
+- Chung kích thước hàng (104px, cover 70px), header cột 46px, tiêu đề hero 1 dòng. Bỏ hàm/CSS chết. Không đổi API/backend.
+- Kiểm thử: 83 frontend/browser tests pass; smoke Playwright local đo computed style 3 mục khớp nhau, 43 kịch bản tương tác group + 5 kịch bản kéo thả pass, không console error.
 ### 2026-10-09 - Gỡ SpotiCheck khỏi VPS cũ
 - Theo yêu cầu user, xoá deploy-app-1/deploy-db-1, deploy_postgres_data, source/.git/frontend/backend/.env secrets, backups/helper/timer và19 image tags SpotiCheck trên82.197.71.6. Backup trên VPS mới đã kiểm tra gzip/hash trước khi gỡ.
 - Giữ nguyên inode Caddyfile và deploy/mail đang bind cho service khác; legacy docker-compose.vps.yml còn duy nhất Caddy với volumes/networks external hiện có, .env chỉ còn APP_DOMAIN. Không restart Caddy/mail, ID container khác giữ nguyên; old domain redirect vẫn hoạt động.

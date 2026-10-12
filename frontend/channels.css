@@ -9,8 +9,8 @@
     color-scheme: light;
 }
 .chp-root *, .chp-dialog *, .chp-settings * { box-sizing: border-box; }
-.chp-root[hidden], .chp-root [hidden], .chp-header-tools[hidden],
-#channel-group-tools[hidden], .chp-group-rail[hidden] { display: none !important; }
+.chp-root[hidden], .chp-root [hidden], .chp-header-tools[hidden] { display: none !important; }
+
 .chp-root { padding: 0; }
 .chp-root .playlist-hero { --hero-image: none; }
 .chp-status:empty { display: none; }
@@ -20,10 +20,6 @@
 .chp-list { overflow-x: auto; }
 .chp-grid.custom-grid-row { grid-template-columns: 58px minmax(280px, 1fr) 160px 150px 160px 200px; min-width: 1178px; }
 .chp-playlist-grid.custom-grid-row { grid-template-columns: 58px minmax(280px, 1fr) 160px 150px 160px 200px; min-width: 1120px; }
-.chp-root .list-grid > .custom-grid-row { min-height: 76px; padding-block: 7px !important; }
-.chp-root .list-cover-image { width: 44px; min-width: 44px; max-width: 44px; height: 44px; min-height: 44px; max-height: 44px; flex: 0 0 44px; }
-.chp-root .list-columns-head { min-height: 44px; padding-block: 10px !important; }
-.chp-root .list-head .head-cell { min-height: 24px; }
 .chp-channel-labels { display: flex; align-items: center; gap: 8px; margin-bottom: 4px; }
 .chp-channel-labels .list-type-badge { margin-bottom: 0; }
 .chp-playlist-count { font-size: 11px; line-height: 1.1; white-space: nowrap; }
@@ -40,14 +36,9 @@
 .chp-empty { padding: 24px 20px; color: var(--chp-muted); }
 .chp-muted { color: var(--text-muted, #606060); }
 .chp-error { color: #b42318; }
-.chp-mobile-groups, .chp-new-group-toolbar { display: none; }
-.chp-group-tools-heading { display: flex; align-items: center; justify-content: space-between; }
-.chp-group-tools-heading h2 { margin: 0; }
-.chp-group-search { min-height: 38px; }
-.chp-group-rail .group-item { text-align: left; cursor: pointer; }
+.chp-header-tools .chp-mobile-groups, .chp-header-tools .chp-new-group-toolbar { display: none; }
 .chp-menu { display: block; z-index: 1100; }
-.chp-group-rail .chp-group-multi { background: var(--surface-3, #e5e5e5); }
-.chp-root [draggable="true"], .chp-group-rail [draggable="true"] { user-select: none; }
+.chp-root [draggable="true"] { user-select: none; }
 .chp-drop-before { box-shadow: inset 0 2px var(--text-muted, #606060); }
 .chp-drop-after { box-shadow: inset 0 -2px var(--text-muted, #606060); }
 .chp-playlist-grid:focus-visible, .chp-channel:focus-visible { outline: 1px solid var(--text-muted, #606060); outline-offset: -1px; }
@@ -72,17 +63,6 @@ body.chp-resizing { cursor: col-resize; user-select: none; }
 .chp-dialog-body > label, .chp-settings label { display: flex; flex-direction: column; gap: 6px; margin-bottom: 16px; }
 .chp-dialog textarea, .chp-settings textarea { width: 100%; resize: vertical; }
 .chp-dialog-status { margin: 0; padding: 0 20px 12px; overflow-wrap: anywhere; }
-.chp-picker { max-height: 280px; overflow-y: auto; border-block: 1px solid var(--chp-border); margin: 12px 0 16px; }
-.chp-pick { display: flex; align-items: flex-start; gap: 10px; padding: 9px 4px; border-bottom: 1px solid rgba(0, 0, 0, .08); cursor: pointer; overflow-wrap: anywhere; }
-.chp-pick input { margin-top: 4px; accent-color: var(--chp-text); }
-.chp-picker-filters { display: grid; grid-template-columns: minmax(130px, 1fr) minmax(160px, 2fr); gap: 12px; }
-.chp-picker-filters label { display: flex; flex-direction: column; gap: 6px; font-size: 13px; }
-.chp-picker-filters select, .chp-picker-filters input { width: 100%; min-width: 0; border-radius: 8px; background-color: var(--chp-surface); border: 1px solid var(--chp-border); }
-.chp-picker-search-wrap { position: relative; }
-.chp-picker-search-wrap .material-icons-round { position: absolute; left: 9px; top: 50%; transform: translateY(-50%); font-size: 18px; color: var(--chp-muted); }
-.chp-picker-search-wrap input { padding-left: 34px !important; }
-.chp-pick-cover { width: 40px; height: 40px; flex: 0 0 40px; border-radius: 4px; object-fit: cover; }
-.chp-picker-count { font-size: 12px; margin: 10px 0 0; }
 .chp-playlist-editor { background: var(--surface-1); color: var(--text-main); font-size: 14px; line-height: 1.5; overflow: hidden; }
 .chp-playlist-editor form { display: flex; flex-direction: column; max-height: calc(90vh - 2px); }
 .chp-playlist-editor header, .chp-playlist-editor footer { flex-shrink: 0; padding: 20px 24px; }
@@ -91,31 +71,11 @@ body.chp-resizing { cursor: col-resize; user-select: none; }
 .chp-playlist-editor header [data-close] .material-icons-round { font-size: 20px; }
 .chp-playlist-editor .chp-dialog-body { padding: 20px 24px; overflow-y: auto; min-height: 0; }
 .chp-playlist-editor .chp-dialog-body > p:first-child { margin: 0 0 16px; font-size: 13px; }
-.chp-playlist-editor .chp-picker-filters label, .chp-playlist-editor .chp-dialog-body > label { color: var(--text-muted); font-size: 13px; font-weight: 500; gap: 8px; }
+.chp-playlist-editor .chp-dialog-body > label { color: var(--text-muted); font-size: 13px; font-weight: 500; gap: 8px; }
 .chp-playlist-editor .chp-dialog-body > label { margin-bottom: 0; }
-.chp-playlist-editor .chp-picker-filters select,
-.chp-playlist-editor .chp-picker-filters input,
 .chp-playlist-editor textarea { box-sizing: border-box; font-family: inherit; font-size: 13px; font-weight: 400; line-height: 1.5; background-color: var(--surface-1); color: var(--text-main); border: 1px solid var(--chp-border); border-radius: 14px; padding: 10px 14px; outline: none; }
-.chp-playlist-editor .chp-picker-filters select,
-.chp-playlist-editor .chp-picker-filters input { height: 44px; }
-.chp-playlist-editor .chp-picker-filters select { appearance: none; padding-right: 34px; background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='%23606060' stroke-width='2'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E"); background-position: right 12px center; background-repeat: no-repeat; }
-.chp-playlist-editor .chp-picker-search-wrap .material-icons-round { left: 12px; }
-.chp-playlist-editor .chp-picker-search-wrap input { padding-left: 38px !important; }
 .chp-playlist-editor input::placeholder, .chp-playlist-editor textarea::placeholder { color: var(--text-muted); }
-.chp-playlist-editor .chp-picker-filters select:focus,
-.chp-playlist-editor .chp-picker-filters input:focus,
 .chp-playlist-editor textarea:focus { border-color: #1db954; background-color: var(--surface-0); box-shadow: 0 0 0 3px rgba(29, 185, 84, .16); outline: none; }
-.chp-playlist-editor .chp-picker { border: 0; margin-top: 12px; }
-.chp-playlist-editor .chp-pick { align-items: center; gap: 12px; padding: 10px 12px; border: 0; border-radius: 8px; }
-.chp-playlist-editor .chp-pick:hover { background: var(--surface-2); }
-.chp-playlist-editor .chp-pick:has(input:checked) { background: var(--surface-3, #e5e5e5); }
-.chp-playlist-editor .chp-pick + .chp-pick { margin-top: 4px; }
-.chp-playlist-editor .chp-pick input { appearance: none; margin: 0; width: 16px; height: 16px; flex: 0 0 16px; border: 1px solid var(--chp-border); border-radius: 4px; background: var(--surface-0); accent-color: var(--text-main, #0f0f0f); cursor: pointer; }
-.chp-playlist-editor .chp-pick input:checked { border-color: var(--text-main); background-color: var(--text-main); background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16' fill='none' stroke='white' stroke-width='2'%3E%3Cpath d='m3 8 3 3 7-7'/%3E%3C/svg%3E"); }
-@media (forced-colors: active) { .chp-playlist-editor .chp-pick input { appearance: auto; } }
-.chp-playlist-editor .chp-pick > span:last-child { min-width: 0; font-size: 15px; font-weight: 700; line-height: 1.4; }
-.chp-playlist-editor .chp-pick small { font-size: 12px; font-weight: 400; line-height: 1.5; }
-.chp-playlist-editor .chp-pick-cover { width: 44px; height: 44px; flex-basis: 44px; }
 .chp-playlist-editor footer button { display: inline-flex; align-items: center; justify-content: center; gap: 8px; min-height: 44px; padding: 10px 20px; border-radius: 12px; font-size: 13px; font-weight: 700; }
 .chp-playlist-editor footer .material-icons-round { font-size: 18px; }
 .chp-playlist-editor .chp-dialog-status:empty { display: none; }
@@ -124,38 +84,17 @@ body.chp-resizing { cursor: col-resize; user-select: none; }
     .chp-playlist-editor h2 { font-size: 18px; }
     .chp-playlist-editor footer button { padding-inline: 14px; }
 }
-@media (max-width: 480px) { .chp-picker-filters { grid-template-columns: 1fr; } }
 .chp-dialog small { display: block; font-size: 12px; margin-top: 2px; }
 .chp-settings { padding: 16px 0; max-width: 640px; }
 .chp-settings-actions { display: flex; gap: 8px; }
 .chp-key-status { min-height: 20px; }
 .chp-settings-title { font-size: 15px; margin: 0 0 8px; }
 @media (max-width: 767px) {
-    body.channels-view .topbar {
-        height: auto;
-        min-height: 80px;
-        flex-direction: column;
-        align-items: stretch;
-        justify-content: flex-start;
-        gap: 12px;
-        padding: 16px;
-        box-sizing: border-box;
-    }
-    body.channels-view .topbar > div { min-width: 0; }
-    body.channels-view .chp-header-tools { width: 100%; min-width: 0; }
-    body.channels-view .chp-header-tools > .relative { width: 100%; min-width: 0; }
-    body.channels-view .chp-header-tools .chp-search { box-sizing: border-box; min-width: 0; max-width: 100%; }
-    body.channels-view .chp-header-tools > button { padding-inline: 12px; max-width: 100%; white-space: nowrap; }
-    body.channels-view .chp-mobile-groups { flex: 1 1 180px; min-width: 0; max-width: 100%; }
-    body.channels-view .chp-mobile-groups select { flex: 1; min-width: 0; }
-    .chp-mobile-groups { display: flex; align-items: center; gap: 6px; }
-    .chp-new-group-toolbar { display: inline-grid; }
-    .chp-header-tools { flex-wrap: wrap; gap: 8px; }
-    .chp-header-tools .chp-search { width: 100%; }
-    .chp-header-tools > .relative { flex: 1 1 100%; }
+    /* Topbar/hero stacking is shared with every workspace (style.css); only channel-specific controls here. */
+    .chp-header-tools .chp-mobile-groups { display: flex; flex: 1 1 180px; align-items: center; gap: 6px; min-width: 0; max-width: 100%; }
+    .chp-header-tools .chp-mobile-groups select { flex: 1; min-width: 0; }
+    .chp-header-tools .chp-new-group-toolbar { display: inline-grid; }
     .chp-header-tools .chp-groups { max-width: 170px; }
-    .chp-root .playlist-hero > div { flex-wrap: wrap; }
-    .chp-kpis { flex-wrap: wrap; }
     .chp-backdrop { padding: 10px; }
     .chp-dialog header, .chp-dialog footer, .chp-dialog-body { padding: 12px; }
     .chp-dialog-status { padding-inline: 12px; }
