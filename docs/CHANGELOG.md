@@ -440,3 +440,8 @@
 - Changed: YouTube Link Checker is first among the shared sidebar workspace links.
 - Affected files: `frontend/favicon.svg`, `frontend/index.html`, `frontend/login.html`, `docs/UI_SYSTEM.md`, `docs/DECISIONS.md`, `docs/DECISIONS_INDEX.md`
 - Impact/Risk: Low; branding and navigation order only.
+### 2026-10-12 - Open YouTube Link Checker by default after login
+- Changed: select the YouTube Link Checker as the default workspace after login when the account has YouTube access.
+- Preserved: accounts without YouTube access still land on the first workspace they are permitted to use.
+- Affected files: `frontend/app.js`, `frontend/index.html`, `docs/UI_SYSTEM.md`, `docs/DECISIONS.md`, `docs/DECISIONS_INDEX.md`
+- Impact/Risk: Low; changes the post-login landing view only.

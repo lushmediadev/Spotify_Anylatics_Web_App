@@ -177,7 +177,7 @@ function canAccessView(view, user = getAuthUser()) {
 }
 
 function getDefaultWorkspaceView(user = getAuthUser()) {
-    return ['channels', 'ytm', 'linkchecker'].find((view) => canAccessView(view, user)) || 'settings';
+    return ['ytm', 'channels', 'linkchecker'].find((view) => canAccessView(view, user)) || 'settings';
 }
 
 function updateWorkspaceNavigation(view) {
@@ -6731,7 +6731,7 @@ function initVirtualListScroll() {
 // VIEW MANAGEMENT â€” single source of truth for panel switching
 // ===================================================================
 
-state.currentView = 'channels'; // linkchecker | channels | settings | account | users
+state.currentView = 'ytm'; // linkchecker | channels | settings | account | users
 
 function setElementDisplay(el, mode) {
     if (!el) return;

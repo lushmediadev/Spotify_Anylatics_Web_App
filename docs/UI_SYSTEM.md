@@ -4,6 +4,7 @@
 
 - Light-only desktop dashboard with fixed left rail, dedicated group rail, and dense list workspace.
 - The list view uses a wide photographic hero strip; preserve that existing pattern instead of introducing new wrappers or alternate shells.
+- After login, open YouTube Link Checker by default for accounts with YouTube access; otherwise select the first permitted workspace.
 - Use the exact YouTube Manager grayscale palette from `D:\Youtube_manager\frontend\style.css`; retain Spotify logo SVG green `#1DB954`, semantic status colors, and functional group accents.
 
 ## Core palette
