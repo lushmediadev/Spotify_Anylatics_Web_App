@@ -435,3 +435,8 @@
 - Preserved: sign-in fields, form behavior, and centered card layout.
 - Affected files: `frontend/login.html`, `frontend/youtubecheck-logo.svg`, `docs/UI_SYSTEM.md`, `docs/DECISIONS.md`, `docs/DECISIONS_INDEX.md`
 - Impact/Risk: Low; visual-only login change.
+### 2026-10-12 - Set YouTube favicon and prioritize its sidebar entry
+- Changed: the site favicon now uses the supplied YouTube play logo with cache version `v=2`.
+- Changed: YouTube Link Checker is first among the shared sidebar workspace links.
+- Affected files: `frontend/favicon.svg`, `frontend/index.html`, `frontend/login.html`, `docs/UI_SYSTEM.md`, `docs/DECISIONS.md`, `docs/DECISIONS_INDEX.md`
+- Impact/Risk: Low; branding and navigation order only.

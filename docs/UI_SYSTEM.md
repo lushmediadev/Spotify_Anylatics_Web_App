@@ -41,7 +41,7 @@
 
 ## Component patterns
 
-- Sidebar: icon-first collapsed rail with tooltip labels
+- Sidebar: icon-first collapsed rail with tooltip labels; YouTube Link Checker is first among workspace links.
 - Group rail: flat stacked list with subtle selected and search-match states
 - Search: rounded light grayscale input in the top bar
 - Rows: cover thumbnail + title/meta on the left, metrics grid on the right
