@@ -6,12 +6,13 @@ from datetime import datetime, timedelta
 from sqlalchemy import delete, or_, select, update
 
 from app import database
-from app.models.youtube import Channel, ChannelPlaylist, ChannelSnapshot, YouTubeApiKey
+from app.models.youtube import Channel, ChannelPlaylist, ChannelSnapshot
 from app.models.user import User
 from app.models.item import Item
 from app.models.crawl_job import CrawlJob
 from app.services.crawler import crawl_item_task
 from app.services.youtube import YouTubeClient
+from app.services.youtube_keys import system_api_keys
 
 _tasks: set[asyncio.Task] = set()
 _channel_slots = asyncio.Semaphore(3)
@@ -100,9 +101,7 @@ async def refresh_channels(owner_id, channel_ids, attempts=None):
                     expected = {row.id: row.refresh_started_at for row in channels}
                 if not channels:
                     return
-                keys = list((await db.execute(select(YouTubeApiKey.key).where(
-                    YouTubeApiKey.user_id == owner_id,
-                ).order_by(YouTubeApiKey.position))).scalars())
+                keys = await system_api_keys(db)
                 client = YouTubeClient(keys)
                 queries = [("id", row.youtube_id) if row.youtube_id else (row.query_type, row.query) for row in channels]
                 # Do not keep a DB transaction or owner lock during network calls.

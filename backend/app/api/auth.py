@@ -1,6 +1,7 @@
 """Auth endpoints — register, login, user info."""
 
 import json
+import re
 from datetime import datetime
 
 from fastapi import APIRouter, Depends, HTTPException, status
@@ -46,6 +47,21 @@ _PLAYLIST_CLIPBOARD_LINE_LIMIT_KEY = "playlist_clipboard_line_limit"
 _PLAYLIST_CLIPBOARD_LINE_LIMIT_DEFAULT = 100
 _PLAYLIST_CLIPBOARD_LINE_LIMIT_MIN = 1
 _PLAYLIST_CLIPBOARD_LINE_LIMIT_MAX = 2000
+_DISPLAY_NAME_MAX = 64
+_AVATAR_MAX = 500_000  # ~500KB limit
+_AVATAR_PATTERN = re.compile(r"data:image/(?:png|jpeg|webp|gif);base64,[A-Za-z0-9+/]+={0,2}")
+
+
+def _clean_display_name(value: str | None) -> str | None:
+    """Display names are rendered in many places: keep them plain text."""
+    name = (value or "").strip()
+    if not name:
+        return None
+    if len(name) > _DISPLAY_NAME_MAX:
+        raise HTTPException(status_code=400, detail=f"Display name must be at most {_DISPLAY_NAME_MAX} characters")
+    if any(ch in "<>" or ord(ch) < 32 or 127 <= ord(ch) < 160 for ch in name):
+        raise HTTPException(status_code=400, detail="Display name contains invalid characters")
+    return name
 
 
 def _build_internal_email(username: str) -> str:
@@ -102,6 +118,7 @@ async def register(req: RegisterRequest, db: AsyncSession = Depends(get_db)):
 
     username = (req.username or "").strip()
     resolved_email = _resolve_email(username, req.email)
+    display_name = _clean_display_name(req.display_name)
 
     # Check duplicates
     existing = await db.execute(
@@ -117,7 +134,7 @@ async def register(req: RegisterRequest, db: AsyncSession = Depends(get_db)):
         username=username,
         email=resolved_email,
         password_hash=hash_password(req.password),
-        display_name=req.display_name,
+        display_name=display_name,
         role="admin",
     )
     db.add(user)
@@ -252,7 +269,7 @@ async def admin_create_user(
     """Create an account; managers may only create users assigned to themselves."""
     username = (req.username or "").strip()
     email = _resolve_email(username, req.email)
-    display_name = (req.display_name or "").strip() or None
+    display_name = _clean_display_name(req.display_name)
     role = (req.role or "user").strip().lower()
     workspace_access = requested_manager_workspaces(admin, req, role)
 
@@ -309,7 +326,7 @@ async def update_profile(
 ):
     """Update the current user's profile fields exposed in the dashboard."""
     if req.display_name is not None:
-        current_user.display_name = req.display_name
+        current_user.display_name = _clean_display_name(req.display_name)
     await db.flush()
     return await _user_response(current_user, db)
 
@@ -339,8 +356,10 @@ async def update_avatar(
     db: AsyncSession = Depends(get_db),
 ):
     """Upload/replace the current user's avatar (base64 data URL)."""
-    if len(req.avatar) > 500_000:  # ~500KB limit
+    if len(req.avatar) > _AVATAR_MAX:
         raise HTTPException(status_code=400, detail="Avatar too large (max 500KB)")
+    if not _AVATAR_PATTERN.fullmatch(req.avatar):
+        raise HTTPException(status_code=400, detail="Avatar must be a PNG, JPEG, WebP or GIF image")
     current_user.avatar = req.avatar
     await db.flush()
     return {"ok": True, "avatar": req.avatar}
@@ -536,6 +555,7 @@ async def admin_update_user(
     """Edit an accessible account without allowing manager privilege escalation."""
     user = await require_user_access(db, admin, user_id, management=True)
     next_role = req.role if req.role is not None else user.role
+    display_name = _clean_display_name(req.display_name) if req.display_name is not None else None
     workspace_access = requested_manager_workspaces(admin, req, next_role)
     next_active = req.is_active if req.is_active is not None else user.is_active
     assignment_set = "manager_id" in req.model_fields_set
@@ -569,7 +589,7 @@ async def admin_update_user(
                 user.email = _build_internal_email(next_username)
             user.username = next_username
     if req.display_name is not None:
-        user.display_name = req.display_name
+        user.display_name = display_name
     if req.role is not None:
         user.role = next_role
     if workspace_access is not None:
@@ -643,6 +663,8 @@ async def admin_delete_user(
     user = await require_user_access(db, admin, user_id, management=True)
     if str(admin.id) == str(user.id):
         raise HTTPException(status_code=400, detail="Cannot delete your own account")
+    # Same rule as demotion: assigned users must be reassigned first.
+    await _protect_manager_demotion(db, user)
 
     username = user.username
     target_id = user.id

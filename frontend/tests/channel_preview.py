@@ -12,6 +12,14 @@ NOW = datetime.now(timezone.utc).isoformat()
 ITEMS = [{"id": f"22222222-2222-4222-8222-{i:012d}", "spotify_id": "37i9dQZF1DWV7EzJMK2FUI", "type": "playlist", "name": name, "image": None, "owner_name": "Spotify", "followers": 2328473+i, "followers_delta": 9960, "track_count": 210, "track_count_delta": 0, "delta_days": 21, "status": "active", "group": "Jazz", "user_id": USER["id"], "user_name": "Preview Admin", "last_checked": NOW, "created_at": NOW} for i, name in enumerate(["Jazz in the Background", "Coffee Table Jazz", "Jazz for Study"])]
 CHANNELS = [{"id": f"33333333-3333-4333-8333-{i:012d}", "user_id": USER["id"], "query_type": "channel", "query": "UC_x5XG1OV2P6uZZ5FSM9Ttw", "youtube_id": "UC_x5XG1OV2P6uZZ5FSM9Ttw", "name": name, "image": None, "banner": None, "youtube_url": "https://www.youtube.com/channel/UC_x5XG1OV2P6uZZ5FSM9Ttw", "view_count": 21293069+i, "view_count_delta": 1129620, "delta_days": 50, "status": "active", "error_message": None, "group": "Jazz Channels", "created_at": NOW, "last_checked": NOW, "playlists": ITEMS[:2] if i == 0 else []} for i, name in enumerate(["Jazz Radio Channel", "Cozy Jazz Vibes"])]
 KEYS = ""
+
+
+def masked_keys():
+    keys = [{"id": str(index), "masked": f"{key[:4]}…{key[-4:]}", "owner": USER["display_name"], "position": index}
+        for index, key in enumerate(filter(None, KEYS.splitlines()))]
+    return {"keys": keys, "count": len(keys)}
+
+
 GROUPS = {"Jazz Channels"}
 PREFERENCES = {"group_order": [], "channel_orders": {}, "playlist_orders": {}}
 YTM_GROUPS = {"YouTube Test"}
@@ -55,7 +63,7 @@ class Handler(SimpleHTTPRequestHandler):
         if route == "/api/health": return self.send_json({"status": "ok"})
         if route == "/api/items/summary": return self.send_json({"total": 3, "all_total": 3, "active": 3, "errors": 0, "crawling": 0, "groups": [{"name": "Jazz", "count": 3}]})
         if route == "/api/items": return self.send_json({"items": ITEMS, "total": len(ITEMS)})
-        if route == "/api/youtube/keys": return self.send_json({"api_keys": KEYS})
+        if route == "/api/youtube/keys": return self.send_json(masked_keys())
         if route == "/api/youtube/preferences": return self.send_json(PREFERENCES)
         if route == "/api/youtube/channels":
             query = parse_qs(urlsplit(self.path).query)
@@ -73,10 +81,14 @@ class Handler(SimpleHTTPRequestHandler):
         self.send_json({})
 
     def do_POST(self):
+        global KEYS
         route = urlsplit(self.path).path
         body = json.loads(self.rfile.read(int(self.headers.get("Content-Length", 0))) or b"{}")
+        if route == "/api/youtube/keys":
+            KEYS = "\n".join(filter(None, [KEYS, body.get("api_keys", "")]))
+            return self.send_json({"added": 1, "skipped": 0, **masked_keys()})
         if route == "/api/auth/login": return self.send_json({"access_token": "loopback-preview-only", "user": USER})
-        if route == "/api/youtube/keys/check": return self.send_json({"results": [{"position": 1, "valid": True, "status": "ok"}]})
+        if route == "/api/youtube/keys/check": return self.send_json({"results": [{"index": 0, "masked": "AIza…demo", "status": "valid"}]})
         if route == "/api/youtube/groups":
             GROUPS.add(body["name"])
             return self.send_json({"name": body["name"], "count": 0})
@@ -107,12 +119,8 @@ class Handler(SimpleHTTPRequestHandler):
         self.send_json({"accepted": 1, "skipped": 0})
 
     def do_PUT(self):
-        global KEYS
         route = urlsplit(self.path).path
         body = json.loads(self.rfile.read(int(self.headers.get("Content-Length", 0))) or b"{}")
-        if route == "/api/youtube/keys":
-            KEYS = body.get("api_keys", "")
-            return self.send_json({"api_keys": KEYS})
         if route == "/api/youtube/preferences":
             for key, value in body.items():
                 if key == "group_order": PREFERENCES[key] = value

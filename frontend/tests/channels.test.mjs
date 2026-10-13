@@ -75,7 +75,7 @@ test('ChannelPlaylists isolated browser behavior', async t => {
                 if (requestPath.startsWith('/items?')) return { items: window.data.items[0].playlists, total: 1 };
                 if (requestPath === '/auth/me/groups') return { groups: ['Empty Album', 'Empty Playlist', 'all'] };
                 if (requestPath === '/items/summary') return { groups: [{ name: 'Track Only', count: 57 }] };
-                if (requestPath === '/youtube/keys') return { api_keys: 'SECRET' };
+                if (requestPath === '/youtube/keys') return { keys: [], count: 0 };
                 if (requestPath === '/youtube/keys/check') return { results: window.keyResults };
                 return { accepted: 1, skipped: 0 };
             };
@@ -450,29 +450,83 @@ test('ChannelPlaylists isolated browser behavior', async t => {
         } finally { await page.close(); }
     });
 
-    await t.test('keys/check renders per-key results without echoing secrets or owner filters', async () => {
+    await t.test('system key settings are admin-only, masked, and never echo secrets or owner filters', async () => {
         const page = await fixture();
         try {
             await page.evaluate(async () => {
                 await ChannelPlaylists.show({ userId: 'other-owner' });
                 await ChannelPlaylists.showKeySettings();
             });
+            // Managers and users never load or see the key pool.
+            assert.equal(await page.locator('#youtube-key-settings').evaluate(node => node.hidden && node.textContent === ''), true);
+            assert.equal(await page.evaluate(() => window.calls.filter(call => call.path.startsWith('/youtube/keys')).length), 0);
+            assert.match(await page.locator('.chp-key-warning').textContent(), /No system API key configured — contact an admin\./);
+            assert.equal(await page.locator('.chp-key-warning [data-chp-action="settings"]').count(), 0);
+
+            await page.evaluate(async () => {
+                window.actor.role = 'admin';
+                window.pool = [{ id: 'k1', masked: 'AIza…abcd', owner: '<b>Root</b>', position: 0 }];
+                window.keyResults = [{ index: 0, id: 'k1', masked: 'AIza…abcd', status: 'invalid', error_code: 'invalid_key', error_message: 'SECRET' }];
+                const original = window.handleRequest;
+                window.handleRequest = async (requestPath, options = {}) => {
+                    if (requestPath === '/youtube/keys' && options.method === 'POST') {
+                        window.pool.push({ id: 'k2', masked: 'AIza…wxyz', owner: 'Root', position: 1 });
+                        return { added: 1, skipped: 1, keys: window.pool, count: window.pool.length };
+                    }
+                    if (requestPath === '/youtube/keys') return { keys: window.pool, count: window.pool.length };
+                    if (requestPath === '/youtube/keys/k1' && options.method === 'DELETE') {
+                        window.pool = window.pool.filter(key => key.id !== 'k1');
+                        return { deleted: true, id: 'k1' };
+                    }
+                    if (requestPath === '/youtube/keys/check') return { results: window.keyResults };
+                    return original(requestPath, options);
+                };
+                await ChannelPlaylists.reload();
+                await ChannelPlaylists.showKeySettings();
+            });
+            assert.equal(await page.locator('.chp-key-warning [data-chp-action="settings"]').count(), 1);
+            const host = page.locator('#youtube-key-settings');
+            assert.equal(await host.evaluate(node => node.hidden), false);
+            assert.equal(await host.locator('.chp-key-list li').count(), 1);
+            assert.equal(await host.locator('.chp-key-list code').textContent(), 'AIza…abcd');
+            assert.equal(await host.locator('.chp-key-list b').count(), 0);
+            assert.match(await host.locator('.chp-key-list li').textContent(), /<b>Root<\/b>/);
+            assert.equal(await host.locator('textarea').inputValue(), '');
+
             await page.locator('[data-check]').click();
-            await page.waitForFunction(() => document.querySelector('.chp-key-status').textContent.includes('Key 1:'));
-            assert.match(await page.locator('.chp-key-status').textContent(), /Key 1: Key không hợp lệ/);
-            assert.doesNotMatch(await page.locator('.chp-key-status').textContent(), /SECRET/);
+            await page.waitForFunction(() => document.querySelector('.chp-key-status').textContent.includes('AIza…abcd:'));
+            assert.equal(await page.locator('.chp-key-status').textContent(), 'AIza…abcd: Invalid key');
+            assert.equal(await host.locator('.chp-key-result').textContent(), 'Invalid key');
             await page.evaluate(() => {
                 window.keyResults = [
-                    { index: 0, status: 'valid' }, { index: 1, status: 'quota_exceeded' },
+                    { index: 0, masked: 'RAWK…EY01', status: 'valid' }, { index: 1, status: 'quota_exceeded' },
                     { index: 2, valid: false, error_code: 'network_error', error_message: 'SECRET' },
                 ];
             });
+            await host.locator('textarea').fill('RAWKEY01\nRAWKEY02\nRAWKEY03');
             await page.locator('[data-check]').click();
             await page.waitForFunction(() => document.querySelector('.chp-key-status').textContent.includes('Key 3:'));
-            assert.match(await page.locator('.chp-key-status').textContent(), /Key 1: Hợp lệ.*Key 2: Hết quota.*Key 3: Lỗi kết nối/);
+            assert.match(await page.locator('.chp-key-status').textContent(), /RAWK…EY01: Valid.*Key 2: Quota exceeded.*Key 3: Connection error/);
+            assert.doesNotMatch(await host.textContent(), /SECRET/);
+
+            await host.locator('button[type="submit"]').click();
+            await page.waitForFunction(() => document.querySelectorAll('.chp-key-list li').length === 2);
+            assert.equal(await page.locator('.chp-key-status').textContent(), 'Added 1 key(s), skipped 1 duplicate(s).');
+            assert.equal(await host.locator('textarea').inputValue(), '');
+            assert.doesNotMatch(await host.evaluate(node => node.innerHTML), /RAWKEY0/);
+
+            page.once('dialog', dialog => dialog.accept());
+            await host.locator('[data-delete-key="k1"]').click();
+            await page.waitForFunction(() => document.querySelectorAll('.chp-key-list li').length === 1);
+            assert.equal(await host.locator('.chp-key-list code').textContent(), 'AIza…wxyz');
+
             const keyCalls = await page.evaluate(() => window.calls.filter(call => call.path.startsWith('/youtube/keys')));
             assert.ok(keyCalls.every(call => !call.path.includes('?')));
-            assert.equal(JSON.parse(keyCalls.find(call => call.path.endsWith('/check')).body).api_keys, 'SECRET');
+            const checks = keyCalls.filter(call => call.path.endsWith('/check')).map(call => JSON.parse(call.body));
+            assert.deepEqual(checks, [{}, { api_keys: 'RAWKEY01\nRAWKEY02\nRAWKEY03' }]);
+            assert.ok(keyCalls.some(call => call.method === 'POST' && call.path === '/youtube/keys'));
+            assert.ok(keyCalls.some(call => call.method === 'DELETE' && call.path === '/youtube/keys/k1'));
+            assert.ok(keyCalls.every(call => call.method !== 'PUT'));
         } finally { await page.close(); }
     });
 

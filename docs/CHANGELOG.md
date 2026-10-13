@@ -1,5 +1,13 @@
 # Changelog
 
+### 2026-10-13 - Review batch 1: security fixes and admin-only system API key pool
+- Security: escape display names, usernames and avatars everywhere they are rendered (the shared `escapeHtml` now also escapes quotes); server rejects display names with `<>`/control characters or longer than 64 characters and only stores avatars that are base64 PNG/JPEG/WebP/GIF data URLs.
+- Security: the YouTube Link Checker client sends keys in the `X-Goog-Api-Key` header instead of the query string, so keys no longer appear in httpx request logs.
+- Changed: deleting a manager who still has assigned users is refused (same rule as demotion).
+- Changed: YouTube API keys are a single system pool owned by active admins and used by every refresh path (`system_api_keys`). `GET/POST /api/youtube/keys`, `DELETE /api/youtube/keys/{id}` and `POST /api/youtube/keys/check` are admin-only (403 otherwise) and only ever return masked keys; `PUT /api/youtube/keys` is removed. Existing manager/user key rows stay in the database unused.
+- Frontend: Settings shows the key pool (masked list, add, delete, check) to admins only; other roles see "No system API key configured — contact an admin" when the pool is empty.
+- Affected files: `backend/app/api/auth.py`, `backend/app/api/youtube.py`, `backend/app/services/youtube_keys.py`, `backend/app/services/youtube_jobs.py`, `backend/app/services/youtube.py`, `backend/app/services/item_workspaces.py`, `backend/app/ytm/services/youtube_client.py`, `backend/app/ytm/services/crawler.py`, `frontend/app.js`, `frontend/channels.js`, `frontend/channels.css`, `frontend/index.html`, tests.
+- Impact/Risk: Medium; keys saved by managers/users are no longer used, so an admin must hold at least one key.
 ### 2026-10-12 - Đồng bộ giao diện YouTube Link Checker, Channel & Playlist, Link Checker
 - YouTube Link Checker bỏ iframe, render trực tiếp trong `#ytm-panel` (`ytm/app.js` → `window.YouTubeChecker`) với topbar, hero, KPI, footer, row component và API client dùng chung; font Inter/Inter Tight, icon Rounded, nút pill như Link Checker. Xóa `ytm/index.html`, phần quản lý user/settings/sidebar chết; `ytm/style.css` từ 4105 còn ~40 dòng.
 - Group rail dùng chung `GroupRailUI` cho cả 3 mục: click chọn ngay (bỏ trễ 250ms), double-click/F2 đổi tên inline, tạo nhóm inline, xóa qua trash/Delete/chuột phải với dialog xác nhận chung (thay `window.confirm`/`prompt`), một header Groups/+/search duy nhất; fallback dialog khi rail ẩn trên mobile.

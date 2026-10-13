@@ -59,7 +59,7 @@ async def main():
         for path in ("/api/items", "/api/youtube/channels", "/api/channel-playlists/items"):
             assert (await client.get(path, headers=headers)).status_code == 403
         assert (await client.get('/api/auth/users', headers=headers)).status_code == 200
-        assert (await client.get("/api/youtube/keys", headers=headers)).status_code == 200
+        assert (await client.get("/api/youtube/keys", headers=headers)).status_code == 403
         assert (await client.get("/api/ytm/items", headers=headers)).json()["total"] == 0
         response = await client.post("/api/ytm/crawl/batch", headers=headers, json={"urls": ["https://www.youtube.com/@pf_channel"], "group": "YTM Only"})
         assert response.status_code == 200

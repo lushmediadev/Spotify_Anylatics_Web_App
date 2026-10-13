@@ -320,12 +320,12 @@ function setupAuthUI() {
             profileWrap.onclick = () => switchToView('account');
             profileWrap.title = 'Account Settings';
             const avatarHtml = user.avatar
-                ? '<img src="' + user.avatar + '" class="w-8 h-8 rounded-full object-cover flex-shrink-0 ring-1 ring-white/10">'
-                : '<div class="w-8 h-8 rounded-full flex-shrink-0 bg-gradient-to-br from-emerald-400 via-cyan-500 to-blue-700 text-white text-[11px] font-bold leading-none grid place-items-center overflow-hidden ring-1 ring-white/10">' + initials + '</div>';
+                ? '<img src="' + escapeHtml(user.avatar) + '" class="w-8 h-8 rounded-full object-cover flex-shrink-0 ring-1 ring-white/10">'
+                : '<div class="w-8 h-8 rounded-full flex-shrink-0 bg-gradient-to-br from-emerald-400 via-cyan-500 to-blue-700 text-white text-[11px] font-bold leading-none grid place-items-center overflow-hidden ring-1 ring-white/10">' + escapeHtml(initials) + '</div>';
             profileWrap.innerHTML = avatarHtml +
                 '<div class="sidebar-user-info overflow-hidden">' +
-                '<p class="text-sm font-semibold truncate">' + (user.display_name || user.username) + '</p>' +
-                '<p class="text-xs text-secondary-text truncate">' + getRoleLabel(user.role) + '</p>' +
+                '<p class="text-sm font-semibold truncate">' + escapeHtml(user.display_name || user.username) + '</p>' +
+                '<p class="text-xs text-secondary-text truncate">' + escapeHtml(getRoleLabel(user.role)) + '</p>' +
                 '</div>';
         }
     }
@@ -1397,7 +1397,7 @@ function renderOwnerUpdatedCell(item, ownerUrl, updatedAt) {
     const userAvatarUrl = getItemUserAvatar(item);
     const avatarLabel = escapeHtml((getItemUserName(item) || 'US').slice(0, 2).toUpperCase());
     const ownerAvatar = userAvatarUrl
-        ? `<img alt="User" class="list-owner-avatar" src="${userAvatarUrl}">`
+        ? `<img alt="User" class="list-owner-avatar" src="${escapeHtml(userAvatarUrl)}">`
         : `<div class="list-owner-avatar list-owner-fallback">${avatarLabel}</div>`;
 
     return `
@@ -1522,7 +1522,7 @@ function renderPlaylistOwnerCell(item) {
         ? `<a class="list-title-link playlist-owner-link" href="${escapeHtml(ownerUrl)}" target="_blank" rel="noopener noreferrer">${escapeHtml(owner)}</a>`
         : escapeHtml(owner);
     const ownerAvatar = ownerAvatarUrl
-        ? `<img alt="Playlist owner" class="list-owner-avatar playlist-owner-avatar" src="${ownerAvatarUrl}">`
+        ? `<img alt="Playlist owner" class="list-owner-avatar playlist-owner-avatar" src="${escapeHtml(ownerAvatarUrl)}">`
         : `<div class="list-owner-avatar list-owner-fallback playlist-owner-avatar">${ownerAvatarLabel}</div>`;
 
     return `
@@ -4030,9 +4030,10 @@ function ensureMetricSortControls() {
 }
 /** Escape HTML to prevent XSS */
 function escapeHtml(str) {
-    const el = document.createElement('span');
-    el.textContent = str;
-    return el.innerHTML;
+    // Quotes are escaped too: many callers interpolate into attribute values.
+    return String(str ?? '').replace(/[&<>"']/g, (ch) => ({
+        '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;',
+    }[ch]));
 }
 
 function clearRenderedRows(container = document.getElementById('link-list')) {
@@ -6575,10 +6576,10 @@ function updateSettingsAvatar(user) {
     const preview = document.getElementById('settings-avatar-preview');
     if (!preview) return;
     if (user.avatar) {
-        preview.innerHTML = '<img src="' + user.avatar + '" class="w-full h-full object-cover">';
+        preview.innerHTML = '<img src="' + escapeHtml(user.avatar) + '" class="w-full h-full object-cover">';
     } else {
         const initials = (user.display_name || user.username || '??').slice(0, 2).toUpperCase();
-        preview.innerHTML = initials;
+        preview.textContent = initials;
     }
 }
 
@@ -6885,8 +6886,8 @@ function renderAdminUsers(users) {
         var u = users[i];
         var initials = (u.display_name || u.username || '??').slice(0, 2).toUpperCase();
         var avatarHtml = u.avatar
-            ? '<img src="' + u.avatar + '" class="w-12 h-12 rounded-full object-cover flex-shrink-0 ring-1 ring-white/10">'
-            : '<div class="w-12 h-12 rounded-full flex-shrink-0 bg-gradient-to-br from-emerald-400 via-cyan-500 to-blue-700 text-white text-sm font-bold grid place-items-center ring-1 ring-white/10">' + initials + '</div>';
+            ? '<img src="' + escapeHtml(u.avatar) + '" class="w-12 h-12 rounded-full object-cover flex-shrink-0 ring-1 ring-white/10">'
+            : '<div class="w-12 h-12 rounded-full flex-shrink-0 bg-gradient-to-br from-emerald-400 via-cyan-500 to-blue-700 text-white text-sm font-bold grid place-items-center ring-1 ring-white/10">' + escapeHtml(initials) + '</div>';
 
         var roleBadge = u.role === 'admin' || u.role === 'manager'
             ? '<span class="inline-flex items-center gap-1 text-[11px] font-bold uppercase tracking-wider text-primary bg-primary/10 px-2 py-0.5 rounded-full"><span class="material-icons-round" style="font-size:12px">admin_panel_settings</span>Admin</span>'
@@ -6907,8 +6908,8 @@ function renderAdminUsers(users) {
             var toggleColor = u.is_active ? 'red' : 'emerald';
             var toggleTitle = u.is_active ? 'Deactivate' : 'Activate';
             var toggleIcon = u.is_active ? 'person_off' : 'person';
-            extraBtns = '<button data-action="toggle-active" data-uid="' + u.id + '" data-uname="' + u.username + '" data-active="' + u.is_active + '" class="p-2 rounded-lg hover:bg-white/10 text-secondary-text hover:text-' + toggleColor + '-400 transition-colors cursor-pointer" title="' + toggleTitle + '"><span class="material-icons-round text-lg">' + toggleIcon + '</span></button>' +
-                '<button data-action="delete-user" data-uid="' + u.id + '" data-uname="' + u.username + '" class="p-2 rounded-lg hover:bg-white/10 text-secondary-text hover:text-red-500 transition-colors cursor-pointer" title="Delete user permanently"><span class="material-icons-round text-lg">delete_forever</span></button>';
+            extraBtns = '<button data-action="toggle-active" data-uid="' + escapeHtml(u.id) + '" data-uname="' + escapeHtml(u.username) + '" data-active="' + u.is_active + '" class="p-2 rounded-lg hover:bg-white/10 text-secondary-text hover:text-' + toggleColor + '-400 transition-colors cursor-pointer" title="' + toggleTitle + '"><span class="material-icons-round text-lg">' + toggleIcon + '</span></button>' +
+                '<button data-action="delete-user" data-uid="' + escapeHtml(u.id) + '" data-uname="' + escapeHtml(u.username) + '" class="p-2 rounded-lg hover:bg-white/10 text-secondary-text hover:text-red-500 transition-colors cursor-pointer" title="Delete user permanently"><span class="material-icons-round text-lg">delete_forever</span></button>';
         }
 
         html += '<div class="p-5 rounded-xl border border-white/10 hover:border-white/20 transition-colors" style="background:#1a1d21">' +
@@ -6916,8 +6917,8 @@ function renderAdminUsers(users) {
                 avatarHtml +
                 '<div class="flex-1 min-w-0">' +
                     '<div class="flex items-center gap-2 mb-0.5 flex-wrap">' +
-                        '<span class="font-semibold text-white truncate">' + (u.display_name || u.username) + '</span>' +
-                        roleBadge.replace('>Admin</span>', '>' + getRoleLabel(u.role) + '</span>') +
+                        '<span class="font-semibold text-white truncate">' + escapeHtml(u.display_name || u.username) + '</span>' +
+                        roleBadge.replace('>Admin</span>', '>' + escapeHtml(getRoleLabel(u.role)) + '</span>') +
                         statusBadge +
                         (isSelf ? '<span class="text-[11px] text-secondary-text">(you)</span>' : '') +
                     '</div>' +
@@ -6926,8 +6927,8 @@ function renderAdminUsers(users) {
                     '<div class="text-xs text-secondary-text mt-1">Joined ' + created + ' &middot; Last login: ' + lastLogin + '</div>' +
                 '</div>' +
                 '<div class="flex items-center gap-2 flex-shrink-0"' + (canEdit ? '' : ' style="display:none"') + '>' +
-                    '<button data-action="edit-user" data-uid="' + u.id + '" class="p-2 rounded-lg hover:bg-white/10 text-secondary-text hover:text-white transition-colors cursor-pointer" title="Edit user"><span class="material-icons-round text-lg">edit</span></button>' +
-                    '<button data-action="reset-pw" data-uid="' + u.id + '" data-uname="' + u.username + '" class="p-2 rounded-lg hover:bg-white/10 text-secondary-text hover:text-white transition-colors cursor-pointer" title="Reset password"><span class="material-icons-round text-lg">lock_reset</span></button>' +
+                    '<button data-action="edit-user" data-uid="' + escapeHtml(u.id) + '" class="p-2 rounded-lg hover:bg-white/10 text-secondary-text hover:text-white transition-colors cursor-pointer" title="Edit user"><span class="material-icons-round text-lg">edit</span></button>' +
+                    '<button data-action="reset-pw" data-uid="' + escapeHtml(u.id) + '" data-uname="' + escapeHtml(u.username) + '" class="p-2 rounded-lg hover:bg-white/10 text-secondary-text hover:text-white transition-colors cursor-pointer" title="Reset password"><span class="material-icons-round text-lg">lock_reset</span></button>' +
                     extraBtns +
                 '</div>' +
             '</div>' +

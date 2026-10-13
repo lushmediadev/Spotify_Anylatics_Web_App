@@ -15,7 +15,7 @@ CHANNELS_LIST_BATCH_SIZE = 50
 KEY_CHECK_CHANNEL_ID = "UC_x5XG1OV2P6uZZ5FSM9Ttw"
 _PRIVATE_HTTP = ContextVar("youtube_private_http", default=False)
 _MESSAGES = {
-    "no_api_keys": "Channel owner must configure YouTube API keys in their account before refreshing.",
+    "no_api_keys": "No system API key configured — contact an admin.",
     "invalid_key": "YouTube API key is invalid.",
     "quota_exceeded": "YouTube API quota exhausted.",
     "rate_limited": "YouTube API rate limit reached.",

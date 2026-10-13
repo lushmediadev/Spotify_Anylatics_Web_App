@@ -27,6 +27,8 @@
         const parsed = new Date(input);
         return Number.isNaN(parsed.getTime()) ? '-' : parsed.toLocaleString('vi-VN', { timeZone: 'Asia/Ho_Chi_Minh' });
     };
+    const NO_SYSTEM_KEY = 'No system API key configured — contact an admin.';
+    const isAdmin = () => state.getUser()?.role === 'admin';
     function safeUrl(value) {
         try {
             const url = new URL(value);
@@ -204,8 +206,7 @@
     }
     function checked(item) {
         const error = item.error_message || item.error;
-        const ownChannel = item.user_id === state.getUser()?.id;
-        const settings = item.error_code === 'no_api_keys' ? ownChannel ? '<button type="button" data-chp-action="settings">Mở Settings để thêm key</button>' : '<small class="chp-error">Chủ kênh cần thêm key trong Settings của họ.</small>' : '';
+        const settings = item.error_code === 'no_api_keys' && isAdmin() ? '<button type="button" data-chp-action="settings">Open Settings to add a key</button>' : '';
         const status = item.status === 'error' || error ? 'error' : ['active', 'crawling', 'pending'].includes(item.status) ? item.status : 'pending';
         const checkedAt = item.last_checked || item.created_at;
         const labels = { active: 'Active', error: `Error (${item.error_code || '?'})`, pending: 'Pending', crawling: 'Crawling...' };
@@ -258,7 +259,7 @@
         renderRail();
         const warning = state.host.querySelector('.chp-key-warning');
         warning.hidden = state.hasKeys;
-        const warningHtml = 'Tài khoản của bạn chưa có YouTube API key. <button type="button" data-chp-action="settings">Mở Settings</button>';
+        const warningHtml = NO_SYSTEM_KEY + (isAdmin() ? ' <button type="button" data-chp-action="settings">Open Settings</button>' : '');
         if (!state.hasKeys && warning.innerHTML !== warningHtml) warning.innerHTML = warningHtml;
         state.pendingRender = false;
     }
@@ -440,7 +441,7 @@
         else if (action === 'new-group') startGroupCreate();
         else if (action === 'settings') {
             const nav = document.getElementById('nav-settings');
-            if (nav) nav.click(); else message('Mở Settings trong menu ứng dụng để cấu hình YouTube API keys.');
+            if (nav) nav.click(); else message('Open Settings in the app menu to configure YouTube API keys.');
         }
         else if (action === 'refresh-all') refreshAll(button);
         else if (action === 'filter') { const rect = button.getBoundingClientRect(); openFilterMenu(rect.left, rect.bottom); }
@@ -938,40 +939,77 @@
         const userId = state.getUser()?.id;
         const current = () => generation === state.settingsGeneration && state.getUser()?.id === userId;
         host.classList.add('chp-settings');
-        host.textContent = 'Đang tải API keys của bạn…';
+        // Only admins manage the system key pool; every other role never sees this section.
+        host.hidden = !isAdmin();
+        if (host.hidden) { host.textContent = ''; return; }
+        host.textContent = 'Loading system API keys…';
         try {
-            // Never append the channel owner filter: keys always belong to the authenticated user.
             const data = await api('/youtube/keys');
             if (!current()) return;
-            host.innerHTML = '<form><h3 class="chp-settings-title">YouTube API keys</h3><p class="chp-muted">Bật YouTube Data API v3 trong Google Cloud. Nếu giới hạn key theo nguồn gọi, dùng IP server VPS 194.233.69.135, không dùng browser-referrer. Giới hạn API về YouTube Data API v3.</p><label>API keys của bạn<textarea name="api_keys" rows="5" autocomplete="off" spellcheck="false" aria-describedby="chp-key-note"></textarea></label><p id="chp-key-note" class="chp-muted">Mỗi dòng một key. Hệ thống tự chuyển key khi hết quota. Chỉ quản lý keys của tài khoản đang đăng nhập; bộ lọc chủ kênh không thay đổi tài khoản này.</p><div class="chp-settings-actions"><button type="submit" class="chp-primary">Lưu keys</button><button type="button" data-check>Kiểm tra keys</button></div><p class="chp-key-status" role="status" aria-live="polite"></p></form>';
-            const input = host.querySelector('textarea'); input.value = data.api_keys || '';
+            host.innerHTML = '<form><h3 class="chp-settings-title">YouTube API keys</h3><p class="chp-muted">System key pool used by every account. Enable YouTube Data API v3 in Google Cloud. If you restrict keys by caller, allow the VPS server IP 194.233.69.135 (not a browser referrer) and limit the key to YouTube Data API v3.</p><ul class="chp-key-list" aria-label="System API keys"></ul><label>Add API keys<textarea name="api_keys" rows="4" autocomplete="off" spellcheck="false" aria-describedby="chp-key-note" placeholder="One key per line"></textarea></label><p id="chp-key-note" class="chp-muted">One key per line; duplicates are skipped. Keys rotate automatically when quota runs out. Stored keys are only ever shown masked.</p><div class="chp-settings-actions"><button type="submit" class="chp-primary">Add keys</button><button type="button" data-check>Check keys</button></div><p class="chp-key-status" role="status" aria-live="polite"></p></form>';
+            const input = host.querySelector('textarea');
+            const list = host.querySelector('.chp-key-list');
             const status = host.querySelector('.chp-key-status');
+            const labels = { valid: 'Valid', invalid: 'Invalid', quota_exceeded: 'Quota exceeded', error: 'Check failed' };
+            const codes = { invalid_key: 'Invalid key', quota_exceeded: 'Quota exceeded', forbidden: 'API access denied', network_error: 'Connection error', rate_limited: 'Rate limited', api_unavailable: 'API temporarily unavailable' };
+            // Provider messages are never rendered: they may contain credentials.
+            const resultLabel = entry => typeof entry.valid === 'boolean'
+                ? entry.valid ? labels.valid : codes[entry.error_code] || 'Invalid / check failed'
+                : entry.status === 'valid' ? labels.valid : codes[entry.error_code] || labels[entry.status] || 'Unknown';
+            function renderKeys(keys, results = []) {
+                const byId = new Map(results.filter(entry => entry.id).map(entry => [String(entry.id), entry]));
+                list.innerHTML = keys.length ? keys.map(key => {
+                    const result = byId.get(String(key.id));
+                    return `<li data-key-id="${escapeHtml(key.id)}"><code>${escapeHtml(key.masked)}</code><span class="chp-muted">${escapeHtml(key.owner || '')}</span>${result ? `<span class="chp-key-result${result.status === 'valid' ? '' : ' chp-error'}">${escapeHtml(resultLabel(result))}</span>` : ''}<button type="button" data-delete-key="${escapeHtml(key.id)}" aria-label="Delete key ${escapeHtml(key.masked)}">Delete</button></li>`;
+                }).join('') : `<li class="chp-muted">${escapeHtml(NO_SYSTEM_KEY)}</li>`;
+            }
+            let keys = Array.isArray(data?.keys) ? data.keys : [];
+            renderKeys(keys);
             let busy = false;
-            async function run(check) {
+            async function run(label, work) {
                 if (busy || !current()) return;
                 busy = true;
-                const buttons = [...host.querySelectorAll('button')]; buttons.forEach(button => { button.disabled = true; });
-                status.textContent = check ? 'Đang kiểm tra…' : 'Đang lưu…'; status.classList.remove('chp-error');
+                host.querySelectorAll('button').forEach(button => { button.disabled = true; });
+                status.textContent = label; status.classList.remove('chp-error');
                 try {
-                    const result = await api(check ? '/youtube/keys/check' : '/youtube/keys', check ? 'POST' : 'PUT', { api_keys: input.value });
-                    if (!current()) return;
-                    // Display counts only; do not echo provider errors or summaries containing secrets.
-                    if (check) {
-                        const results = result?.results;
-                        if (!Array.isArray(results)) throw new Error('Invalid key check response');
-                        const labels = { valid: 'Hợp lệ', invalid: 'Không hợp lệ', quota_exceeded: 'Hết quota', error: 'Lỗi kiểm tra' };
-                        const codes = { invalid_key: 'Key không hợp lệ', quota_exceeded: 'Hết quota', forbidden: 'Không có quyền truy cập API', network_error: 'Lỗi kết nối', rate_limited: 'Giới hạn tốc độ', api_unavailable: 'API tạm thời không khả dụng' };
-                        status.textContent = results.length ? results.map((entry, index) => {
-                            const label = typeof entry.valid === 'boolean' ? entry.valid ? 'Hợp lệ' : codes[entry.error_code] || 'Không hợp lệ / lỗi kiểm tra' : labels[entry.status] || codes[entry.error_code] || 'Không xác định';
-                            return `Key ${Number.isInteger(entry.index) ? entry.index + 1 : index + 1}: ${label}`;
-                        }).join(' · ') : 'Chưa nhập API key.';
-                    } else status.textContent = 'Đã lưu keys.';
-                } catch (_) { if (current()) { status.textContent = 'Không thể xử lý keys. Vui lòng thử lại.'; status.classList.add('chp-error'); } }
-                finally { busy = false; buttons.forEach(button => { button.disabled = false; }); }
+                    const text = await work();
+                    if (current()) status.textContent = text;
+                } catch (_) { if (current()) { status.textContent = 'Could not process API keys. Please try again.'; status.classList.add('chp-error'); } }
+                finally { busy = false; host.querySelectorAll('button').forEach(button => { button.disabled = false; }); }
             }
-            host.querySelector('form').addEventListener('submit', event => { event.preventDefault(); run(false); });
-            host.querySelector('[data-check]').addEventListener('click', () => run(true));
-        } catch (_) { if (current()) host.textContent = 'Không thể tải keys của bạn. Mở lại settings để thử lại.'; }
+            const refreshed = result => {
+                if (!Array.isArray(result?.keys)) throw new Error('Invalid key response');
+                keys = result.keys; renderKeys(keys); state.hasKeys = keys.length > 0;
+            };
+            host.querySelector('form').addEventListener('submit', event => {
+                event.preventDefault();
+                if (!input.value.trim()) { status.textContent = 'Enter at least one API key.'; return; }
+                run('Adding…', async () => {
+                    const result = await api('/youtube/keys', 'POST', { api_keys: input.value });
+                    refreshed(result); input.value = '';
+                    return `Added ${Number(result.added) || 0} key(s)` + (result.skipped ? `, skipped ${Number(result.skipped)} duplicate(s).` : '.');
+                });
+            });
+            list.addEventListener('click', event => {
+                const id = event.target.closest('[data-delete-key]')?.dataset.deleteKey;
+                if (!id || !window.confirm('Delete this API key from the system pool?')) return;
+                run('Deleting…', async () => {
+                    await api(`/youtube/keys/${encodeURIComponent(id)}`, 'DELETE');
+                    refreshed(await api('/youtube/keys'));
+                    return 'Key deleted.';
+                });
+            });
+            host.querySelector('[data-check]').addEventListener('click', () => run('Checking…', async () => {
+                // New keys in the textarea are checked before they are added; otherwise check the pool.
+                const pending = input.value.trim();
+                const result = await api('/youtube/keys/check', 'POST', pending ? { api_keys: input.value } : {});
+                const results = result?.results;
+                if (!Array.isArray(results)) throw new Error('Invalid key check response');
+                if (!pending) renderKeys(keys, results);
+                return results.length ? results.map((entry, index) =>
+                    `${entry.masked || `Key ${Number.isInteger(entry.index) ? entry.index + 1 : index + 1}`}: ${resultLabel(entry)}`).join(' · ') : NO_SYSTEM_KEY;
+            }));
+        } catch (_) { if (current()) host.textContent = 'Could not load system API keys. Reopen Settings to retry.'; }
     }
     function syncAccountScope() {
         const next = String(state.getUser()?.id || '');

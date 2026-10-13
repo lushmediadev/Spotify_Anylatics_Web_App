@@ -81,6 +81,8 @@ NAMES = ("manager", "assigned", "unassigned", "other_manager", "admin", "linked_
 ALLOWED = {"manager"}
 CHANNEL_ID = "UC" + "a" * 22
 NEW_PLAYLIST = "N" * 22
+# Active admins in creation order: the only keys any refresh may use.
+SYSTEM_KEYS = ["key_admin", "key_linked_admin"]
 
 
 def fixed_uuid(value):
@@ -236,7 +238,7 @@ def playlist_url(item):
     ("manager", ALLOWED), ("assigned", {"assigned"}), ("unassigned", {"unassigned"}),
     ("admin", {"admin"}),
 ])
-def test_list_owner_scopes_and_own_key_counts(env, actor, visible):
+def test_list_owner_scopes_and_system_key_counts(env, actor, visible):
     env.actor = actor
     response = request(env, "GET")
     assert response.status_code == 200, response.text
@@ -244,7 +246,7 @@ def test_list_owner_scopes_and_own_key_counts(env, actor, visible):
     assert {row["id"] for row in body["items"]} == {str(env.channels[name].id) for name in visible}
     assert body["total"] == len(visible)
     assert body["groups"] == [{"name": "Shared", "count": len(visible)}]
-    assert body["key_count"] == 1 and body["has_keys"] is True
+    assert body["key_count"] == len(SYSTEM_KEYS) and body["has_keys"] is True
 
 
 @pytest.mark.parametrize("owner", NAMES)
@@ -312,8 +314,8 @@ def test_list_order_groups_filters_and_pagination(env):
 
 
 @pytest.mark.parametrize("method,path,payload", [
-    ("GET", "/keys", None), ("PUT", "/keys", {"api_keys": "key"}),
-    ("POST", "/keys/check", {}), ("GET", "/channels", None),
+    ("GET", "/keys", None), ("POST", "/keys", {"api_keys": "key"}),
+    ("POST", "/keys/check", {}), ("DELETE", "/keys/{id}", None), ("GET", "/channels", None),
     ("POST", "/groups", {"name": "Private"}),
     ("POST", "/channels", {"urls": ["@new"], "group": "New"}),
     ("POST", "/channels/refresh", {}), ("GET", "/channels/{id}", None),
@@ -328,46 +330,105 @@ def test_real_auth_rejects_missing_or_invalid_token(env, method, path, payload, 
     assert env.scheduled == []
 
 
-def test_keys_are_actor_owned_cleaned_checked_and_never_inherited(env):
-    assert request(env, "GET", "/keys").json() == {"api_keys": "key_manager"}
-    result = request(env, "PUT", "/keys", json={"api_keys": " one\n\ntwo\none \n"})
-    assert result.status_code == 200 and result.json() == {"api_keys": "one\ntwo"}
-    stored = sorted((row.position, row.key) for row in rows(env, YouTubeApiKey) if row.user_id == env.users["manager"].id)
-    assert stored == [(0, "one"), (1, "two")]
-    assert request(env, "POST", "/keys/check", json={}).status_code == 200
-    env.external_check.assert_awaited_once_with(["one", "two"])
+def test_keys_are_admin_only_masked_appended_and_shared_by_every_account(env):
+    foreign_key = next(row.id for row in rows(env, YouTubeApiKey) if row.user_id == env.users["manager"].id)
+    for actor in ("manager", "assigned", "unassigned", "other_manager"):
+        env.actor = actor
+        for method, path, payload in [
+            ("GET", "/keys", None), ("POST", "/keys", {"api_keys": "new_key"}),
+            ("POST", "/keys/check", {}), ("DELETE", f"/keys/{foreign_key}", None),
+        ]:
+            assert request(env, method, path, json=payload).status_code == 403, (actor, method, path)
+        assert request(env, "PUT", "/keys", json={"api_keys": "new_key"}).status_code == 405
+        body = request(env, "GET").json()
+        assert body["key_count"] == 2 and body["has_keys"] is True
+    env.external_check.assert_not_awaited()
+    assert {row.key for row in rows(env, YouTubeApiKey)} == {f"key_{name}" for name in NAMES}
+
+    env.actor = "admin"
+    response = request(env, "GET", "/keys")
+    body = response.json()
+    assert body["count"] == 2 and [row["position"] for row in body["keys"]] == [0, 1]
+    assert [row["owner"] for row in body["keys"]] == ["Display admin", "Display linked_admin"]
+    assert all(set(row) == {"id", "masked", "owner", "position"} for row in body["keys"])
+    assert "key_admin" not in response.text and "key_linked_admin" not in response.text
+
+    response = request(env, "POST", "/keys", json={"api_keys": " one_long_key_value\n\ntwo\nkey_admin\none_long_key_value \n"})
+    assert response.status_code == 200, response.text
+    body = response.json()
+    assert (body["added"], body["skipped"], body["count"]) == (2, 1, 4)
+    assert [row["masked"] for row in body["keys"]] == ["…in", "one_…alue", "…wo", "key_…dmin"]
+    assert "one_long_key_value" not in response.text
+    stored = sorted((row.position, row.key) for row in rows(env, YouTubeApiKey) if row.user_id == env.users["admin"].id)
+    assert stored == [(0, "key_admin"), (1, "one_long_key_value"), (2, "two")]
+
+    pool = ["key_admin", "one_long_key_value", "two", "key_linked_admin"]
+    env.external_check.return_value = [{"index": index, "preview": key, "status": "valid", "error_code": None,
+        "error_message": key} for index, key in enumerate(pool)]
+    response = request(env, "POST", "/keys/check", json={})
+    assert response.status_code == 200
+    env.external_check.assert_awaited_once_with(pool)
+    results = response.json()["results"]
+    assert [row["id"] for row in results] == [row["id"] for row in body["keys"]]
+    assert all(set(row) == {"index", "id", "masked", "status", "error_code", "error_message"} for row in results)
+    assert "one_long_key_value" not in response.text.replace('"error_message":"one_long_key_value"', "")
     env.external_check.reset_mock()
-    assert request(env, "POST", "/keys/check", json={"api_keys": " probe\nprobe"}).status_code == 200
-    env.external_check.assert_awaited_once_with(["probe"])
-    assert request(env, "GET", "/keys").json()["api_keys"] == "one\ntwo"
+    env.external_check.return_value = [{"status": "invalid", "error_code": "invalid_key", "error_message": "YouTube API key is invalid."}]
+    response = request(env, "POST", "/keys/check", json={"api_keys": " probe_secret_value\nprobe_secret_value"})
+    env.external_check.assert_awaited_once_with(["probe_secret_value"])
+    assert response.json()["results"] == [{"index": 0, "id": None, "masked": "prob…alue", "status": "invalid",
+        "error_code": "invalid_key", "error_message": "YouTube API key is invalid."}]
+    assert request(env, "GET", "/keys").json()["count"] == 4
+
+    # Any admin manages the shared pool; other roles' legacy rows are never part of it.
+    env.actor = "linked_admin"
+    assert request(env, "GET", "/keys").json()["keys"] == body["keys"]
+    assert request(env, "DELETE", f"/keys/{foreign_key}").status_code == 404
+    assert request(env, "DELETE", f"/keys/{uuid.uuid4()}").status_code == 404
+    assert request(env, "DELETE", f"/keys/{body['keys'][1]['id']}").status_code == 200
+    assert [row["masked"] for row in request(env, "GET", "/keys").json()["keys"]] == ["…in", "…wo", "key_…dmin"]
+    assert "key_manager" in {row.key for row in rows(env, YouTubeApiKey)}
     env.actor = "assigned"
-    assert request(env, "GET", "/keys").json()["api_keys"] == "key_assigned"
-    assert request(env, "PUT", "/keys", json={"api_keys": ""}).status_code == 200
+    assert request(env, "GET").json()["key_count"] == 3
+
+    with Session(env.engine) as session:
+        session.get(User, env.users["admin"].id).is_active = False
+        session.commit()
+    assert request(env, "GET").json()["key_count"] == 1
+    with Session(env.engine) as session:
+        session.execute(delete(YouTubeApiKey).where(YouTubeApiKey.user_id == env.users["linked_admin"].id))
+        session.commit()
     body = request(env, "GET").json()
     assert body["key_count"] == 0 and body["has_keys"] is False
-    assert request(env, "GET", "/keys").json()["api_keys"] == ""
+
+
+def test_key_pool_is_capped(env):
     env.actor = "admin"
-    assert request(env, "GET", "/keys").json()["api_keys"] == "key_admin"
+    assert request(env, "POST", "/keys", json={"api_keys": "\n".join(f"k{i}" for i in range(99))}).status_code == 400
+    assert request(env, "POST", "/keys", json={"api_keys": "\n".join(f"k{i}" for i in range(98))}).status_code == 200
+    assert request(env, "GET", "/keys").json()["count"] == 100
 
 
 @pytest.mark.parametrize("bad", ["valid\nbad key", "x" * 257, "\n".join(f"k{i}" for i in range(101))])
 def test_invalid_key_input_is_atomic(env, bad):
+    env.actor = "admin"
     before = {(row.user_id, row.key, row.position) for row in rows(env, YouTubeApiKey)}
-    for method, path in (("PUT", "/keys"), ("POST", "/keys/check")):
+    for method, path in (("POST", "/keys"), ("POST", "/keys/check")):
         assert request(env, method, path, json={"api_keys": bad}).status_code == 400
         assert {(row.user_id, row.key, row.position) for row in rows(env, YouTubeApiKey)} == before
     env.external_check.assert_not_awaited()
 
 
-@pytest.mark.parametrize("method,path", [("PUT", "/keys"), ("POST", "/keys/check")])
+@pytest.mark.parametrize("path", ["/keys", "/keys/check"])
 @pytest.mark.parametrize("payload,status", [
     ({"api_keys": ["DO_NOT_ECHO_SECRET"]}, 422),
     ({"api_keys": {"secret": "DO_NOT_ECHO_SECRET"}}, 422),
     ({"api_keys": "DO_NOT_ECHO_SECRET" * 2000}, 400),
 ])
-def test_key_validation_never_echoes_raw_secrets(env, method, path, payload, status):
+def test_key_validation_never_echoes_raw_secrets(env, path, payload, status):
+    env.actor = "admin"
     before = {(row.user_id, row.key) for row in rows(env, YouTubeApiKey)}
-    response = request(env, method, path, json=payload)
+    response = request(env, "POST", path, json=payload)
     assert response.status_code == status, response.text
     assert "DO_NOT_ECHO_SECRET" not in response.text
     assert set(response.json()) == {"detail"}
@@ -664,7 +725,7 @@ def fake_worker_client(env, monkeypatch, results):
     return calls
 
 
-def test_worker_owner_keys_snapshot_delta_and_foreign_channel_exclusion(env, monkeypatch):
+def test_worker_system_keys_snapshot_delta_and_foreign_channel_exclusion(env, monkeypatch):
     channel = env.channels["assigned"]
     with Session(env.engine) as session:
         row = session.get(Channel, channel.id)
@@ -674,7 +735,7 @@ def test_worker_owner_keys_snapshot_delta_and_foreign_channel_exclusion(env, mon
                                                   "view_count": 145, "image": "cover", "banner": "banner"}])
     before = len(rows(env, ChannelSnapshot))
     asyncio.run(youtube_jobs.refresh_channels(channel.user_id, [channel.id, env.channels["manager"].id]))
-    assert calls == [{"keys": ["key_assigned"], "queries": [("handle", "@assigned")]}]
+    assert calls == [{"keys": SYSTEM_KEYS, "queries": [("handle", "@assigned")]}]
     with Session(env.engine) as session:
         row = session.get(Channel, channel.id)
         assert (row.status, row.youtube_id, row.name, row.view_count_delta, row.group) == (
@@ -702,7 +763,7 @@ def test_worker_canonical_merge_unions_links_preserves_canonical_group_and_other
         alias_id, extra_id = alias.id, extra.id
     calls = fake_worker_client(env, monkeypatch, [{"youtube_id": CHANNEL_ID, "view_count": 200}])
     asyncio.run(youtube_jobs.refresh_channels(canonical.user_id, [alias_id]))
-    assert calls[0]["keys"] == ["key_assigned"]
+    assert calls[0]["keys"] == SYSTEM_KEYS
     assert alias_id not in ids(env, Channel)
     assert link_ids(env, canonical) == {env.items["assigned"].id, extra_id}
     assert not any(row.channel_id == alias_id for row in rows(env, ChannelSnapshot))
@@ -740,7 +801,7 @@ def test_post_create_to_worker_resolved_id_and_snapshot_regression(env, monkeypa
 
     class FakeClient:
         def __init__(self, keys):
-            assert keys == ["key_assigned"]
+            assert keys == SYSTEM_KEYS
 
         async def fetch_channels(self, queries):
             calls.append(queries)
@@ -825,7 +886,7 @@ def test_worker_skips_deleted_channel_during_fetch_without_poisoning_survivor(en
 
     class FakeClient:
         def __init__(self, keys):
-            assert keys == ["key_manager"]
+            assert keys == SYSTEM_KEYS
 
         async def fetch_channels(self, queries):
             assert queries == [("handle", "@manager"), ("handle", "@survivor")]
@@ -884,8 +945,8 @@ def test_create_through_real_youtube_client_mock_http_channels_list_id(env, monk
         assert req.url.path == "/youtube/v3/channels"
         assert dict(req.url.params) == {
             "part": "snippet,statistics,brandingSettings", "id": CHANNEL_ID, "maxResults": "50"}
-        assert req.headers["X-Goog-Api-Key"] == "key_assigned"
-        assert "key_assigned" not in str(req.url)
+        assert req.headers["X-Goog-Api-Key"] == SYSTEM_KEYS[0]
+        assert SYSTEM_KEYS[0] not in str(req.url)
         return httpx.Response(200, json={"items": [{
             "id": CHANNEL_ID, "snippet": {"title": "Real client result",
                 "thumbnails": {"high": {"url": "https://example.test/channel.jpg"}}},
@@ -938,7 +999,7 @@ def test_superseded_attempt_cannot_complete_or_fail_new_claim(env, monkeypatch, 
 
     class FakeClient:
         def __init__(self, keys):
-            assert keys == ["key_assigned"]
+            assert keys == SYSTEM_KEYS
 
         async def fetch_channels(self, queries):
             calls.append(queries)

@@ -48,8 +48,8 @@ def test_workspace_combinations_gate_manager_and_assigned_user(env, grants, acto
             assert client.post('/api/items/export', json={'action': 'playlist-type3', 'format': 'json', 'item_ids': []}).status_code == 403
         if 'youtube-spotify' not in grants:
             assert client.post('/api/channel-playlists/items/export', json={'action': 'playlist-type3', 'format': 'json', 'item_ids': []}).status_code == 403
-        # Own key/profile settings are shared; grants do not expand account management.
-        assert client.get('/api/youtube/keys').status_code == 200
+        # The system key pool is admin-only; grants do not expand account management.
+        assert client.get('/api/youtube/keys').status_code == 403
         assert client.get('/api/auth/users').status_code == (200 if actor == 'manager' else 403)
 
 

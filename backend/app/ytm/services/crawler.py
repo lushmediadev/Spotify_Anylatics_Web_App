@@ -27,6 +27,7 @@ from app.ytm.utils.youtube_urls import ParsedYouTubeChannel
 logger = logging.getLogger(__name__)
 CRAWL_TASK_SEMAPHORE = asyncio.Semaphore(max(1, settings.CRAWL_TASK_MAX_CONCURRENCY))
 _tasks: set[asyncio.Task] = set()
+NO_SYSTEM_KEY_MESSAGE = "No system API key configured — contact an admin."
 
 
 def _start_task(coroutine):
@@ -139,10 +140,10 @@ def _mark_api_key(api_key, status: str, error: Exception | str | None = None) ->
     api_key.last_checked_at = datetime.utcnow()
 
 
-async def _fetch_with_api_keys(db: AsyncSession, parsed: ParsedYouTubeChannel, user_id: str) -> dict:
-    api_keys = await get_active_api_keys(db, user_id)
+async def _fetch_with_api_keys(db: AsyncSession, parsed: ParsedYouTubeChannel) -> dict:
+    api_keys = await get_active_api_keys(db)
     if not api_keys:
-        raise YouTubeApiError("No YouTube API key configured")
+        raise YouTubeApiError(NO_SYSTEM_KEY_MESSAGE)
 
     data = None
     last_error: Exception | None = None
@@ -160,10 +161,10 @@ async def _fetch_with_api_keys(db: AsyncSession, parsed: ParsedYouTubeChannel, u
     return data
 
 
-async def _fetch_id_batch_with_api_keys(db: AsyncSession, channel_ids: Sequence[str], user_id: str) -> dict[str, dict]:
-    api_keys = await get_active_api_keys(db, user_id)
+async def _fetch_id_batch_with_api_keys(db: AsyncSession, channel_ids: Sequence[str]) -> dict[str, dict]:
+    api_keys = await get_active_api_keys(db)
     if not api_keys:
-        raise YouTubeApiError("No YouTube API key configured")
+        raise YouTubeApiError(NO_SYSTEM_KEY_MESSAGE)
 
     data_by_id = None
     last_error: Exception | None = None
@@ -202,7 +203,7 @@ async def crawl_item_task(job_id: str, parsed: ParsedYouTubeChannel):
                 if not item:
                     raise YouTubeApiError("Channel row not found")
 
-                data = await _fetch_with_api_keys(db, parsed, item.user_id)
+                data = await _fetch_with_api_keys(db, parsed)
                 _apply_success(db, item, job, data)
                 await db.commit()
             except Exception as exc:
@@ -238,10 +239,7 @@ async def crawl_channel_id_batch_task(jobs: Sequence[tuple[str, ParsedYouTubeCha
                 await db.commit()
 
                 channel_ids = [parsed.query for _, parsed in jobs if parsed.query_type == "id"]
-                owners = {item.user_id for item in item_by_id.values()}
-                if len(owners) != 1:
-                    raise YouTubeApiError("Batch must belong to one account")
-                data_by_id = await _fetch_id_batch_with_api_keys(db, channel_ids, next(iter(owners)))
+                data_by_id = await _fetch_id_batch_with_api_keys(db, channel_ids)
 
                 for job_id, parsed in jobs:
                     job = job_by_id.get(job_id)

@@ -160,7 +160,7 @@ def test_worker_channel_alias_and_actionable_no_keys(monkeypatch):
     assert requests[0].url.params["id"] == CHANNEL_ID
     errors = asyncio.run(youtube.YouTubeClient([]).fetch_channels(queries))
     assert all(row["error_code"] == "no_api_keys" for row in errors)
-    assert all(row["error_message"] == "Channel owner must configure YouTube API keys in their account before refreshing." for row in errors)
+    assert all(row["error_message"] == "No system API key configured — contact an admin." for row in errors)
     assert len(requests) == 1
 
 

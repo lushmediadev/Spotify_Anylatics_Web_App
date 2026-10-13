@@ -321,14 +321,63 @@ def test_manager_with_assigned_users_cannot_be_demoted(accounts):
     assert manager.role == "user"
 
 
-def test_admin_delete_manager_detaches_assigned_users(accounts):
+def test_admin_cannot_delete_manager_until_assigned_users_are_reassigned(accounts):
     db, users = accounts
     manager, assigned = users["manager"], users["assigned"]
+    _expect_status(400, auth_api.admin_delete_user(str(manager.id), users["admin"], db))
+    assert db.session.get(User, manager.id) is not None
+    assert assigned.manager_id == manager.id
+    assert not db.dependent_queries
+    _run(auth_api.admin_update_user(str(assigned.id), AdminUpdateUserRequest(manager_id=None), users["admin"], db))
     assert _run(auth_api.admin_delete_user(str(manager.id), users["admin"], db))["ok"]
     assert db.session.get(User, manager.id) is None
-    db.session.refresh(assigned)
-    assert assigned.manager_id is None
-    assert assigned.role == "user"
+    assert db.session.get(User, assigned.id).role == "user"
+
+
+@pytest.mark.parametrize("name", ["<img src=x onerror=alert(1)>", "a>b", "tab\tname", "line\nbreak", "x" * 65])
+def test_display_names_reject_markup_control_characters_and_overlong_values(accounts, name):
+    from app.schemas.auth import UpdateProfileRequest
+    db, users = accounts
+    _expect_status(400, auth_api.update_profile(UpdateProfileRequest(display_name=name), users["unassigned"], db))
+    _expect_status(400, auth_api.admin_update_user(str(users["assigned"].id), AdminUpdateUserRequest(display_name=name), users["admin"], db))
+    _expect_status(400, auth_api.admin_create_user(
+        AdminCreateUserRequest(username="markup", password="pass", display_name=name), users["admin"], db))
+    assert users["unassigned"].display_name is None and users["assigned"].display_name is None
+
+
+def test_display_names_are_trimmed_and_empty_values_clear(accounts):
+    from app.schemas.auth import UpdateProfileRequest
+    db, users = accounts
+    user = users["unassigned"]
+    _run(auth_api.update_profile(UpdateProfileRequest(display_name="  Nguyễn Văn A & Co. "), user, db))
+    assert user.display_name == "Nguyễn Văn A & Co."
+    _run(auth_api.update_profile(UpdateProfileRequest(display_name="x" * 64), user, db))
+    assert user.display_name == "x" * 64
+    _run(auth_api.update_profile(UpdateProfileRequest(display_name="   "), user, db))
+    assert user.display_name is None
+
+
+@pytest.mark.parametrize("avatar", [
+    "https://example.test/avatar.png", "javascript:alert(1)", "data:image/svg+xml;base64,PHN2Zz4=",
+    "data:text/html;base64,PHNjcmlwdD4=", 'data:image/png;base64,AAAA" onerror="alert(1)',
+    "data:image/png;base64,", "data:image/png,AAAA", "",
+])
+def test_avatar_accepts_only_base64_raster_image_data_urls(accounts, avatar):
+    from app.schemas.auth import UpdateAvatarRequest
+    db, users = accounts
+    _expect_status(400, auth_api.update_avatar(UpdateAvatarRequest(avatar=avatar), users["unassigned"], db))
+    assert users["unassigned"].avatar is None
+
+
+@pytest.mark.parametrize("kind", ["png", "jpeg", "webp", "gif"])
+def test_avatar_accepts_supported_image_data_urls(accounts, kind):
+    from app.schemas.auth import UpdateAvatarRequest
+    db, users = accounts
+    avatar = f"data:image/{kind};base64,iVBORw0KGgo+/A=="
+    assert _run(auth_api.update_avatar(UpdateAvatarRequest(avatar=avatar), users["unassigned"], db))["avatar"] == avatar
+    assert users["unassigned"].avatar == avatar
+    _expect_status(400, auth_api.update_avatar(
+        UpdateAvatarRequest(avatar="data:image/png;base64," + "A" * 500_000), users["unassigned"], db))
 
 
 def test_admin_cannot_delete_self(accounts):

@@ -89,6 +89,10 @@ body.chp-resizing { cursor: col-resize; user-select: none; }
 .chp-settings-actions { display: flex; gap: 8px; }
 .chp-key-status { min-height: 20px; }
 .chp-settings-title { font-size: 15px; margin: 0 0 8px; }
+.chp-key-list { list-style: none; margin: 0 0 16px; padding: 0; display: flex; flex-direction: column; gap: 6px; }
+.chp-key-list li { display: flex; align-items: center; gap: 12px; }
+.chp-key-list code { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
+.chp-key-list [data-delete-key] { margin-left: auto; }
 @media (max-width: 767px) {
     /* Topbar/hero stacking is shared with every workspace (style.css); only channel-specific controls here. */
     .chp-header-tools .chp-mobile-groups { display: flex; flex: 1 1 180px; align-items: center; gap: 6px; min-width: 0; max-width: 100%; }

@@ -1,4 +1,4 @@
-"""YouTube channels with actor-scoped keys and owner-scoped playlist links."""
+"""YouTube channels with an admin-managed system key pool and owner-scoped playlist links."""
 
 import re
 import uuid
@@ -23,11 +23,12 @@ from app.schemas.youtube import (ChannelCreateRequest, ChannelGroupRequest, Chan
     ChannelResponse, KeysCheckRequest, KeysRequest, PlaylistReplaceRequest, WorkspacePreferenceResponse,
     WorkspacePreferenceRequest, ChannelBatchRequest, ChannelMoveRequest, ChannelGroupRenameRequest,
     ChannelGroupsDeleteRequest, ChannelGroupClearRequest)
-from app.services.auth import get_current_user, owner_scope_condition, require_user_access
+from app.services.auth import get_admin_user, get_current_user, owner_scope_condition, require_user_access
 from app.services import youtube_jobs
 from app.services import youtube_workspace as workspace
 from app.services.youtube_workspace import AGGREGATE_GROUPS, channel_group_name
 from app.services.youtube import check_keys as check_external_keys
+from app.services.youtube_keys import mask_key, system_api_key_rows
 from app.utils.youtube_urls import parse_youtube_url
 
 class PrivateKeyRoute(APIRoute):
@@ -38,7 +39,7 @@ class PrivateKeyRoute(APIRoute):
             try:
                 return await handler(request)
             except RequestValidationError:
-                if self.path.endswith(("/keys", "/keys/check")):
+                if "/keys" in self.path:
                     # FastAPI normally includes invalid input values in 422 responses.
                     raise HTTPException(422, "Invalid API key request") from None
                 raise
@@ -251,31 +252,62 @@ def clean_keys(raw):
     return keys
 
 
-async def own_keys(db, actor):
-    return list((await db.execute(select(YouTubeApiKey.key).where(YouTubeApiKey.user_id == actor.id)
-        .order_by(YouTubeApiKey.position))).scalars())
+def key_owner(user):
+    return user.display_name or user.username
 
 
 @router.get("/keys")
-async def get_keys(db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_user)):
-    return {"api_keys": "\n".join(await own_keys(db, current_user))}
+async def get_keys(db: AsyncSession = Depends(get_db), admin: User = Depends(get_admin_user)):
+    keys = [{"id": str(key.id), "masked": mask_key(key.key), "owner": key_owner(owner), "position": position}
+        for position, (key, owner) in enumerate(await system_api_key_rows(db))]
+    return {"keys": keys, "count": len(keys)}
 
 
-@router.put("/keys")
-async def put_keys(req: KeysRequest, db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_user)):
+@router.post("/keys")
+async def add_keys(req: KeysRequest, db: AsyncSession = Depends(get_db), admin: User = Depends(get_admin_user)):
     keys = clean_keys(req.api_keys)
-    await db.execute(select(User.id).where(User.id == current_user.id).with_for_update())
-    await db.execute(delete(YouTubeApiKey).where(YouTubeApiKey.user_id == current_user.id))
-    for position, key in enumerate(keys):
-        db.add(YouTubeApiKey(user_id=current_user.id, key=key, position=position))
+    await db.execute(select(User.id).where(User.id == admin.id).with_for_update())
+    existing = {key.key for key, _ in await system_api_key_rows(db)}
+    # The unique constraint is per owner: also skip keys this admin stored before.
+    own = list((await db.execute(select(YouTubeApiKey.key, YouTubeApiKey.position)
+        .where(YouTubeApiKey.user_id == admin.id))).all())
+    existing.update(key for key, _ in own)
+    position = max((value for _, value in own), default=-1) + 1
+    added = [key for key in keys if key not in existing]
+    if len(existing) + len(added) > 100:
+        raise HTTPException(400, "The system key pool is limited to 100 keys")
+    for offset, key in enumerate(added):
+        db.add(YouTubeApiKey(user_id=admin.id, key=key, position=position + offset))
     await db.commit()
-    return {"api_keys": "\n".join(keys)}
+    return {"added": len(added), "skipped": len(keys) - len(added), **(await get_keys(db, admin))}
+
+
+@router.delete("/keys/{key_id}")
+async def delete_key(key_id: uuid.UUID, db: AsyncSession = Depends(get_db), admin: User = Depends(get_admin_user)):
+    row = next((key for key, _ in await system_api_key_rows(db) if key.id == key_id), None)
+    if row is None:
+        raise HTTPException(404, "API key not found")
+    # Remove every admin-owned copy so a duplicate cannot silently re-enter the pool.
+    await db.execute(delete(YouTubeApiKey).where(YouTubeApiKey.key == row.key, YouTubeApiKey.user_id.in_(
+        select(User.id).where(User.role == "admin"))))
+    await db.commit()
+    return {"deleted": True, "id": str(key_id)}
 
 
 @router.post("/keys/check")
-async def check_keys(req: KeysCheckRequest = KeysCheckRequest(), db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_user)):
-    keys = clean_keys(req.api_keys) if req.api_keys is not None else await own_keys(db, current_user)
-    return {"results": await check_external_keys(keys)}
+async def check_keys(req: KeysCheckRequest = KeysCheckRequest(), db: AsyncSession = Depends(get_db), admin: User = Depends(get_admin_user)):
+    if req.api_keys is not None:
+        keys, key_ids = clean_keys(req.api_keys), None
+    else:
+        stored = await system_api_key_rows(db)
+        keys, key_ids = [key.key for key, _ in stored], [str(key.id) for key, _ in stored]
+    results = []
+    for index, result in enumerate(await check_external_keys(keys)):
+        # Rebuild each entry: provider payloads must never carry a raw credential back.
+        results.append({"index": index, "id": key_ids[index] if key_ids else None, "masked": mask_key(keys[index]),
+            "status": result.get("status"), "error_code": result.get("error_code"),
+            "error_message": result.get("error_message")})
+    return {"results": results}
 
 
 async def channel_for_actor(db, actor, channel_id):
@@ -354,11 +386,11 @@ async def list_channels(user_id: uuid.UUID | None = None, group: str | None = No
         ordering.append(case(channel_ranks, value=Channel.id, else_=5000))
     channels = list((await db.execute(select(Channel).where(*conditions).order_by(*ordering, Channel.created_at.asc(), Channel.id)
         .limit(limit).offset(offset))).scalars())
-    keys = await own_keys(db, current_user)
+    key_count = len(await system_api_key_rows(db))
     return ChannelListResponse(items=await channel_responses(db, channels,
         {current_user.id: preferences["playlist_orders"]}), total=total,
         groups=[{"name": name, "count": group_counts[name]} for name in sorted(group_counts,
-            key=lambda name: (group_ranks.get(name, len(group_ranks)), name))], key_count=len(keys), has_keys=bool(keys))
+            key=lambda name: (group_ranks.get(name, len(group_ranks)), name))], key_count=key_count, has_keys=bool(key_count))
 
 
 async def claim_refresh(db, channels):

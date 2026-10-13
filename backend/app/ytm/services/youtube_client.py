@@ -48,16 +48,10 @@ def _youtube_banner_url(value: str | None) -> str | None:
     return f"{url}=w1707-fcrop64=1,00005a57ffffa5a8-k-c0xffffffff-no-nd-rj"
 
 
-async def get_active_api_keys(db: AsyncSession, user_id: str | None = None) -> list[ApiKey]:
-    if not user_id:
-        return []
-    import uuid
-    from app.models.user import User as SharedUser
-    from app.models.youtube import YouTubeApiKey
-    owner_id = uuid.UUID(user_id)
-    result = await db.execute(select(YouTubeApiKey).join(SharedUser, SharedUser.id == YouTubeApiKey.user_id)
-        .where(YouTubeApiKey.user_id == owner_id, SharedUser.is_active.is_(True)).order_by(YouTubeApiKey.position))
-    return list(result.scalars().all())
+async def get_active_api_keys(db: AsyncSession) -> list:
+    """Every account refreshes with the admin-managed system key pool."""
+    from app.services.youtube_keys import system_api_key_rows
+    return [key for key, _ in await system_api_key_rows(db)]
 
 
 async def get_random_api_key(db: AsyncSession) -> ApiKey:
@@ -88,11 +82,12 @@ async def _request(
     api_key: str,
     client: httpx.AsyncClient | None = None,
 ) -> dict:
-    request_params = dict(params)
-    request_params["key"] = api_key
     request_client = client or await get_youtube_http_client()
     try:
-        res = await request_client.get(f"{YOUTUBE_API_BASE}/{path}", params=request_params)
+        # Credentials stay out of URLs: httpx logs request URLs at INFO.
+        res = await request_client.get(
+            f"{YOUTUBE_API_BASE}/{path}", params=dict(params), headers={"X-Goog-Api-Key": api_key},
+        )
     except httpx.HTTPError:
         raise YouTubeApiError("YouTube network request failed") from None
     if res.status_code != 200:

@@ -75,7 +75,7 @@ def test_copy_legacy_snapshots_order_idempotently_and_delete_only_independent_pl
         assert session.scalars(select(RawResponse).where(RawResponse.spotify_id == "L" * 22)).one() is not None
 
 
-def test_manager_only_ytm_own_resources_shared_keys_and_no_import(env, monkeypatch):
+def test_manager_only_ytm_own_resources_no_key_access_and_no_import(env, monkeypatch):
     monkeypatch.setattr(ytm_crawl, 'schedule_crawl_jobs', lambda jobs: None)
     env.actor = 'manager'
     with full_client(env) as client:
@@ -84,7 +84,7 @@ def test_manager_only_ytm_own_resources_shared_keys_and_no_import(env, monkeypat
         assert client.get('/api/auth/users').status_code == 200
         assert client.post('/api/crawl/batch', json={'urls': ['https://open.spotify.com/playlist/' + 'L' * 22], 'group': 'No'}).status_code == 403
         assert client.post('/api/channel-playlists/items/export', json={'action': 'playlist-type3', 'format': 'json', 'item_ids': []}).status_code == 403
-        assert client.get('/api/youtube/keys').status_code == 200
+        assert client.get('/api/youtube/keys').status_code == 403
         assert client.get('/api/ytm/items').json()['total'] == 0
         response = client.post('/api/ytm/crawl/batch', json={'urls': ['https://www.youtube.com/@fresh'], 'group': 'YTM Only'})
         assert response.status_code == 200, response.text
@@ -168,12 +168,38 @@ def test_deleted_exact_crawl_item_never_resolves_a_checker_duplicate(env):
         assert asyncio.run(_load_job_item(AsyncSessionAdapter(session), missing, checker.spotify_id, 'playlist')) is None
 
 
-def test_ytm_workers_read_only_active_owners_shared_keys(env):
+def test_ytm_workers_read_only_active_admin_system_keys(env):
     from app.ytm.services.youtube_client import get_active_api_keys
     with Session(env.engine) as session:
-        own = env.users['manager']
-        keys = asyncio.run(get_active_api_keys(AsyncSessionAdapter(session), str(own.id)))
-        assert keys and all(key.user_id == own.id for key in keys)
-        session.get(type(own), own.id).is_active = False
+        db, admin = AsyncSessionAdapter(session), env.users['admin']
+        assert [key.key for key in asyncio.run(get_active_api_keys(db))] == ['key_admin', 'key_linked_admin']
+        session.get(type(admin), admin.id).is_active = False
         session.flush()
-        assert asyncio.run(get_active_api_keys(AsyncSessionAdapter(session), str(own.id))) == []
+        assert [key.key for key in asyncio.run(get_active_api_keys(db))] == ['key_linked_admin']
+        session.get(type(admin), env.users['linked_admin'].id).role = 'user'
+        session.flush()
+        assert asyncio.run(get_active_api_keys(db)) == []
+
+
+def test_ytm_requests_send_the_key_in_a_header_never_in_the_url():
+    import httpx
+    from app.ytm.services import youtube_client
+    seen = []
+
+    def handler(request):
+        seen.append(request)
+        return httpx.Response(200 if len(seen) == 1 else 403, json={"items": []} if len(seen) == 1 else {
+            "error": {"message": "Bad key SECRET_KEY_VALUE"}})
+
+    async def run():
+        async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
+            assert await youtube_client._request("channels", {"part": "id", "key": "ignored"}, "SECRET_KEY_VALUE", client) == {"items": []}
+            try:
+                await youtube_client._request("channels", {"part": "id"}, "SECRET_KEY_VALUE", client)
+            except youtube_client.YouTubeApiError as exc:
+                return str(exc)
+
+    message = asyncio.run(run())
+    assert message == "Bad key [redacted]"
+    assert all(request.headers["X-Goog-Api-Key"] == "SECRET_KEY_VALUE" for request in seen)
+    assert all("SECRET_KEY_VALUE" not in str(request.url) for request in seen)
