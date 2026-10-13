@@ -15,7 +15,8 @@ from app.ytm.database import get_db
 from app.ytm.models.crawl_job import CrawlJob
 from app.ytm.models.item import Item
 from app.ytm.models.user import User
-from app.ytm.schemas.item import ItemGroupSummary, ItemIdsResponse, ItemListResponse, ItemMoveRequest, ItemResponse, ItemSummaryResponse
+from app.ytm.schemas.item import (ItemGroupSummary, ItemIdsResponse, ItemListResponse, ItemMoveRequest, ItemNoteRequest,
+    ItemResponse, ItemSummaryResponse)
 from app.ytm.services.auth import get_current_user
 from app.ytm.utils.youtube_urls import build_channel_url
 
@@ -105,6 +106,8 @@ def _response(item: Item, user: User | None = None, users_by_id: dict[str, User]
         added_date=_format_added_date(item.created_at),
         last_checked=item.last_checked,
         created_at=item.created_at,
+        note=item.note,
+        note_updated_at=item.note_updated_at,
     )
 
 
@@ -123,6 +126,7 @@ def _with_item_filters(query, visible_ids: list[str], group: str | None = None, 
                 func.lower(Item.youtube_id).like(like),
                 func.lower(Item.query).like(like),
                 func.lower(Item.group).like(like),
+                func.lower(Item.note).like(like),
             )
         )
     return query
@@ -328,6 +332,27 @@ async def delete_item(
     return {"ok": True}
 
 
+@router.patch("/items-by-id/{item_id}", response_model=ItemResponse)
+async def update_item_note(
+    item_id: str,
+    payload: ItemNoteRequest,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    # Notes are owner-only, like every other write in this workspace.
+    result = await db.execute(select(Item).where(Item.id == item_id, Item.user_id == current_user.id))
+    item = result.scalar_one_or_none()
+    if not item:
+        raise HTTPException(status_code=404, detail="Item not found")
+    note = (payload.note or "").strip() or None
+    if note != item.note:
+        item.note = note
+        item.note_updated_at = datetime.utcnow()
+    await db.flush()
+    users = await _user_map(db, [item.user_id])
+    return _response(item, users.get(item.user_id), users)
+
+
 @router.delete("/items-by-id/{item_id}")
 async def delete_item_by_id(
     item_id: str,
@@ -391,6 +416,7 @@ async def export_items(payload: dict, db: AsyncSession = Depends(get_db), curren
             ("Group", "group"),
             ("Owner", "user_name"),
             ("Status", "status"),
+            ("Note", "note"),
         ]
         for column_index, (label, _) in enumerate(columns, start=1):
             cell = sheet.cell(row=1, column=column_index, value=label)

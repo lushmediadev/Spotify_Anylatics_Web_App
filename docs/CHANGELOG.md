@@ -1,5 +1,12 @@
 # Changelog
 
+### 2026-10-13 - YouTube Link Checker notes
+- Added: `Note` column between Delta / Days and Checked (2-line clamp, full text and last edit time on hover). One note per tracked channel, stored on `ytm_items.note` / `note_updated_at` (additive `ADD COLUMN IF NOT EXISTS` in `app/ytm/database.py`).
+- Added: `PATCH /api/ytm/items-by-id/{item_id}` `{ note? }` (owner-only, 1000 characters). Double-click the Note cell or use Edit note in the row menu; Enter saves, Shift+Enter adds a line, Esc cancels. Search matches notes and the Excel export appends a `Note` column.
+- Changed: channel grid is `52px minmax(230px, 1fr) 160px 90px 120px 130px 130px 140px 120px`. The virtual list holds re-rendering while a note editor is open and saves it on scroll.
+- Affected files: `backend/app/ytm/models/item.py`, `backend/app/ytm/schemas/item.py`, `backend/app/ytm/api/items.py`, `backend/app/ytm/database.py`, `frontend/ytm/app.js`, `frontend/ytm/style.css`, `frontend/index.html`, tests.
+- Impact/Risk: Low; item responses only gain `note` and `note_updated_at`.
+
 ### 2026-10-13 - Channel & Playlist notes and single-link Edit
 - Added: `Note` column between Delta / Days and Checked (2-line clamp, full text plus last edit time/editor on hover, resizable). Notes are stored per channel–playlist link (`youtube_channel_playlists.note`, `note_updated_at`, `note_updated_by`) and per channel (`youtube_channels.*`); additive `ALTER TABLE … ADD COLUMN IF NOT EXISTS` only.
 - Added: `PATCH /api/youtube/channels/{channel_id}/playlists/{item_id}` `{ url?, note? }` (changing the link re-points the same association, keeps the note and manual order, crawls a new playlist, 409 when the link already exists in the channel) and `PATCH /api/youtube/channels/{channel_id}` `{ note? }`. Both are owner-only; notes are capped at 1000 characters.

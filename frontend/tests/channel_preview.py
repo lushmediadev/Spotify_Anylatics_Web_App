@@ -144,6 +144,10 @@ class Handler(SimpleHTTPRequestHandler):
                 if row["group"] == body["old_name"]: row["group"] = body["new_name"]
             return self.send_json({"name": body["new_name"]})
         parts = urlsplit(self.path).path.split("/")
+        if parts[:4] == ["", "api", "ytm", "items-by-id"]:
+            row = next(r for r in YTM_ROWS if r["id"] == parts[4])
+            row.update(note=(body.get("note") or "").strip() or None, note_updated_at=NOW)
+            return self.send_json(row)
         if parts[:4] == ["", "api", "youtube", "channels"] and len(parts) in (5, 7):
             row = next(r for r in CHANNELS if r["id"] == parts[4])
             target = row if len(parts) == 5 else next(i for i in row["playlists"] if i["id"] == parts[6])

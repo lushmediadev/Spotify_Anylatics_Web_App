@@ -28,6 +28,7 @@
     ['subscriber', 'Subscriber'],
     ['view', 'View'],
     ['delta', 'Delta / Days'],
+    ['note', 'Note'],
     ['checked', 'Checked'],
   ];
 
@@ -79,6 +80,7 @@
     warmScopeKey: '',
     preloadedScopeKeys: new Set(),
     virtualRenderFrame: null,
+    noteEdit: null,
   };
 
   function qs(id) { return document.getElementById(`ytm-${id}`); }
@@ -164,6 +166,7 @@
       return apiFetch('/items/group?' + sp.toString(), { method: 'PATCH' });
     },
     deleteItem: (id) => apiFetch(`/items-by-id/${id}`, { method: 'DELETE' }),
+    saveNote: (id, note) => apiFetch(`/items-by-id/${id}`, { method: 'PATCH', body: JSON.stringify({ note }) }),
     clearItems: (group = null) => apiFetch('/items' + buildQuery({ group }), { method: 'DELETE' }),
     jobBatch: (jobIds) => apiFetch('/jobs/batch', { method: 'POST', body: JSON.stringify({ job_ids: jobIds }) }),
     getGroups: () => apiFetch('/auth/me/groups'),
@@ -347,7 +350,7 @@
     if (!head) return;
     head.innerHTML = COLUMNS.map(([key, label]) => `<div class="meta-cell head-cell${key === 'stt' ? ' stt-head' : ''}">
       <span class="head-cell-label" title="${escapeHtml(label)}">${escapeHtml(label)}</span>
-      ${key === 'stt' ? '' : `<button type="button" class="metric-sort-mode-toggle" data-ytm-sort="${key}" aria-label="Sort by ${escapeHtml(label)}" title="Sort ascending / descending"><span class="metric-sort-triangle">▼</span></button>`}
+      ${key === 'stt' || key === 'note' ? '' : `<button type="button" class="metric-sort-mode-toggle" data-ytm-sort="${key}" aria-label="Sort by ${escapeHtml(label)}" title="Sort ascending / descending"><span class="metric-sort-triangle">▼</span></button>`}
     </div>`).join('');
     renderSortHeaders();
   }
@@ -532,7 +535,7 @@
   }
   function matchesSearchQuery(item, q) {
     if (!q) return true;
-    return [item.name, item.youtube_id, item.query, item.youtube_url, item.user_name, item.group]
+    return [item.name, item.youtube_id, item.query, item.youtube_url, item.user_name, item.group, item.note]
       .some((v) => String(v || '').toLowerCase().includes(q));
   }
   function matchesSearch(item) {
@@ -957,8 +960,63 @@
     return `<div class="custom-grid-row ytm-grid ytm-row skeleton-row px-4 py-3 rounded-lg border border-transparent" data-virtual-row="${index}" aria-hidden="true">
       <div class="meta-cell stt-cell text-secondary-text">${index + 1}</div>
       <div class="list-asset-cell flex items-center gap-4"><span class="skeleton list-cover-image"></span><div class="flex flex-col gap-2 flex-1"><span class="skeleton" style="width:60px;height:14px"></span><span class="skeleton" style="width:220px;height:16px"></span></div></div>
-      ${'<div class="meta-cell"><span class="skeleton" style="width:70px;height:14px"></span></div>'.repeat(6)}
+      ${'<div class="meta-cell"><span class="skeleton" style="width:70px;height:14px"></span></div>'.repeat(7)}
     </div>`;
+  }
+  function noteCell(item) {
+    const note = String(item.note || '');
+    const edited = note && item.note_updated_at ? `\n\nLast edited ${formatDate(item.note_updated_at)}` : '';
+    return `<div class="meta-cell ytm-note-cell" data-ytm-note${note ? ` title="${escapeHtml(note + edited)}"` : ''}><span class="ytm-note-text">${escapeHtml(note)}</span></div>`;
+  }
+  function startNoteEdit(cell) {
+    const row = cell?.closest('[data-row-id]');
+    const item = row && itemsByKeys([row.dataset.rowId])[0];
+    if (!item || state.noteEdit) return;
+    const input = document.createElement('textarea');
+    const before = item.note || '';
+    input.className = 'ytm-note-input';
+    input.maxLength = 1000;
+    input.rows = 2;
+    input.value = before;
+    input.setAttribute('aria-label', 'Note');
+    // A draggable row would swallow text selection inside the editor.
+    row.draggable = false;
+    cell.removeAttribute('title');
+    cell.replaceChildren(input);
+    // The virtual list re-renders on scroll, polling and selection; renderRows waits while this is open.
+    state.noteEdit = { input };
+    input.focus();
+    input.select();
+    let done = false;
+    const finish = async (save) => {
+      if (done) return;
+      done = true;
+      input.readOnly = true;
+      const note = input.value.trim();
+      try {
+        if (save && note !== before) {
+          const saved = await api.saveNote(item.id, note);
+          // Polling may have replaced the row object while the editor was open, so update by id.
+          const current = state.virtualItems.find((entry) => entry?.id === item.id) || item;
+          Object.assign(current, { note: saved?.note ?? null, note_updated_at: saved?.note_updated_at ?? null });
+          saveListCache();
+        }
+      } catch (err) {
+        toast(err.message || 'Could not save note', 'error');
+      }
+      state.noteEdit = null;
+      renderRows({ preserveScroll: true });
+    };
+    input.addEventListener('keydown', (e) => {
+      e.stopPropagation();
+      if (e.key === 'Escape') { e.preventDefault(); finish(false); }
+      else if (e.key === 'Enter' && !e.shiftKey && !e.isComposing) { e.preventDefault(); finish(true); }
+    });
+    input.addEventListener('blur', () => finish(true));
+  }
+  function startNoteEditById(id) {
+    const row = [...(qs('link-list')?.querySelectorAll('[data-row-id]') || [])].find((node) => node.dataset.rowId === String(id));
+    startNoteEdit(row?.querySelector('[data-ytm-note]'));
   }
   function checkedCell(item) {
     const cells = state.options.cells;
@@ -1003,6 +1061,7 @@
       <div class="meta-cell">${cells.metric(item.subscriber_count)}</div>
       <div class="meta-cell">${cells.metric(item.view_count)}</div>
       <div class="meta-cell">${cells.delta(item.view_count_delta, item.delta_days) || '<span class="metric-main metric-empty">-</span>'}</div>
+      ${noteCell(item)}
       ${checkedCell(item)}
     </div>`;
   }
@@ -1011,6 +1070,8 @@
     const list = qs('link-list');
     const empty = qs('empty-state');
     if (!list || !empty) return;
+    if (state.noteEdit?.input.isConnected) return;
+    state.noteEdit = null;
     const savedScrollTop = options.preserveScroll ? scroller?.scrollTop : null;
     state.filteredItems = getLoadedVirtualItems();
     updateHeroCover();
@@ -1406,6 +1467,7 @@
       </button>`).join('');
     openContextMenu(`
       ${contextButton('add-channel', 'add', 'Add Channel')}
+      ${state.contextItemIds.length === 1 ? contextButton('edit-note', 'edit', 'Edit note') : ''}
       ${contextButton('refresh', 'refresh', `Refresh ${selectedLabel}`)}
       ${contextButton('open', 'open_in_new', 'Open on YouTube')}
       ${contextButton('copy', 'content_copy', `Copy ${selectedLabel} links`)}
@@ -1451,6 +1513,7 @@
     const contextGroup = state.contextGroup || state.activeGroup || ALL_GROUP_ID;
     switch (action) {
       case 'add-channel': return openAddModal();
+      case 'edit-note': return startNoteEditById(state.contextItemIds[0]);
       case 'refresh': return contextItems.length ? refreshItems(contextItems) : refreshScope(getBackendListParams(), groupLabel(state.activeGroup));
       case 'refresh-group': return refreshScope(paramsForGroup(contextGroup), groupLabel(contextGroup));
       case 'refresh-all': return refreshScope(paramsForGroup(ALL_GROUP_ID), 'channels');
@@ -1561,7 +1624,7 @@
     if (preview) { state.options.previewImage?.(preview.dataset.ytmPreview); return; }
     const copy = e.target.closest('[data-ytm-copy]');
     if (copy) { state.options.copyText?.(copy.dataset.ytmCopy); return; }
-    if (e.target.closest('a')) return;
+    if (e.target.closest('a, textarea')) return;
     const row = e.target.closest('[data-row-id]');
     if (!row) return;
     const id = row.dataset.rowId;
@@ -1607,7 +1670,9 @@
     list.addEventListener('click', handleRowClick);
     list.addEventListener('dblclick', (e) => {
       const row = e.target.closest('[data-row-id]');
-      if (!row || e.target.closest('a, button')) return;
+      if (!row || e.target.closest('a, button, textarea')) return;
+      const note = e.target.closest('[data-ytm-note]');
+      if (note) { startNoteEdit(note); return; }
       const item = itemsByKeys([row.dataset.rowId])[0];
       if (item) window.open(itemUrl(item), '_blank', 'noopener');
     });
@@ -1648,6 +1713,8 @@
       showWorkspaceContextMenu(e);
     });
     view.addEventListener('scroll', () => {
+      // Scrolling recycles virtual rows: save the open note first.
+      state.noteEdit?.input.blur();
       if (!state.listTotal || state.virtualRenderFrame) return;
       state.virtualRenderFrame = requestAnimationFrame(() => {
         state.virtualRenderFrame = null;

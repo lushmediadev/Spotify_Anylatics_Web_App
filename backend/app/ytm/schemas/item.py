@@ -2,7 +2,7 @@
 
 from datetime import datetime
 
-from pydantic import BaseModel
+from pydantic import BaseModel, ConfigDict, Field
 
 
 class ItemResponse(BaseModel):
@@ -43,6 +43,8 @@ class ItemResponse(BaseModel):
     added_date: str | None = None
     last_checked: datetime | None = None
     created_at: datetime | None = None
+    note: str | None = None
+    note_updated_at: datetime | None = None
 
 
 class ItemListResponse(BaseModel):
@@ -67,6 +69,11 @@ class ItemSummaryResponse(BaseModel):
     errors: int
     crawling: int
     groups: list[ItemGroupSummary]
+
+
+class ItemNoteRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    note: str | None = Field(default=None, max_length=1000)
 
 
 class ItemMoveRequest(BaseModel):

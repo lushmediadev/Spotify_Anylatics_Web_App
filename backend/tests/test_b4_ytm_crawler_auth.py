@@ -285,3 +285,40 @@ def test_login_matches_email_case_insensitively_username_unchanged(env):
     assert login("admin").status_code == 200
     assert login("ADMIN").status_code == 401
     assert login("admin@example.test").json()["user"]["username"] == "admin"
+
+
+# ── notes ──────────────────────────────────────────────────────────────────
+
+def test_ytm_item_note_is_owner_only_trimmed_searchable_and_exported(env):
+    from fastapi import HTTPException
+    from app.ytm.api import items as ytm_items
+    from app.ytm.schemas.item import ItemNoteRequest
+
+    [(_, item_id, _)] = _ytm_rows(env, statuses=("completed",), item_status="active")
+    with pytest.raises(ValidationError):
+        ItemNoteRequest(note="x" * 1001)
+    with pytest.raises(ValidationError):
+        ItemNoteRequest(note="ok", group="other")
+    with Session(env.engine, expire_on_commit=False) as session:
+        db = AsyncSessionAdapter(session)
+        owner = session.get(YTMUser, str(env.users["admin"].id))
+        other = YTMUser(id=str(env.users["manager"].id), shared_user_id=env.users["manager"].id, username="manager",
+                        email="m@internal.invalid", password_hash="x", role="user")
+        session.add(other)
+        session.commit()
+        saved = asyncio.run(ytm_items.update_item_note(item_id, ItemNoteRequest(note="  Sponsor lead\nfollow up  "), db, owner))
+        assert saved.note == "Sponsor lead\nfollow up" and saved.note_updated_at is not None
+        stamp = saved.note_updated_at
+        same = asyncio.run(ytm_items.update_item_note(item_id, ItemNoteRequest(note="Sponsor lead\nfollow up"), db, owner))
+        assert same.note_updated_at == stamp
+        with pytest.raises(HTTPException) as denied:
+            asyncio.run(ytm_items.update_item_note(item_id, ItemNoteRequest(note="foreign"), db, other))
+        assert denied.value.status_code == 404
+        found = asyncio.run(ytm_items.list_items(None, None, "SPONSOR lead", None, "asc", 50, 0, db, owner))
+        assert [row.id for row in found.items] == [item_id] and found.items[0].note == saved.note
+        missed = asyncio.run(ytm_items.list_items(None, None, "no such note", None, "asc", 50, 0, db, owner))
+        assert missed.total == 0
+        exported = asyncio.run(ytm_items.export_items({"item_ids": [item_id]}, db, owner))
+        assert exported["rows"][0]["note"] == saved.note
+        cleared = asyncio.run(ytm_items.update_item_note(item_id, ItemNoteRequest(note="  "), db, owner))
+        assert cleared.note is None
