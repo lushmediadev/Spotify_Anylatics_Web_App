@@ -1,6 +1,6 @@
 /* ================================================================
    SpotiCheck — Design System & Styles
-   Tách từ final3.html, giữ nguyên layout gốc.
+   Extracted from final3.html; keeps the original layout.
    ================================================================ */
 
 /* ── Reset & Base ──────────────────────────────────────────────── */
@@ -1751,6 +1751,44 @@ h3 {
   .playlist-hero h2 {
     font-size: 28px;
   }
+}
+
+/* -- Shared card (Settings, Account, Users) ----------------------------- */
+.app-card {
+  margin-bottom: 32px;
+  padding: 24px;
+  border: 1px solid var(--stroke-soft);
+  border-radius: 12px;
+  background: var(--surface-1);
+}
+.app-card[hidden] { display: none; }
+.app-card-title {
+  margin: 0 0 16px;
+  font-family: "Inter Tight", "Inter", system-ui, sans-serif;
+  font-size: 14px;
+  line-height: 20px;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+.app-card-label {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-muted);
+}
+.app-card.app-card-row {
+  margin-bottom: 0;
+  padding: 20px;
+  transition: border-color 150ms ease;
+}
+.app-card.app-card-row:hover { border-color: var(--stroke-mid); }
+.app-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 16px;
+  margin-bottom: 24px;
 }
 
 /* -- Settings --------------------------------------------------------- */

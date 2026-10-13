@@ -1,6 +1,8 @@
 """Crawl request/response schemas."""
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
+
+MAX_BATCH_URLS = 500
 
 
 class CrawlRequest(BaseModel):
@@ -15,10 +17,10 @@ class CrawlRequest(BaseModel):
 class CrawlBatchRequest(BaseModel):
     """Batch crawl request."""
 
-    urls: list[str]
+    urls: list[str] = Field(max_length=MAX_BATCH_URLS)
     group: str | None = None
     target_user_id: str | None = None
-    item_ids: list[str | None] | None = None
+    item_ids: list[str | None] | None = Field(default=None, max_length=MAX_BATCH_URLS)
 
 
 class CrawlScopeRequest(BaseModel):
@@ -47,4 +49,5 @@ class CrawlBatchResponse(BaseModel):
     accepted_indices: list[int] = []
     item_ids: list[str] = []
     skipped_duplicates: int = 0
+    skipped_in_progress: int = 0
     message: str = "Batch crawl jobs created"

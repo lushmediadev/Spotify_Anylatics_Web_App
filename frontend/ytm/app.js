@@ -22,12 +22,12 @@
   const LIST_CACHE_TTL_MS = 6 * 60 * 60 * 1000;
   const COLUMNS = [
     ['stt', 'STT'],
-    ['name', 'Kênh'],
+    ['name', 'Channel'],
     ['updated', 'Owner / Updated'],
     ['video', 'Video'],
     ['subscriber', 'Subscriber'],
     ['view', 'View'],
-    ['delta', 'Biến động / Ngày'],
+    ['delta', 'Delta / Days'],
     ['checked', 'Checked'],
   ];
 
@@ -126,6 +126,22 @@
     return query ? `?${query}` : '';
   }
 
+  const CRAWL_BATCH_LIMIT = 500;
+  // The API caps one batch at 500 URLs; split larger requests and merge the responses.
+  async function crawlBatchChunked(urls, group, itemIds = null) {
+    const merged = { job_ids: [], count: 0, accepted_indices: [], item_ids: [], skipped_duplicates: 0, skipped_in_progress: 0 };
+    for (let start = 0; start < urls.length; start += CRAWL_BATCH_LIMIT) {
+      const response = await api.crawlBatch(urls.slice(start, start + CRAWL_BATCH_LIMIT), group,
+        itemIds ? itemIds.slice(start, start + CRAWL_BATCH_LIMIT) : null);
+      merged.job_ids.push(...(response.job_ids || []));
+      merged.count += Number(response.count) || 0;
+      merged.accepted_indices.push(...(response.accepted_indices || []).map((index) => index + start));
+      merged.item_ids.push(...(response.item_ids || []));
+      merged.skipped_duplicates += Number(response.skipped_duplicates) || 0;
+      merged.skipped_in_progress += Number(response.skipped_in_progress) || 0;
+    }
+    return merged;
+  }
   const api = {
     health: () => apiFetch('/health'),
     items: (params = {}) => apiFetch('/items' + buildQuery(params)),
@@ -248,7 +264,7 @@
     URL.revokeObjectURL(url);
   }
   function exportTxt(items, scopeLabel = 'channels') {
-    if (!items.length) return toast('Không có kênh để xuất', 'error');
+    if (!items.length) return toast('No channels to export', 'error');
     const lines = items.map((item) => [
       item.name || item.query || '',
       itemUrl(item),
@@ -258,18 +274,18 @@
       item.view_count ?? '',
     ].join('\t'));
     downloadBlob(exportFileName(scopeLabel, 'txt'), new Blob([`﻿${lines.join('\r\n')}`], { type: 'text/plain;charset=utf-8' }));
-    toast(`Đã xuất TXT ${items.length} kênh`, 'success');
+    toast(`Exported ${items.length} channels to TXT`, 'success');
   }
   async function exportExcel(items, scopeLabel = 'channels') {
-    if (!items.length) return toast('Không có kênh để xuất', 'error');
+    if (!items.length) return toast('No channels to export', 'error');
     const blob = await api.exportExcel(items.map((item) => item.id).filter(Boolean));
     if (!blob) return;
     downloadBlob(exportFileName(scopeLabel, 'xlsx'), blob);
-    toast(`Đã xuất Excel ${items.length} kênh`, 'success');
+    toast(`Exported ${items.length} channels to Excel`, 'success');
   }
   async function copyLinks(items) {
     await navigator.clipboard.writeText(items.map(itemUrl).join('\n'));
-    toast(`Đã copy ${items.length} link`, 'success');
+    toast(`Copied ${items.length} links`, 'success');
   }
 
   // ── Sorting & row order ────────────────────────────────────────
@@ -331,7 +347,7 @@
     if (!head) return;
     head.innerHTML = COLUMNS.map(([key, label]) => `<div class="meta-cell head-cell${key === 'stt' ? ' stt-head' : ''}">
       <span class="head-cell-label" title="${escapeHtml(label)}">${escapeHtml(label)}</span>
-      ${key === 'stt' ? '' : `<button type="button" class="metric-sort-mode-toggle" data-ytm-sort="${key}" aria-label="Sắp xếp ${escapeHtml(label)}" title="Sắp xếp tăng / giảm"><span class="metric-sort-triangle">▼</span></button>`}
+      ${key === 'stt' ? '' : `<button type="button" class="metric-sort-mode-toggle" data-ytm-sort="${key}" aria-label="Sort by ${escapeHtml(label)}" title="Sort ascending / descending"><span class="metric-sort-triangle">▼</span></button>`}
     </div>`).join('');
     renderSortHeaders();
   }
@@ -363,7 +379,7 @@
       state.preferences = { ...(state.preferences || {}), row_order: state.rowOrder };
       await api.savePrefs(state.preferences);
     } catch (err) {
-      toast(err.message || 'Không lưu được thứ tự row', 'error');
+      toast(err.message || 'Could not save row order', 'error');
     }
   }
 
@@ -449,7 +465,7 @@
   }
   function createGroupNamed(name) {
     if (name.toLowerCase() === ALL_GROUP_ID || groupExists(name)) {
-      toast('Group này đã tồn tại', 'error');
+      toast('This group already exists', 'error');
       return false;
     }
     state.groups.push(name);
@@ -463,14 +479,14 @@
     saveGroups()
       .then(() => loadItems({ preserveScroll: true }))
       .catch((err) => {
-        toast(err.message || 'Lưu group lỗi', 'error');
+        toast(err.message || 'Could not save group', 'error');
         loadGroups().catch((loadErr) => toast(loadErr.message, 'error'));
       });
     return true;
   }
   function renameGroupTo(originalName, next) {
     if (next.toLowerCase() === ALL_GROUP_ID || groupExists(next, originalName)) {
-      toast('Group này đã tồn tại', 'error');
+      toast('This group already exists', 'error');
       return false;
     }
     state.groups = state.groups.filter((g) => g !== originalName);
@@ -487,7 +503,7 @@
       .then(saveGroups)
       .then(() => loadItemsInBackground({ preserveScroll: true }))
       .catch((err) => {
-        toast(err.message || 'Đổi tên group lỗi', 'error');
+        toast(err.message || 'Could not rename group', 'error');
         Promise.all([loadGroups(), loadItems({ preserveScroll: true })]).catch((loadErr) => toast(loadErr.message, 'error'));
       });
     return true;
@@ -505,7 +521,7 @@
       await saveGroups();
       loadItemsInBackground({ preserveScroll: true });
     })().catch((err) => {
-      toast(err.message || 'Xoá group lỗi', 'error');
+      toast(err.message || 'Could not delete group', 'error');
       Promise.all([loadGroups(), loadItems({ preserveScroll: true })]).catch((loadErr) => toast(loadErr.message, 'error'));
     });
   }
@@ -849,7 +865,7 @@
         saveDerivedGroupCachesFromLoadedItems(state.currentListParams);
       })
       .catch((err) => {
-        if (!options.silent) toast(err.message || 'Không tải được dữ liệu', 'error');
+        if (!options.silent) toast(err.message || 'Could not load data', 'error');
       })
       .finally(() => state.loadingPagePromises.delete(pageOffset));
     state.loadingPagePromises.set(pageOffset, promise);
@@ -1098,10 +1114,12 @@
     if (!items.length) return;
     const itemIds = items.map((item) => item.id);
     markItemsCrawling(itemIds);
-    toast(`Đang gửi refresh ${itemIds.length} kênh`, 'info');
-    const response = await api.crawlBatch(items.map(itemUrl).filter(Boolean), null, itemIds);
+    toast(`Requesting refresh for ${itemIds.length} channels`, 'info');
+    // Keep URLs and item ids aligned: rows without a URL cannot be refreshed.
+    const refreshable = items.map((item) => [itemUrl(item), item.id]).filter(([url]) => Boolean(url));
+    const response = await crawlBatchChunked(refreshable.map(([url]) => url), null, refreshable.map(([, id]) => id));
     trackRefreshJobs({ ...response, item_ids: response.item_ids?.length ? response.item_ids : itemIds });
-    toast(`Đã bắt đầu refresh ${response.count} kênh`, 'success');
+    toast(`Started refreshing ${response.count} channels`, 'success');
   }
   async function pollJobs() {
     const ids = [...state.pendingJobs];
@@ -1123,7 +1141,7 @@
             changed = true;
           }
         }
-        if (job.status === 'error') toast(job.error || 'Refresh lỗi', 'error');
+        if (job.status === 'error') toast(job.error || 'Refresh failed', 'error');
       });
       state.items = getLoadedVirtualItems();
       updateApiStatus();
@@ -1173,10 +1191,10 @@
     startPolling();
   }
   async function refreshScope(params = getBackendListParams(), label = 'channels') {
-    toast(`Đang gửi refresh ${label}`, 'info');
+    toast(`Requesting refresh for ${label}`, 'info');
     const response = await api.crawlScope(params);
     trackRefreshJobs(response);
-    toast(`Đã bắt đầu refresh ${response.count} ${label}`, 'success');
+    toast(`Started refreshing ${response.count} ${label}`, 'success');
   }
   function paramsForGroup(groupId) {
     const params = getBackendListParams();
@@ -1196,12 +1214,12 @@
   async function submitAddChannels() {
     const urls = qs('modal-input').value.split('\n').map((line) => line.trim()).filter(Boolean);
     if (!urls.length) {
-      toast('Vui lòng nhập URL kênh', 'error');
+      toast('Please enter at least one channel URL', 'error');
       return;
     }
     const group = selectedModalGroup();
     closeAddModal();
-    const response = await api.crawlBatch(urls, group);
+    const response = await crawlBatchChunked(urls, group);
     const accepted = Array.isArray(response.accepted_indices) ? response.accepted_indices : urls.map((_, index) => index);
     applyOptimisticAddItems(accepted
       .map((sourceIndex, resultIndex) => {
@@ -1211,7 +1229,7 @@
       })
       .filter(Boolean));
     trackRefreshJobs(response);
-    toast(`Đã thêm ${response.count} kênh vào hàng check`, 'success');
+    toast(`Added ${response.count} channels to the check queue`, 'success');
     invalidateItemCaches();
     loadItemsInBackground({ preserveScroll: true });
   }
@@ -1229,20 +1247,20 @@
   }
   async function deleteSelected() {
     const items = selectedItems();
-    if (!items.length) return toast('Chưa chọn row', 'error');
-    if (!await confirmAction('Xóa kênh', `Xóa ${items.length} kênh đã chọn?`, 'Xóa kênh')) return;
-    await removeItems(items, `Đã xoá ${items.length} kênh`, 'Xoá kênh lỗi');
+    if (!items.length) return toast('No rows selected', 'error');
+    if (!await confirmAction('Delete Channels', `Delete ${items.length} selected channels?`, 'Delete channels')) return;
+    await removeItems(items, `Deleted ${items.length} channels`, 'Could not delete channels');
   }
   async function deleteDeadItems(items, label = 'list') {
     const dead = items.filter(isDeadItem);
-    if (!dead.length) return toast('Không có kênh chết để xoá', 'info');
-    if (!await confirmAction('Xóa kênh chết', `Xóa ${dead.length} kênh chết trong ${label}?`, 'Xóa kênh')) return;
-    await removeItems(dead, `Đã xoá ${dead.length} kênh chết`, 'Xoá kênh chết lỗi');
+    if (!dead.length) return toast('No dead channels to delete', 'info');
+    if (!await confirmAction('Delete Dead Channels', `Delete ${dead.length} dead channels in ${label}?`, 'Delete channels')) return;
+    await removeItems(dead, `Deleted ${dead.length} dead channels`, 'Could not delete dead channels');
   }
   async function clearGroupItems(groupId = state.activeGroup) {
     const group = groupId === ALL_GROUP_ID ? null : groupId;
-    const label = group ? `group "${group}"` : 'toàn bộ list';
-    if (!await confirmAction('Clear list', `Xóa toàn bộ kênh trong ${label}? Nhóm vẫn được giữ lại.`, 'Xóa kênh')) return;
+    const label = group ? `group "${group}"` : 'the entire list';
+    if (!await confirmAction('Clear list', `Delete all channels in ${label}? Groups are kept.`, 'Delete channels')) return;
     if (groupId === state.activeGroup) {
       applyOptimisticRemoveItemsByIds(getLoadedVirtualItems().map(itemKey));
     } else if (group) {
@@ -1254,9 +1272,9 @@
     invalidateItemCaches();
     try {
       await api.clearItems(group);
-      toast(`Đã xoá ${label}`, 'success');
+      toast(`Cleared ${label}`, 'success');
     } catch (err) {
-      toast(err.message || 'Xoá list lỗi', 'error');
+      toast(err.message || 'Could not clear list', 'error');
     }
     loadItemsInBackground({ preserveScroll: true });
   }
@@ -1327,7 +1345,7 @@
     state.groups = groups;
     renderGroups();
     saveGroups().catch((err) => {
-      toast(err.message || 'Lưu thứ tự group lỗi', 'error');
+      toast(err.message || 'Could not save group order', 'error');
       loadGroups().catch((loadErr) => toast(loadErr.message, 'error'));
     });
   }
@@ -1341,12 +1359,12 @@
       renderGroups();
     }
     invalidateItemCaches();
-    toast(`Đã chuyển ${items.length} kênh`, 'success');
+    toast(`Moved ${items.length} channels`, 'success');
     api.moveItems(items.map((item) => item.id), nextGroup)
       .then(() => (nextGroup ? saveGroups() : null))
       .then(() => loadItemsInBackground({ preserveScroll: true }))
       .catch((err) => {
-        toast(err.message || 'Chuyển group lỗi', 'error');
+        toast(err.message || 'Could not move channels', 'error');
         loadItemsInBackground({ preserveScroll: true });
       });
   }
@@ -1435,7 +1453,7 @@
       case 'add-channel': return openAddModal();
       case 'refresh': return contextItems.length ? refreshItems(contextItems) : refreshScope(getBackendListParams(), groupLabel(state.activeGroup));
       case 'refresh-group': return refreshScope(paramsForGroup(contextGroup), groupLabel(contextGroup));
-      case 'refresh-all': return refreshScope(paramsForGroup(ALL_GROUP_ID), 'kênh');
+      case 'refresh-all': return refreshScope(paramsForGroup(ALL_GROUP_ID), 'channels');
       case 'open': return contextItems[0] && window.open(itemUrl(contextItems[0]), '_blank', 'noopener');
       case 'copy': return copyLinks(contextItems.length ? contextItems : await loadAllItemsForScope());
       case 'copy-current': return copyLinks(await loadAllItemsForScope());
@@ -1704,7 +1722,7 @@
     const list = qs('group-list');
     state.rail = window.GroupRailUI.mount(list, {
       keyAttr: 'data-group',
-      deleteNote: 'Kênh trong nhóm sẽ được đưa về No group.',
+      deleteNote: 'Channels in the group move to No group.',
       onSelect: (key) => selectGroup(key),
       onContextOpen: (key) => { if (key !== state.activeGroup) selectGroup(key); },
       onCreate: (name) => createGroupNamed(name),
@@ -1755,6 +1773,6 @@
       state.groupSearch = String(text || '');
       renderGroups();
     },
-    refreshAll: () => refreshScope(paramsForGroup(ALL_GROUP_ID), 'kênh'),
+    refreshAll: () => refreshScope(paramsForGroup(ALL_GROUP_ID), 'channels'),
   };
 })();

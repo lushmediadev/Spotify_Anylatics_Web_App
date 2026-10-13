@@ -8,9 +8,9 @@
     }[ch]));
 
     const MENU_ACTIONS = [
-        ['create', 'create_new_folder', 'Tạo nhóm'],
-        ['rename', 'edit', 'Đổi tên nhóm'],
-        ['delete', 'delete', 'Xóa nhóm']
+        ['create', 'create_new_folder', 'Create Group'],
+        ['rename', 'edit', 'Rename Group'],
+        ['delete', 'delete', 'Delete Group']
     ];
 
     function closeMenu() {
@@ -57,7 +57,7 @@
     }
 
     /** Promise-based confirm dialog shared by every workspace (replaces window.confirm). */
-    function confirmDialog({ title, message, confirmLabel = 'Xóa', cancelLabel = 'Hủy', danger = true }) {
+    function confirmDialog({ title, message, confirmLabel = 'Delete', cancelLabel = 'Cancel', danger = true }) {
         return new Promise((resolve) => {
             const previousFocus = document.activeElement;
             const overlay = document.createElement('div');
@@ -96,7 +96,7 @@
     }
 
     /** Name prompt used when the rail itself is hidden (narrow screens), so create/rename still work. */
-    function promptDialog({ title, value = '', confirmLabel = 'Lưu', cancelLabel = 'Hủy' }) {
+    function promptDialog({ title, value = '', confirmLabel = 'Save', cancelLabel = 'Cancel' }) {
         return new Promise((resolve) => {
             const previousFocus = document.activeElement;
             const overlay = document.createElement('div');
@@ -164,18 +164,18 @@
             <span class="material-icons-round group-rail-icon" aria-hidden="true">folder</span>
             <span class="group-rail-name" title="${esc(item.label)}">${esc(item.label)}</span>
             <span class="${countClasses(item)}"${item.countId ? ` id="${esc(item.countId)}"` : ''}>${esc(item.count ?? '')}</span>
-            ${item.protected ? '' : `<button type="button" class="group-rail-delete" data-rail-delete tabindex="-1" aria-label="Xóa nhóm ${esc(item.label)}" title="Xóa nhóm"><span class="material-icons-round" aria-hidden="true">delete</span></button>`}
+            ${item.protected ? '' : `<button type="button" class="group-rail-delete" data-rail-delete tabindex="-1" aria-label="Delete group ${esc(item.label)}" title="Delete group"><span class="material-icons-round" aria-hidden="true">delete</span></button>`}
         </div>`;
     }
 
     function editorHtml(edit) {
-        const label = edit.mode === 'create' ? 'Tên nhóm mới' : 'Đổi tên nhóm';
+        const label = edit.mode === 'create' ? 'New group name' : 'Rename group';
         return `<div class="group-item group-rail-editor" data-rail-editor>
             <span class="material-icons-round group-rail-icon" aria-hidden="true">folder</span>
             <input class="group-rail-input" data-rail-input type="text" maxlength="128" autocomplete="off"
                 value="${esc(edit.value)}" placeholder="${label}" aria-label="${label}">
-            <button type="button" class="group-rail-editor-btn is-save" data-rail-save aria-label="Lưu" title="Lưu (Enter)"><span class="material-icons-round" aria-hidden="true">check</span></button>
-            <button type="button" class="group-rail-editor-btn" data-rail-cancel aria-label="Hủy" title="Hủy (Esc)"><span class="material-icons-round" aria-hidden="true">close</span></button>
+            <button type="button" class="group-rail-editor-btn is-save" data-rail-save aria-label="Save" title="Save (Enter)"><span class="material-icons-round" aria-hidden="true">check</span></button>
+            <button type="button" class="group-rail-editor-btn" data-rail-cancel aria-label="Cancel" title="Cancel (Esc)"><span class="material-icons-round" aria-hidden="true">close</span></button>
         </div>`;
     }
 
@@ -200,7 +200,7 @@
             const focusedKey = root.contains(document.activeElement) ? document.activeElement.dataset?.railKey : null;
             const html = rail.items.map((item) => itemHtml(rail, item)).join('')
                 + (rail.edit?.mode === 'create' ? editorHtml(rail.edit) : '')
-                + (rail.items.length || rail.edit ? '' : `<p class="group-rail-empty">${esc(rail.adapter.emptyText || 'Chưa có nhóm.')}</p>`);
+                + (rail.items.length || rail.edit ? '' : `<p class="group-rail-empty">${esc(rail.adapter.emptyText || 'No groups yet.')}</p>`);
             if (root.__groupRailHtml === html && root.childElementCount) return;
             const structure = structureOf(rail);
             if (root.__groupRailStructure === structure && root.childElementCount) {
@@ -277,7 +277,7 @@
             startCreate() {
                 if (rail.busy) return;
                 rail.edit = { mode: 'create', key: '', original: '', value: '' };
-                if (!isRailVisible()) return promptEdit('Tạo nhóm', 'Tạo nhóm');
+                if (!isRailVisible()) return promptEdit('Create Group', 'Create');
                 paint();
                 focusEditor();
             },
@@ -285,7 +285,7 @@
                 const item = find(key);
                 if (!item || item.protected || rail.busy) return;
                 rail.edit = { mode: 'rename', key: String(key), original: item.label, value: item.label };
-                if (!isRailVisible()) return promptEdit('Đổi tên nhóm', 'Lưu');
+                if (!isRailVisible()) return promptEdit('Rename Group', 'Save');
                 paint();
                 focusEditor();
             },
@@ -322,12 +322,12 @@
                     .filter((value) => !isProtected(value));
                 if (!keys.length) return;
                 const subject = keys.length > 1
-                    ? `${keys.length} nhóm đã chọn`
-                    : `nhóm "${find(keys[0])?.label || keys[0]}"`;
+                    ? `${keys.length} selected groups`
+                    : `group "${find(keys[0])?.label || keys[0]}"`;
                 const ok = await confirmDialog({
-                    title: 'Xóa nhóm',
-                    message: `Xóa ${subject}? ${rail.adapter.deleteNote || ''}`.trim(),
-                    confirmLabel: 'Xóa nhóm',
+                    title: 'Delete Group',
+                    message: `Delete ${subject}? ${rail.adapter.deleteNote || ''}`.trim(),
+                    confirmLabel: 'Delete Group',
                 });
                 if (!ok) return;
                 try {

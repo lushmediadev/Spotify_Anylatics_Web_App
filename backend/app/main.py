@@ -13,9 +13,9 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 
 from app.api.router import router as api_router
-from app.config import settings
+from app.config import settings, validate_production_secrets
 from app.database import init_db
-from app.services import youtube_jobs
+from app.services import crawler, youtube_jobs
 
 # Logging
 logging.basicConfig(
@@ -56,6 +56,7 @@ def _resolve_frontend_dir() -> Path | None:
 async def lifespan(app: FastAPI):
     """Application startup/shutdown events."""
     logger.info("Starting SpotiCheck API...")
+    validate_production_secrets(settings)
 
     # Always ensure compatibility migrations run at startup.
     # Older deployments may carry legacy unique constraints that break per-user link ownership.
@@ -75,8 +76,11 @@ async def lifespan(app: FastAPI):
         await migrate_playlist_workspace(db)
         await db.commit()
     logger.info("Database tables checked/created")
+    # Spotify crawl tasks live in this process only; anything pending/crawling now was lost.
+    await crawler.recover_interrupted_jobs()
     await youtube_jobs.recover_stale_channels()
     youtube_jobs.track(youtube_jobs.maintenance())
+    youtube_jobs.track(crawler.maintenance_loop())
 
     try:
         yield

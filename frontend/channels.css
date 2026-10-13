@@ -48,11 +48,11 @@
 body.chp-resizing { cursor: col-resize; user-select: none; }
 .chp-backdrop { position: fixed; inset: 0; z-index: 1200; display: flex; align-items: center; justify-content: center; padding: 20px; background: rgba(0, 0, 0, .4); }
 .chp-dialog { width: min(620px, 100%); max-height: 90vh; overflow: auto; border-radius: 16px; border: 1px solid var(--chp-border); background: var(--surface-0, #fff); }
-.chp-dialog button, .chp-settings button { padding: 7px 12px; border: 1px solid var(--chp-border); border-radius: 8px; color: inherit; background: transparent; font: inherit; cursor: pointer; }
-.chp-dialog button:hover, .chp-settings button:hover { background: var(--surface-2, #f2f2f2); }
-.chp-dialog button.chp-primary, .chp-settings button.chp-primary { color: #fff; background: var(--chp-text); border-color: var(--chp-text); }
+.chp-dialog button, .chp-settings .chp-key-list button { padding: 7px 12px; border: 1px solid var(--chp-border); border-radius: 8px; color: inherit; background: transparent; font: inherit; cursor: pointer; }
+.chp-dialog button:hover, .chp-settings .chp-key-list button:hover { background: var(--surface-2, #f2f2f2); }
+.chp-dialog button.chp-primary { color: #fff; background: var(--chp-text); border-color: var(--chp-text); }
 .chp-header-tools button:disabled, .chp-dialog button:disabled, .chp-settings button:disabled { opacity: .5; cursor: default; }
-.chp-dialog input:not([type="checkbox"]), .chp-dialog textarea, .chp-settings textarea,
+.chp-dialog input:not([type="checkbox"]), .chp-dialog textarea,
 .chp-header-tools select { padding: 8px 10px; border: 1px solid var(--chp-border, rgba(0, 0, 0, .14)); border-radius: 8px; background: var(--surface-1); color: var(--text-main); font: inherit; min-width: 0; }
 .chp-dialog :focus-visible, .chp-settings :focus-visible { outline: 2px solid var(--chp-muted); outline-offset: 2px; }
 .chp-dialog header, .chp-dialog footer { display: flex; align-items: center; gap: 12px; padding: 16px 20px; }
@@ -85,12 +85,11 @@ body.chp-resizing { cursor: col-resize; user-select: none; }
     .chp-playlist-editor footer button { padding-inline: 14px; }
 }
 .chp-dialog small { display: block; font-size: 12px; margin-top: 2px; }
-.chp-settings { padding: 16px 0; max-width: 640px; }
-.chp-settings-actions { display: flex; gap: 8px; }
-.chp-key-status { min-height: 20px; }
-.chp-settings-title { font-size: 15px; margin: 0 0 8px; }
+.chp-settings-actions { display: flex; flex-wrap: wrap; gap: 12px; }
+.chp-key-status { margin: 12px 0 0; font-size: 14px; }
+.chp-key-status:empty { margin: 0; }
 .chp-key-list { list-style: none; margin: 0 0 16px; padding: 0; display: flex; flex-direction: column; gap: 6px; }
-.chp-key-list li { display: flex; align-items: center; gap: 12px; }
+.chp-key-list li { display: flex; align-items: center; gap: 12px; font-size: 14px; }
 .chp-key-list code { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
 .chp-key-list [data-delete-key] { margin-left: auto; }
 @media (max-width: 767px) {

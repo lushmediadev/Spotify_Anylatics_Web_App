@@ -16,6 +16,14 @@ class Settings(BaseSettings):
     DATABASE_URL: str = (
         "postgresql+asyncpg://postgres:password@localhost:5432/spoticheck"
     )
+    DB_POOL_SIZE: int = 10
+    DB_MAX_OVERFLOW: int = 20
+    DB_POOL_TIMEOUT: float = 30.0
+
+    # Storage retention (Spotify crawl payloads)
+    RAW_RESPONSE_KEEP_PER_ITEM: int = 3
+    RAW_RESPONSE_RETENTION_DAYS: int = 30
+    CRAWL_JOB_RETENTION_DAYS: int = 90
 
     # Optional Spotify API app credentials (client-credentials flow)
     SPOTIFY_CLIENT_ID: str = ""
@@ -60,6 +68,39 @@ class Settings(BaseSettings):
     JWT_SECRET_KEY: str = "change-me-in-production-jwt"
     JWT_ALGORITHM: str = "HS256"
     JWT_EXPIRY_HOURS: int = 24
+    # Refuse to start with placeholder secrets when DEBUG is false (escape hatch: set to false).
+    # Default off: weak secrets only log a warning until the VPS .env is confirmed; set true to fail fast.
+    ENFORCE_SECRET_CHECK: bool = False
+
+
+_PLACEHOLDER_SECRETS = {"", "secret", "changeme", "change-me", "password"}
+
+
+def _is_placeholder_secret(value: str | None) -> bool:
+    normalized = (value or "").strip().lower()
+    return normalized in _PLACEHOLDER_SECRETS or normalized.startswith(("change-me", "changeme", "change_me"))
+
+
+def validate_production_secrets(config: "Settings") -> None:
+    """Raise when a non-debug deployment still uses default/placeholder secrets."""
+    if config.DEBUG:
+        return
+    weak = [
+        name for name in ("JWT_SECRET_KEY", "SECRET_KEY")
+        if _is_placeholder_secret(getattr(config, name, None))
+    ]
+    if weak and not config.ENFORCE_SECRET_CHECK:
+        import logging
+        logging.getLogger(__name__).warning(
+            "SECURITY: %s still uses a default/placeholder value; set strong random values "
+            "and ENFORCE_SECRET_CHECK=true.", ", ".join(weak))
+        return
+    if weak:
+        raise RuntimeError(
+            f"Refusing to start: {', '.join(weak)} still uses a default/placeholder value. "
+            "Set strong random values in the environment (e.g. `openssl rand -hex 32`), "
+            "or set DEBUG=true for local development."
+        )
 
 
 settings = Settings()

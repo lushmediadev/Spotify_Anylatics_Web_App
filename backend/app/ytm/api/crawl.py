@@ -100,13 +100,20 @@ async def _create_refresh_jobs(
     db: AsyncSession,
     items: list[Item],
     current_user: User,
-) -> tuple[list[str], list[str], list[tuple[str, object]]]:
+) -> tuple[list[str], list[str], list[tuple[str, object]], int]:
+    """Create one refresh job per item; items already being crawled are skipped."""
     job_ids: list[str] = []
     item_ids: list[str] = []
     background: list[tuple[str, object]] = []
     jobs: list[tuple[CrawlJob, object]] = []
+    skipped_in_progress = 0
 
     for item in items:
+        if item.status == "crawling":
+            # A job is already queued/running for this row; another would duplicate
+            # YouTube calls. Interrupted rows are reset by recover_interrupted_jobs.
+            skipped_in_progress += 1
+            continue
         parsed = parse_youtube_channel_url(_item_refresh_url(item))
         if not parsed:
             continue
@@ -123,14 +130,14 @@ async def _create_refresh_jobs(
         jobs.append((job, parsed))
 
     if not jobs:
-        return job_ids, item_ids, background
+        return job_ids, item_ids, background, skipped_in_progress
 
     await db.flush()
     for job, parsed in jobs:
         job_ids.append(job.id)
         item_ids.append(str(job.item_id))
         background.append((job.id, parsed))
-    return job_ids, item_ids, background
+    return job_ids, item_ids, background, skipped_in_progress
 
 
 @router.post("/crawl", response_model=CrawlResponse)
@@ -278,7 +285,7 @@ async def crawl_scope(
     result = await db.execute(query)
     items = [item for item in result.scalars().all() if _item_matches_search(item, req.search)]
 
-    job_ids, refreshed_item_ids, background = await _create_refresh_jobs(db, items, current_user)
+    job_ids, refreshed_item_ids, background, skipped_in_progress = await _create_refresh_jobs(db, items, current_user)
     await db.commit()
     schedule_crawl_jobs(background)
 
@@ -287,5 +294,6 @@ async def crawl_scope(
         count=len(job_ids),
         accepted_indices=list(range(len(job_ids))),
         item_ids=refreshed_item_ids,
+        skipped_in_progress=skipped_in_progress,
         message="Scope crawl jobs created",
     )

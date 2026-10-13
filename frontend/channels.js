@@ -49,10 +49,10 @@
         return owner && !title.toLowerCase().startsWith(`${owner.toLowerCase()} - `) ? `${owner} - ${title}` : title;
     }
     function errorText(error) {
-        return typeof error?.message === 'string' ? error.message : 'Không thể thực hiện yêu cầu. Vui lòng thử lại.';
+        return typeof error?.message === 'string' ? error.message : 'The request could not be completed. Please try again.';
     }
     function api(path, method = 'GET', body, signal) {
-        if (!state.request) return Promise.reject(new Error('ChannelPlaylists.init() chưa được gọi.'));
+        if (!state.request) return Promise.reject(new Error('ChannelPlaylists.init() has not been called.'));
         const options = { method };
         if (body !== undefined) options.body = JSON.stringify(body);
         if (signal) options.signal = signal;
@@ -71,20 +71,20 @@
     }
     function mount() {
         const host = document.getElementById('channels-panel');
-        if (!host) throw new Error('Thiếu #channels-panel.');
+        if (!host) throw new Error('Missing #channels-panel.');
         if (state.host === host && host.querySelector('.playlist-hero')) return;
         state.host = host;
         host.classList.add('chp-root');
         state.tools = document.getElementById('channel-header-tools');
-        if (!state.tools) throw new Error('Thiếu #channel-header-tools trong .topbar.');
+        if (!state.tools) throw new Error('Missing #channel-header-tools in .topbar.');
         state.tools.classList.add('chp-header-tools', 'flex', 'items-center', 'gap-4');
-        state.tools.innerHTML = `<div class="relative group"><span class="material-icons-round absolute left-3 top-1/2 -translate-y-1/2 text-secondary-text text-xl">search</span><input class="chp-search search-pill bg-row-hover border-none rounded-full pl-10 pr-4 py-2 text-sm w-64 focus:ring-1 focus:ring-primary placeholder:text-secondary-text transition-all" type="search" placeholder="Tìm kênh YouTube" aria-label="Tìm kênh YouTube"></div>
+        state.tools.innerHTML = `<div class="relative group"><span class="material-icons-round absolute left-3 top-1/2 -translate-y-1/2 text-secondary-text text-xl">search</span><input class="chp-search search-pill bg-row-hover border-none rounded-full pl-10 pr-4 py-2 text-sm w-64 focus:ring-1 focus:ring-primary placeholder:text-secondary-text transition-all" type="search" placeholder="Search channels..." aria-label="Search channels"></div>
             <button type="button" class="btn-ghost flex items-center gap-2 px-4 py-2 rounded-full border border-white/20 hover:border-white transition-colors text-sm font-bold cursor-pointer" data-chp-action="refresh-all"><span class="material-icons-round text-lg">refresh</span>Refresh All</button>
             <button type="button" class="btn-accent flex items-center gap-2 px-6 py-2 rounded-full bg-primary hover:bg-primary/90 text-white transition-all text-sm font-bold cursor-pointer" data-chp-action="add"><span class="material-icons-round text-lg">add</span>Add Channel</button>
-            <label class="chp-mobile-groups">Nhóm <select class="chp-groups" aria-label="Nhóm kênh"></select></label><button type="button" class="chp-new-group-toolbar group-rail-add-btn" data-chp-action="new-group" aria-label="New group" title="New group"><span class="material-icons-round" aria-hidden="true">add</span></button>`;
+            <label class="chp-mobile-groups">Group <select class="chp-groups" aria-label="Channel groups"></select></label><button type="button" class="chp-new-group-toolbar group-rail-add-btn" data-chp-action="new-group" aria-label="New group" title="New group"><span class="material-icons-round" aria-hidden="true">add</span></button>`;
         state.tools.addEventListener('click', panelClick);
-        host.innerHTML = `<section class="playlist-hero px-5 py-8 mb-0"><div class="flex items-end justify-between gap-6"><div><p class="text-[11px] uppercase tracking-[0.16em] text-secondary-text font-bold">Live Monitoring</p><h2 class="text-[30px] leading-none font-bold mt-2">Channel &amp; Playlist</h2><p class="text-sm text-secondary-text mt-2">Theo dõi kênh YouTube và playlist Spotify liên kết.</p></div><div class="chp-kpis flex items-center gap-4 text-xs">${['Channels', 'Active', 'Errors', 'Crawling', 'Selected'].map(key => `<span class="hero-kpi"><b data-chp-kpi="${key}">0</b><em>${key}</em></span>`).join('')}</div></div></section>
-            <div class="chp-key-warning" hidden></div><div class="chp-status" role="status" aria-live="polite"></div><div class="chp-list" aria-label="Danh sách kênh"></div>`;
+        host.innerHTML = `<section class="playlist-hero px-5 py-8 mb-0"><div class="flex items-end justify-between gap-6"><div><p class="text-[11px] uppercase tracking-[0.16em] text-secondary-text font-bold">Live Monitoring</p><h2 class="text-[30px] leading-none font-bold mt-2">Channel &amp; Playlist</h2><p class="text-sm text-secondary-text mt-2">Track YouTube channels and their linked Spotify playlists.</p></div><div class="chp-kpis flex items-center gap-4 text-xs">${['Channels', 'Active', 'Errors', 'Crawling', 'Selected'].map(key => `<span class="hero-kpi"><b data-chp-kpi="${key}">0</b><em>${key}</em></span>`).join('')}</div></div></section>
+            <div class="chp-key-warning" hidden></div><div class="chp-status" role="status" aria-live="polite"></div><div class="chp-list" aria-label="Channel list"></div>`;
         host.addEventListener('click', panelClick);
         host.addEventListener('contextmenu', event => {
             const playlist = event.target.closest('[data-chp-playlist]');
@@ -223,20 +223,20 @@
     }
     function metricDelta(value, days) {
         if (value == null) return '';
-        const label = `${value > 0 ? '+' : ''}${number(value)}${days == null ? '' : ` trong ${number(days)} ngày`}`;
+        const label = `${value > 0 ? '+' : ''}${number(value)}${days == null ? '' : ` in ${number(days)} ${days === 1 ? 'day' : 'days'}`}`;
         return `<span title="${escapeHtml(label)}" class="chp-delta metric-delta ${value > 0 ? 'metric-delta-up' : value < 0 ? 'metric-delta-down' : 'metric-delta-flat'}"><span class="material-icons-round">${value > 0 ? 'north' : value < 0 ? 'south' : 'remove'}</span><span>${value > 0 ? '+' : ''}${number(value)}${days == null ? '' : `/${number(days)}`}</span></span>`;
     }
     function channelRow(item, index) {
         const collapsed = state.collapsed.has(item.id);
         const url = item.youtube_url || (item.youtube_id ? `https://www.youtube.com/channel/${encodeURIComponent(item.youtube_id)}` : item.query);
         return `<section data-chp-block="${escapeHtml(item.id)}"><div class="list-grid"><div class="custom-grid-row chp-grid chp-channel px-4 py-3 bg-white/5 rounded-lg border border-transparent transition-colors group ${state.selected.has(item.id) ? 'row-selected' : ''}" data-chp-channel="${escapeHtml(item.id)}" draggable="true" tabindex="0" aria-selected="${state.selected.has(item.id)}">
-            <div class="meta-cell stt-cell text-secondary-text">${index + 1}</div><div class="list-asset-cell flex items-center gap-4">${image(item.image)}<div><div class="chp-channel-labels"><span class="list-type-badge badge-channel">channel</span><span class="chp-playlist-count text-secondary-text">${(item.playlists || []).length} playlists</span></div><h3 class="list-asset-title">${link(url, item.name || item.query || 'Kênh YouTube')}</h3><div class="list-asset-meta"><p class="list-asset-uri text-secondary-text">${escapeHtml(item.youtube_id || item.query || '')}</p></div></div></div>
+            <div class="meta-cell stt-cell text-secondary-text">${index + 1}</div><div class="list-asset-cell flex items-center gap-4">${image(item.image)}<div><div class="chp-channel-labels"><span class="list-type-badge badge-channel">channel</span><span class="chp-playlist-count text-secondary-text">${(item.playlists || []).length} playlists</span></div><h3 class="list-asset-title">${link(url, item.name || item.query || 'YouTube channel')}</h3><div class="list-asset-meta"><p class="list-asset-uri text-secondary-text">${escapeHtml(item.youtube_id || item.query || '')}</p></div></div></div>
             <div class="meta-cell chp-owner-empty">${collapsed ? number((item.playlists || []).length) : ''}</div><div class="meta-cell"><div class="metric-stack"><span class="metric-main">${number(item.view_count)}</span></div></div><div class="meta-cell">${metricDelta(item.view_count_delta, item.delta_days) || '<span class="metric-empty">-</span>'}</div><div class="meta-cell text-right">${checked(item)}</div></div></div>
-            <div class="chp-children"${collapsed ? ' hidden' : ''} aria-label="Playlists của ${escapeHtml(item.name || item.query)}"><div class="list-grid">${(item.playlists || []).map((playlist, position) => playlistRow(playlist, position, item.id)).join('') || '<p class="chp-empty">Chưa liên kết playlist. Nhấp chuột phải vào kênh để chọn Edit playlists.</p>'}</div></div></section>`;
+            <div class="chp-children"${collapsed ? ' hidden' : ''} aria-label="Playlists of ${escapeHtml(item.name || item.query)}"><div class="list-grid">${(item.playlists || []).map((playlist, position) => playlistRow(playlist, position, item.id)).join('') || '<p class="chp-empty">No linked playlists. Right-click the channel and choose Edit playlists.</p>'}</div></div></section>`;
     }
     function listHead(labels, grid, filter = false) {
         const keys = ['', 'name', '', 'view_count', 'view_count_delta', 'last_checked'];
-        return `<div class="list-head pt-0 pb-0"><div class="list-columns-head custom-grid-row ${grid} px-4 py-3 text-[13px] font-medium">${labels.map((label, index) => `<div class="meta-cell head-cell" data-col-key="${index === 0 ? 'stt' : index === 1 ? 'asset' : label === 'Checked' ? 'checked' : ''}"><span class="head-cell-label">${label}</span>${keys[index] ? `<button type="button" class="metric-sort-mode-toggle ${state.sort?.key === keys[index] ? 'is-active' : ''}" data-chp-sort="${keys[index]}" aria-label="Sắp xếp ${label}" title="Tăng dần / giảm dần / thứ tự thủ công"><span class="metric-sort-triangle">${state.sort?.key === keys[index] && state.sort.direction === 1 ? '▲' : '▼'}</span></button>` : ''}${filter && label === 'Checked' ? `<div class="metric-sort-controls checked-sort-controls"><button type="button" class="metric-sort-mode-toggle ${state.filter !== 'all' ? 'is-active' : ''}" data-chp-action="filter" aria-label="Lọc trạng thái kênh" aria-haspopup="menu"><span class="metric-sort-triangle">▼</span></button></div>` : ''}<span class="column-resize-handle" data-chp-resize="${index}" role="separator" aria-orientation="vertical" aria-label="Đổi độ rộng ${label}" title="Kéo để đổi độ rộng; nhấp đúp để đặt lại"></span></div>`).join('')}</div></div>`;
+        return `<div class="list-head pt-0 pb-0"><div class="list-columns-head custom-grid-row ${grid} px-4 py-3 text-[13px] font-medium">${labels.map((label, index) => `<div class="meta-cell head-cell" data-col-key="${index === 0 ? 'stt' : index === 1 ? 'asset' : label === 'Checked' ? 'checked' : ''}"><span class="head-cell-label">${label}</span>${keys[index] ? `<button type="button" class="metric-sort-mode-toggle ${state.sort?.key === keys[index] ? 'is-active' : ''}" data-chp-sort="${keys[index]}" aria-label="Sort by ${label}" title="Ascending / descending / manual order"><span class="metric-sort-triangle">${state.sort?.key === keys[index] && state.sort.direction === 1 ? '▲' : '▼'}</span></button>` : ''}${filter && label === 'Checked' ? `<div class="metric-sort-controls checked-sort-controls"><button type="button" class="metric-sort-mode-toggle ${state.filter !== 'all' ? 'is-active' : ''}" data-chp-action="filter" aria-label="Filter channel status" aria-haspopup="menu"><span class="metric-sort-triangle">▼</span></button></div>` : ''}<span class="column-resize-handle" data-chp-resize="${index}" role="separator" aria-orientation="vertical" aria-label="Resize ${label} column" title="Drag to resize; double-click to reset"></span></div>`).join('')}</div></div>`;
     }
     function flushRender() {
         if (!state.visible || state.modal || state.menu || state.drag || state.resize) { state.pendingRender = true; return; }
@@ -244,13 +244,13 @@
         notifyGroup();
         const list = state.host?.querySelector('.chp-list');
         if (!list || list.contains(document.activeElement)) { state.pendingRender = true; return; }
-        const html = listHead(['STT', 'Channel', 'Owner', 'View', 'Delta / Days', 'Checked'], 'chp-grid', true) + (state.group && state.items.length ? state.items.map(channelRow).join('') : `<p class="chp-empty">${state.groups.length ? 'Chưa có kênh phù hợp. Thêm kênh hoặc đổi bộ lọc.' : 'Chọn New Group trong danh sách nhóm để bắt đầu.'}</p>`);
+        const html = listHead(['STT', 'Channel', 'Owner', 'View', 'Delta / Days', 'Checked'], 'chp-grid', true) + (state.group && state.items.length ? state.items.map(channelRow).join('') : `<p class="chp-empty">${state.groups.length ? 'No matching channels. Add a channel or change the filter.' : 'Choose New Group in the group list to get started.'}</p>`);
         if (list.innerHTML !== html) list.innerHTML = html;
         updatePlaylistCountHeader();
         const select = state.tools.querySelector('.chp-groups');
         if (document.activeElement !== select) {
             const groups = new Map(state.groups.map(group => [group.name, group.count]));
-            const options = groups.size ? [...groups].map(([name, count]) => `<option value="${escapeHtml(name)}">${escapeHtml(name)} (${number(count)})</option>`).join('') : '<option value="" disabled selected>Chưa có nhóm</option>';
+            const options = groups.size ? [...groups].map(([name, count]) => `<option value="${escapeHtml(name)}">${escapeHtml(name)} (${number(count)})</option>`).join('') : '<option value="" disabled selected>No groups yet</option>';
             if (select.innerHTML !== options) select.innerHTML = options;
             select.disabled = !groups.size;
             select.value = state.group;
@@ -270,8 +270,8 @@
             state.rail = rail;
             window.GroupRailUI.mount(rail, {
                 keyAttr: 'data-chp-group',
-                emptyText: 'Chưa có nhóm. Nhấn + để tạo nhóm.',
-                deleteNote: 'Kênh được chuyển vào Ungrouped, Spotify Item vẫn được giữ nguyên.',
+                emptyText: 'No groups yet. Press + to create one.',
+                deleteNote: 'Channels move to Ungrouped; Spotify items are kept.',
                 onSelect: (name, event) => {
                     selectRows('groups', name, event);
                     if (event.ctrlKey || event.metaKey || event.shiftKey) return;
@@ -320,11 +320,11 @@
         const controller = new AbortController();
         state.controller = controller;
         state.loading = true;
-        if (!quiet) message('Đang tải kênh…');
+        if (!quiet) message('Loading channels…');
         try {
             const data = await api(query(), 'GET', undefined, controller.signal);
             if (generation !== state.generation || !state.visible) return;
-            if (!Array.isArray(data?.items)) throw new Error('Phản hồi danh sách kênh không hợp lệ.');
+            if (!Array.isArray(data?.items)) throw new Error('Invalid channel list response.');
             if (!state.writePending || !state.preferencesLoaded) {
                 const prefs = await api('/youtube/preferences', 'GET', undefined, controller.signal);
                 if (generation !== state.generation || !state.visible) return;
@@ -371,11 +371,11 @@
         let data = first, offset = 0;
         while (true) {
             if (generation !== state.generation || !state.visible || signal.aborted) return null;
-            if (!Array.isArray(data?.items)) throw new Error('Phản hồi danh sách kênh không hợp lệ.');
+            if (!Array.isArray(data?.items)) throw new Error('Invalid channel list response.');
             for (const item of data.items) if (String(item.user_id) === state.userId) merged.set(item.id, item);
             offset += data.items.length;
             if (offset >= Number(data.total) || (!data.total && data.items.length < PAGE_SIZE)) break;
-            if (!data.items.length) throw new Error('Danh sách kênh chưa tải đủ. Vui lòng thử lại.');
+            if (!data.items.length) throw new Error('The channel list did not fully load. Please try again.');
             data = await api(query(offset, unfiltered), 'GET', undefined, signal);
         }
         return [...merged.values()];
@@ -385,7 +385,7 @@
     }
     async function refreshAll(button) {
         if (state.bulkBusy) return;
-        if (!state.group) { message('Không có kênh để refresh. Tạo và chọn nhóm trước.'); return; }
+        if (!state.group) { message('No channels to refresh. Create and select a group first.'); return; }
         const generation = state.generation;
         state.bulkBusy = true;
         button.disabled = true;
@@ -409,7 +409,7 @@
                 await api(`/youtube/channels/${encodeURIComponent(id)}/playlists/refresh`, 'POST');
             }
             if (linked.size) notifyItems();
-            if (generation === state.generation) { await reload(); message(all.length ? `Đã yêu cầu refresh ${all.length} kênh.` : 'Không có kênh để refresh.'); }
+            if (generation === state.generation) { await reload(); message(all.length ? `Refresh requested for ${all.length} channels.` : 'No channels to refresh.'); }
         } catch (error) { if (generation === state.generation) message(errorText(error), true); }
         finally { state.bulkBusy = false; if (button.isConnected) button.disabled = false; }
     }
@@ -474,7 +474,7 @@
         return menu;
     }
     function filterItems() {
-        return ['all', 'changed', 'errors'].map((filter, index) => `<button type="button" role="menuitemradio" aria-checked="${state.filter === filter}" class="row-context-item ${state.filter === filter ? 'is-active' : ''}" data-filter="${filter}"><span class="material-icons-round">${state.filter === filter ? 'check' : 'filter_list'}</span>${['Tất cả', 'Có thay đổi', 'Có lỗi'][index]}</button>`).join('');
+        return ['all', 'changed', 'errors'].map((filter, index) => `<button type="button" role="menuitemradio" aria-checked="${state.filter === filter}" class="row-context-item ${state.filter === filter ? 'is-active' : ''}" data-filter="${filter}"><span class="material-icons-round">${state.filter === filter ? 'check' : 'filter_list'}</span>${['All', 'Changed', 'Errors'][index]}</button>`).join('');
     }
     function bindFilter(menu) {
         menu.addEventListener('click', event => {
@@ -532,7 +532,7 @@
         if (navigator.clipboard?.writeText) { try { return await navigator.clipboard.writeText(text); } catch (_) { /* Local HTTP can require the selection-based fallback. */ } }
         const input = document.createElement('textarea'), focus = document.activeElement;
         input.value = text; input.style.position = 'fixed'; input.style.opacity = '0'; document.body.appendChild(input); input.select();
-        try { if (!document.execCommand('copy')) throw new Error('Không thể sao chép liên kết.'); }
+        try { if (!document.execCommand('copy')) throw new Error('Could not copy links.'); }
         finally { input.remove(); focus?.focus(); }
     }
     const channelUrl = item => item.youtube_url || (item.youtube_id ? `https://www.youtube.com/channel/${encodeURIComponent(item.youtube_id)}` : item.query);
@@ -540,7 +540,7 @@
     function runAction(action) {
         const items = [...new Map(selectedPlaylists().map(({ item }) => [item.id, item])).values()];
         if (!items.length) return;
-        if (!state.runPlaylistAction) { message('Chức năng playlist chưa được kết nối với ứng dụng.', true); return; }
+        if (!state.runPlaylistAction) { message('Playlist actions are not connected to the app.', true); return; }
         const scope = state.scope;
         Promise.resolve().then(() => { if (scope === state.scope && state.userId === String(state.getUser()?.id || '')) return state.runPlaylistAction(action, items); }).then(() => {
             if (scope === state.scope && action === 'fetch-selected') { notifyItems(); return reload(); }
@@ -561,7 +561,7 @@
     }
     async function renameGroup(name, next) {
         if (next.toLowerCase() === 'all' || state.groups.some(group => group.name !== name && group.name.toLocaleLowerCase() === next.toLocaleLowerCase())) {
-            message('Nhóm này đã tồn tại.', true);
+            message('This group already exists.', true);
             return false;
         }
         const scope = state.scope;
@@ -583,18 +583,18 @@
         state.groupSelected.clear(); state.preferencesLoaded = false;
         if (names.includes(state.group)) state.group = '';
         await reload();
-        message(`Đã xóa ${number(names.length)} nhóm.`);
+        message(`Deleted ${number(names.length)} ${names.length === 1 ? 'group' : 'groups'}.`);
     }
     function clearGroup() {
         const name = state.group;
         if (!name || !state.groupItems.length) return;
-        dialog('Clear Group', `<p>Xóa toàn bộ ${state.groupItems.length} kênh YouTube trong ${escapeHtml(name)}? Nhóm và Spotify Item vẫn được giữ nguyên.</p>`, 'Xóa kênh', () => api('/youtube/groups/clear', 'POST', { name }));
+        dialog('Clear Group', `<p>Delete all ${state.groupItems.length} YouTube channels in ${escapeHtml(name)}? The group and Spotify items are kept.</p>`, 'Delete channels', () => api('/youtube/groups/clear', 'POST', { name }));
     }
     function deleteChannels(items = selectedChannels()) {
         const ids = items.filter(item => String(item.user_id) === state.userId).map(item => item.id);
         if (!ids.length) return;
         const scope = state.scope;
-        dialog('Xóa kênh', `<p>Xóa ${ids.length} kênh YouTube? Các Spotify Item đã liên kết vẫn được giữ nguyên.</p>`, 'Xóa kênh', async () => {
+        dialog('Delete Channels', `<p>Delete ${ids.length} YouTube channels? Linked Spotify items are kept.</p>`, 'Delete channels', async () => {
             for (let offset = 0; offset < ids.length; offset += 500) {
                 if (scope !== state.scope) return;
                 await api('/youtube/channels/delete', 'POST', { channel_ids: ids.slice(offset, offset + 500) });
@@ -620,13 +620,13 @@
     function openPlaylistMenu(row, x, y) {
         if (!state.playlistSelected.has(row.dataset.chpPlaylist)) selectRows('playlist', row.dataset.chpPlaylist);
         state.focusKind = 'playlist';
-        actionMenu([['copy-selected-links', 'Copy Link'], ['fetch-selected', 'Refresh playlists đã chọn'], ['delete-link', 'Xoá playlist'], ['clipboard-auto', 'Clipboard Playlist'], ['txt-playlist-type3', 'Export TXT'], ['export-listview-excel', 'Export Excel']], x, y, action => action === 'delete-link' ? deleteSpotifyLinks() : runAction(action));
+        actionMenu([['copy-selected-links', 'Copy Link'], ['fetch-selected', 'Refresh selected playlists'], ['delete-link', 'Delete playlists'], ['clipboard-auto', 'Clipboard Playlist'], ['txt-playlist-type3', 'Export TXT'], ['export-listview-excel', 'Export Excel']], x, y, action => action === 'delete-link' ? deleteSpotifyLinks() : runAction(action));
     }
     function deleteSpotifyLinks() {
         const items = [...new Map(selectedPlaylists().map(({ item }) => [item.id, item])).values()];
         if (!items.length || !state.runPlaylistAction) return;
         const owner = state.userId, scope = state.scope;
-        dialog('Xoá playlist', `<p>Xoá ${items.length} playlist và lịch sử theo dõi trong Channel & Playlist, kể cả các kênh khác đang dùng? Link Checker và playlist trên Spotify không bị ảnh hưởng.</p>`, 'Xoá link', async () => {
+        dialog('Delete Playlists', `<p>Delete ${items.length} playlists and their tracking history from Channel & Playlist, including links used by other channels? Link Checker and the playlists on Spotify are not affected.</p>`, 'Delete links', async () => {
             if (scope !== state.scope || owner !== String(state.getUser()?.id || '')) return;
             await state.runPlaylistAction('delete-selected-links', items);
             notifyItems(); state.playlistSelected.clear();
@@ -645,7 +645,7 @@
                 if (scope !== state.scope) return;
                 await api('/youtube/channels/refresh', 'POST', { channel_ids: ids.slice(offset, offset + 500) });
             }
-            if (scope === state.scope) { await reload(); message(`Đã yêu cầu refresh ${ids.length} kênh.`); }
+            if (scope === state.scope) { await reload(); message(`Refresh requested for ${ids.length} channels.`); }
         } catch (error) { if (scope === state.scope) message(errorText(error), true); }
         finally { state.bulkBusy = false; }
     }
@@ -663,7 +663,7 @@
         if (!item) return;
         if (!state.selected.has(id)) selectChannel(id);
         state.focusKind = 'channels';
-        const actions = [...(state.selected.size === 1 ? [['edit', 'edit', 'Edit playlists']] : []), ['add', 'add', 'Add Channel'], ['refresh', 'refresh', 'Refresh kênh'], ['playlists', 'refresh', 'Refresh playlists'], ['move', 'drive_file_move', 'Move To Group'], ['copy', 'content_copy', 'Copy Links'], ['export', 'download', 'Export List CSV'], ['clear', 'delete', 'Clear Group'], ['toggle', 'unfold_more', 'Mở / thu playlists'], ['expand', 'unfold_more', 'Mở tất cả'], ['collapse', 'unfold_less', 'Thu tất cả'], ['delete', 'delete', 'Xóa kênh']];
+        const actions = [...(state.selected.size === 1 ? [['edit', 'edit', 'Edit playlists']] : []), ['add', 'add', 'Add Channel'], ['refresh', 'refresh', 'Refresh channels'], ['playlists', 'refresh', 'Refresh playlists'], ['move', 'drive_file_move', 'Move To Group'], ['copy', 'content_copy', 'Copy Links'], ['export', 'download', 'Export List CSV'], ['clear', 'delete', 'Clear Group'], ['toggle', 'unfold_more', 'Expand / collapse playlists'], ['expand', 'unfold_more', 'Expand all'], ['collapse', 'unfold_less', 'Collapse all'], ['delete', 'delete', 'Delete channels']];
         const menu = createMenu(actions.map(([action, icon, label]) => `<button type="button" role="menuitem" class="row-context-item ${action === 'delete' ? 'row-context-danger' : ''}" data-menu="${action}"><span class="material-icons-round">${icon}</span>${label}</button>`).join('') + '<div class="row-context-separator"></div>' + filterItems(), x, y);
         bindFilter(menu);
         menu.addEventListener('click', event => {
@@ -849,7 +849,7 @@
         // Group F2/Delete are handled by the shared GroupRailUI so every workspace behaves the same.
         if (key === 'delete' && kind !== 'groups' && selection(kind).size) run = () => kind === 'playlist' ? deleteSpotifyLinks() : deleteChannels();
         if (modifier && key === 'c' && kind !== 'groups' && selection(kind).size) run = () => kind === 'playlist' ? runAction('copy-selected-links') : copyChannels().catch(error => message(errorText(error), true));
-        if (modifier && key === 'x' && kind === 'channels' && state.selected.size) run = () => { state.cut = { owner: state.userId, ids: selectedChannels().map(item => item.id) }; message('Đã cắt kênh. Chọn nhóm đích và nhấn Ctrl/Cmd+V.'); };
+        if (modifier && key === 'x' && kind === 'channels' && state.selected.size) run = () => { state.cut = { owner: state.userId, ids: selectedChannels().map(item => item.id) }; message('Channels cut. Select the target group and press Ctrl/Cmd+V.'); };
         if (modifier && key === 'v' && state.cut && state.group) run = () => moveChannels(state.cut.ids, state.group, state.cut.owner);
         if (!run) return;
         event.preventDefault(); event.stopImmediatePropagation(); run();
@@ -859,7 +859,7 @@
         closeMenu(); closeModal();
         invalidate();
         const node = document.createElement('div'); node.className = 'chp-backdrop';
-        node.innerHTML = `<section class="chp-dialog" role="dialog" aria-modal="true" aria-labelledby="chp-dialog-title"><form><header><h2 id="chp-dialog-title">${escapeHtml(title)}</h2><button type="button" data-close aria-label="Đóng">×</button></header><div class="chp-dialog-body">${content}</div><p class="chp-dialog-status" role="status" aria-live="polite"></p><footer><button type="button" data-close>Hủy</button><button type="submit" class="chp-primary">${escapeHtml(submitLabel)}</button></footer></form></section>`;
+        node.innerHTML = `<section class="chp-dialog" role="dialog" aria-modal="true" aria-labelledby="chp-dialog-title"><form><header><h2 id="chp-dialog-title">${escapeHtml(title)}</h2><button type="button" data-close aria-label="Close">×</button></header><div class="chp-dialog-body">${content}</div><p class="chp-dialog-status" role="status" aria-live="polite"></p><footer><button type="button" data-close>Cancel</button><button type="submit" class="chp-primary">${escapeHtml(submitLabel)}</button></footer></form></section>`;
         const modal = { node, controller: new AbortController(), focus: document.activeElement, busy: false };
         state.modal = modal; document.body.appendChild(node);
         node.querySelectorAll('[data-close]').forEach(button => button.addEventListener('click', () => { if (!modal.busy) closeModal(); }));
@@ -876,7 +876,7 @@
             event.preventDefault(); if (modal.busy) return;
             modal.busy = true;
             const button = node.querySelector('[type="submit"]'); button.disabled = true;
-            const status = node.querySelector('.chp-dialog-status'); status.textContent = 'Đang xử lý…';
+            const status = node.querySelector('.chp-dialog-status'); status.textContent = 'Processing…';
             try {
                 const feedback = await submit(node, modal);
                 if (state.modal !== modal) return;
@@ -891,7 +891,7 @@
     const lines = value => [...new Set(value.split(/\r?\n/).map(line => line.trim()).filter(Boolean))];
     async function createGroup(name) {
         if (name.toLowerCase() === 'all' || state.groups.some(group => group.name.toLocaleLowerCase() === name.toLocaleLowerCase())) {
-            message('Nhóm này đã tồn tại.', true);
+            message('This group already exists.', true);
             return false;
         }
         const ownerId = state.userId;
@@ -899,7 +899,7 @@
         if (state.userId !== ownerId) return true;
         state.group = name; state.offset = 0; state.items = []; state.total = 0;
         await reload();
-        message('Đã tạo nhóm.');
+        message('Group created.');
         return true;
     }
     function startGroupCreate() {
@@ -907,23 +907,23 @@
         state.rail?.__groupRail.startCreate();
     }
     function openAdd() {
-        if (!state.group) { message('Tạo và chọn nhóm trước khi thêm kênh.'); return; }
+        if (!state.group) { message('Create and select a group before adding channels.'); return; }
         const ownerId = state.userId;
-        dialog('Thêm kênh YouTube', `<label>Nhóm (bắt buộc)<input name="group" list="chp-group-options" required maxlength="128" value="${escapeHtml(state.group)}" placeholder="Chọn nhóm hoặc nhập nhóm mới"></label><datalist id="chp-group-options">${state.groups.map(group => `<option value="${escapeHtml(group.name)}"></option>`).join('')}</datalist><label>URL kênh, mỗi dòng một URL<textarea name="urls" rows="7" required placeholder="https://www.youtube.com/@channel"></textarea></label>`, 'Thêm kênh', async node => {
+        dialog('Add YouTube Channels', `<label>Group (required)<input name="group" list="chp-group-options" required maxlength="128" value="${escapeHtml(state.group)}" placeholder="Choose a group or type a new one"></label><datalist id="chp-group-options">${state.groups.map(group => `<option value="${escapeHtml(group.name)}"></option>`).join('')}</datalist><label>Channel URLs, one per line<textarea name="urls" rows="7" required placeholder="https://www.youtube.com/@channel"></textarea></label>`, 'Add channels', async node => {
             const group = node.querySelector('[name="group"]').value.trim();
             const urls = lines(node.querySelector('[name="urls"]').value);
-            if (!group || group.toLowerCase() === 'all' || !urls.length) throw new Error('Chọn nhóm thực tế (không phải All) và nhập ít nhất một URL kênh.');
-            if (urls.length > 500) throw new Error('Tối đa 500 URL mỗi lần.');
+            if (!group || group.toLowerCase() === 'all' || !urls.length) throw new Error('Choose a real group (not All) and enter at least one channel URL.');
+            if (urls.length > 500) throw new Error('Up to 500 URLs at a time.');
             const data = await api('/youtube/channels', 'POST', { urls, group, ...(ownerId ? { target_user_id: ownerId } : {}) });
-            return `Đã thêm: ${number(data.accepted ?? data.items?.length ?? 0)}; bỏ qua: ${number(Array.isArray(data.skipped) ? data.skipped.length : data.skipped ?? 0)}.`;
+            return `Added: ${number(data.accepted ?? data.items?.length ?? 0)}; skipped: ${number(Array.isArray(data.skipped) ? data.skipped.length : data.skipped ?? 0)}.`;
         });
     }
     async function openEdit(item) {
         if (String(item.user_id) !== state.userId || state.userId !== String(state.getUser()?.id || '')) return;
         const urls = (item.playlists || []).map(playlist => `https://open.spotify.com/playlist/${playlist.spotify_id}`).join('\n');
-        const modal = dialog(`Edit playlists · ${item.name || item.query}`, `<label>Dán URL playlist, mỗi dòng một URL<textarea name="urls" rows="9" placeholder="https://open.spotify.com/playlist/…">${escapeHtml(urls)}</textarea></label>`, 'Lưu liên kết', async node => {
+        const modal = dialog(`Edit playlists · ${item.name || item.query}`, `<label>Paste playlist URLs, one per line<textarea name="urls" rows="9" placeholder="https://open.spotify.com/playlist/…">${escapeHtml(urls)}</textarea></label>`, 'Save links', async node => {
             const urls = lines(node.querySelector('[name="urls"]').value);
-            if (urls.length > 500) throw new Error('Tối đa 500 URL mỗi lần.');
+            if (urls.length > 500) throw new Error('Up to 500 URLs at a time.');
             await api(`/youtube/channels/${encodeURIComponent(item.id)}/playlists`, 'PUT', { urls });
             notifyItems();
         });
@@ -938,7 +938,7 @@
         const generation = ++state.settingsGeneration;
         const userId = state.getUser()?.id;
         const current = () => generation === state.settingsGeneration && state.getUser()?.id === userId;
-        host.classList.add('chp-settings');
+        host.classList.add('chp-settings', 'app-card');
         // Only admins manage the system key pool; every other role never sees this section.
         host.hidden = !isAdmin();
         if (host.hidden) { host.textContent = ''; return; }
@@ -946,7 +946,7 @@
         try {
             const data = await api('/youtube/keys');
             if (!current()) return;
-            host.innerHTML = '<form><h3 class="chp-settings-title">YouTube API keys</h3><p class="chp-muted">System key pool used by every account. Enable YouTube Data API v3 in Google Cloud. If you restrict keys by caller, allow the VPS server IP 194.233.69.135 (not a browser referrer) and limit the key to YouTube Data API v3.</p><ul class="chp-key-list" aria-label="System API keys"></ul><label>Add API keys<textarea name="api_keys" rows="4" autocomplete="off" spellcheck="false" aria-describedby="chp-key-note" placeholder="One key per line"></textarea></label><p id="chp-key-note" class="chp-muted">One key per line; duplicates are skipped. Keys rotate automatically when quota runs out. Stored keys are only ever shown masked.</p><div class="chp-settings-actions"><button type="submit" class="chp-primary">Add keys</button><button type="button" data-check>Check keys</button></div><p class="chp-key-status" role="status" aria-live="polite"></p></form>';
+            host.innerHTML = '<form><h3 class="app-card-title">YouTube API Keys</h3><p class="text-sm text-secondary-text mb-4">System key pool used by every account. Enable YouTube Data API v3 in Google Cloud. If you restrict keys by caller, allow the VPS server IP 194.233.69.135 (not a browser referrer) and limit the key to YouTube Data API v3.</p><ul class="chp-key-list" aria-label="System API keys"></ul><label class="app-card-label">Add API keys<textarea name="api_keys" class="settings-input" rows="4" autocomplete="off" spellcheck="false" aria-describedby="chp-key-note" placeholder="One key per line"></textarea></label><p id="chp-key-note" class="text-xs text-secondary-text mb-4">One key per line; duplicates are skipped. Keys rotate automatically when quota runs out. Stored keys are only ever shown masked.</p><div class="chp-settings-actions"><button type="submit" class="btn-accent inline-flex items-center gap-2 px-6 py-2.5 rounded-full text-sm font-bold cursor-pointer"><span class="material-icons-round text-base" aria-hidden="true">add</span>Add keys</button><button type="button" data-check class="btn-ghost inline-flex items-center gap-2 px-6 py-2.5 rounded-full border text-sm font-bold cursor-pointer"><span class="material-icons-round text-base" aria-hidden="true">fact_check</span>Check keys</button></div><p class="chp-key-status" role="status" aria-live="polite"></p></form>';
             const input = host.querySelector('textarea');
             const list = host.querySelector('.chp-key-list');
             const status = host.querySelector('.chp-key-status');

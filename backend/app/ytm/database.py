@@ -1,14 +1,10 @@
-from app.database import Base, engine, async_session
+from app.database import Base, engine, async_session, get_db  # noqa: F401
 
-
-async def get_db():
-    async with async_session() as db:
-        try:
-            yield db
-            await db.commit()
-        except Exception:
-            await db.rollback()
-            raise
+# YTM routes deliberately reuse the shared ``app.database.get_db`` dependency
+# object: both drew from the same ``async_session`` factory/engine with identical
+# commit/rollback handling, and sharing the callable lets FastAPI's per-request
+# dependency cache hand the shared auth dependency and YTM routes ONE session
+# (one pooled connection) instead of two.
 
 
 async def init_db():

@@ -134,113 +134,130 @@ def _apply_error(item: Item | None, job: CrawlJob, exc: Exception | str) -> None
     job.completed_at = datetime.utcnow()
 
 
-def _mark_api_key(api_key, status: str, error: Exception | str | None = None) -> None:
-    api_key.last_status = status
-    api_key.last_error = str(error) if error else None
-    api_key.last_checked_at = datetime.utcnow()
+async def _load_api_key_values(db: AsyncSession) -> list[str]:
+    """Plain key strings, so no ORM row/session is needed during network calls."""
+    return [api_key.key for api_key in await get_active_api_keys(db)]
 
 
-async def _fetch_with_api_keys(db: AsyncSession, parsed: ParsedYouTubeChannel) -> dict:
-    api_keys = await get_active_api_keys(db)
+async def _call_with_key_rotation(api_keys: Sequence[str], call):
+    """Try system keys in order; move on only for key-specific/transient failures.
+
+    Non-rotatable errors (channel not found, bad input, invalid response,
+    unexpected exceptions) stop immediately and surface the original error so a
+    single bad query never spends quota on every key.
+    """
     if not api_keys:
-        raise YouTubeApiError(NO_SYSTEM_KEY_MESSAGE)
-
-    data = None
-    last_error: Exception | None = None
+        raise YouTubeApiError(NO_SYSTEM_KEY_MESSAGE, "no_api_keys")
+    last_error: YouTubeApiError | None = None
     for api_key in api_keys:
         try:
-            data = await fetch_channel(parsed, api_key.key)
-            _mark_api_key(api_key, "ok")
-            break
-        except Exception as exc:
+            return await call(api_key)
+        except YouTubeApiError as exc:
+            if not exc.rotatable:
+                raise
             last_error = exc
-            _mark_api_key(api_key, "error", exc)
-
-    if data is None:
-        raise YouTubeApiError(str(last_error) if last_error else "Could not call YouTube API")
-    return data
+    raise last_error or YouTubeApiError("Could not call YouTube API")
 
 
-async def _fetch_id_batch_with_api_keys(db: AsyncSession, channel_ids: Sequence[str]) -> dict[str, dict]:
-    api_keys = await get_active_api_keys(db)
-    if not api_keys:
-        raise YouTubeApiError(NO_SYSTEM_KEY_MESSAGE)
+async def _fetch_with_api_keys(api_keys: Sequence[str], parsed: ParsedYouTubeChannel) -> dict:
+    return await _call_with_key_rotation(api_keys, lambda key: fetch_channel(parsed, key))
 
-    data_by_id = None
-    last_error: Exception | None = None
-    for api_key in api_keys:
-        try:
-            data_by_id = await fetch_channels_by_ids(channel_ids, api_key.key)
-            _mark_api_key(api_key, "ok")
-            break
-        except Exception as exc:
-            last_error = exc
-            _mark_api_key(api_key, "error", exc)
 
-    if data_by_id is None:
-        raise YouTubeApiError(str(last_error) if last_error else "Could not call YouTube API")
-    return data_by_id
+async def _fetch_id_batch_with_api_keys(api_keys: Sequence[str], channel_ids: Sequence[str]) -> dict[str, dict]:
+    return await _call_with_key_rotation(api_keys, lambda key: fetch_channels_by_ids(channel_ids, key))
+
+
+async def _load_jobs_and_items(db: AsyncSession, job_ids: Sequence[str]) -> tuple[dict[str, CrawlJob], dict[str, Item]]:
+    result = await db.execute(select(CrawlJob).where(CrawlJob.id.in_(list(job_ids))))
+    job_by_id = {job.id: job for job in result.scalars().all()}
+    item_ids = [job.item_id for job in job_by_id.values() if job.item_id]
+    item_by_id: dict[str, Item] = {}
+    if item_ids:
+        item_result = await db.execute(select(Item).where(Item.id.in_(item_ids)))
+        item_by_id = {str(item.id): item for item in item_result.scalars().all()}
+    return job_by_id, item_by_id
+
+
+async def _record_errors(job_ids: Sequence[str], error: Exception | str) -> None:
+    """Write a failure for each job in its own short transaction."""
+    async with async_session() as db:
+        job_by_id, item_by_id = await _load_jobs_and_items(db, job_ids)
+        for job in job_by_id.values():
+            _apply_error(item_by_id.get(str(job.item_id)), job, error)
+        await db.commit()
 
 
 async def crawl_item_task(job_id: str, parsed: ParsedYouTubeChannel):
+    # No DB transaction/connection is held while YouTube is awaited:
+    # 1) mark crawling + read keys and commit, 2) fetch, 3) write in a fresh session.
     async with CRAWL_TASK_SEMAPHORE:
-        async with async_session() as db:
-            job = None
-            item = None
-            try:
-                result = await db.execute(select(CrawlJob).where(CrawlJob.id == job_id))
-                job = result.scalar_one_or_none()
+        try:
+            async with async_session() as db:
+                job_by_id, item_by_id = await _load_jobs_and_items(db, [job_id])
+                job = job_by_id.get(job_id)
                 if not job:
                     logger.error("Job %s not found", job_id)
                     return
-
                 job.status = "crawling"
                 job.started_at = datetime.utcnow()
-                await db.commit()
-
-                item_result = await db.execute(select(Item).where(Item.id == job.item_id))
-                item = item_result.scalar_one_or_none()
-                if not item:
-                    raise YouTubeApiError("Channel row not found")
-
-                data = await _fetch_with_api_keys(db, parsed)
-                _apply_success(db, item, job, data)
-                await db.commit()
-            except Exception as exc:
-                logger.warning("YouTube crawl failed job=%s error=%s", job_id, exc)
-                if job is not None:
-                    if item is None and job.item_id:
-                        item_result = await db.execute(select(Item).where(Item.id == job.item_id))
-                        item = item_result.scalar_one_or_none()
-                    _apply_error(item, job, exc)
+                if item_by_id.get(str(job.item_id)) is None:
+                    _apply_error(None, job, "Channel row not found")
                     await db.commit()
+                    return
+                api_keys = await _load_api_key_values(db)
+                await db.commit()
+        except Exception as exc:
+            logger.warning("YouTube crawl setup failed job=%s error=%s", job_id, exc)
+            await _record_errors([job_id], exc)
+            return
+
+        try:
+            data = await _fetch_with_api_keys(api_keys, parsed)
+        except Exception as exc:
+            logger.warning("YouTube crawl failed job=%s error=%s", job_id, exc)
+            await _record_errors([job_id], exc)
+            return
+
+        try:
+            async with async_session() as db:
+                job_by_id, item_by_id = await _load_jobs_and_items(db, [job_id])
+                job = job_by_id.get(job_id)
+                if not job:
+                    return
+                item = item_by_id.get(str(job.item_id))
+                if item is None:
+                    _apply_error(None, job, "Channel row not found")
+                else:
+                    _apply_success(db, item, job, data)
+                await db.commit()
+        except Exception as exc:
+            logger.warning("YouTube crawl save failed job=%s error=%s", job_id, exc)
+            await _record_errors([job_id], exc)
 
 
 async def crawl_channel_id_batch_task(jobs: Sequence[tuple[str, ParsedYouTubeChannel]]):
     if not jobs:
         return
+    job_ids = [job_id for job_id, _ in jobs]
     async with CRAWL_TASK_SEMAPHORE:
-        async with async_session() as db:
-            job_ids = [job_id for job_id, _ in jobs]
-            job_by_id: dict[str, CrawlJob] = {}
-            item_by_id: dict[str, Item] = {}
-            try:
-                result = await db.execute(select(CrawlJob).where(CrawlJob.id.in_(job_ids)))
-                job_by_id = {job.id: job for job in result.scalars().all()}
-
-                item_ids = [job.item_id for job in job_by_id.values() if job.item_id]
-                if item_ids:
-                    item_result = await db.execute(select(Item).where(Item.id.in_(item_ids)))
-                    item_by_id = {item.id: item for item in item_result.scalars().all()}
-
+        try:
+            async with async_session() as db:
+                job_by_id, _ = await _load_jobs_and_items(db, job_ids)
                 for job in job_by_id.values():
                     job.status = "crawling"
                     job.started_at = datetime.utcnow()
+                api_keys = await _load_api_key_values(db)
                 await db.commit()
+            channel_ids = [parsed.query for _, parsed in jobs if parsed.query_type == "id"]
+            data_by_id = await _fetch_id_batch_with_api_keys(api_keys, channel_ids)
+        except Exception as exc:
+            logger.warning("YouTube batch crawl failed jobs=%s error=%s", len(jobs), exc)
+            await _record_errors(job_ids, exc)
+            return
 
-                channel_ids = [parsed.query for _, parsed in jobs if parsed.query_type == "id"]
-                data_by_id = await _fetch_id_batch_with_api_keys(db, channel_ids)
-
+        try:
+            async with async_session() as db:
+                job_by_id, item_by_id = await _load_jobs_and_items(db, job_ids)
                 for job_id, parsed in jobs:
                     job = job_by_id.get(job_id)
                     if not job:
@@ -255,19 +272,9 @@ async def crawl_channel_id_batch_task(jobs: Sequence[tuple[str, ParsedYouTubeCha
                         continue
                     _apply_success(db, item, job, data)
                 await db.commit()
-            except Exception as exc:
-                logger.warning("YouTube batch crawl failed jobs=%s error=%s", len(jobs), exc)
-                if not job_by_id:
-                    result = await db.execute(select(CrawlJob).where(CrawlJob.id.in_(job_ids)))
-                    job_by_id = {job.id: job for job in result.scalars().all()}
-                if not item_by_id:
-                    item_ids = [job.item_id for job in job_by_id.values() if job.item_id]
-                    if item_ids:
-                        item_result = await db.execute(select(Item).where(Item.id.in_(item_ids)))
-                        item_by_id = {item.id: item for item in item_result.scalars().all()}
-                for job in job_by_id.values():
-                    _apply_error(item_by_id.get(str(job.item_id)), job, exc)
-                await db.commit()
+        except Exception as exc:
+            logger.warning("YouTube batch crawl save failed jobs=%s error=%s", len(jobs), exc)
+            await _record_errors(job_ids, exc)
 
 
 def _chunked_jobs(jobs: Sequence[tuple[str, ParsedYouTubeChannel]]) -> list[list[tuple[str, ParsedYouTubeChannel]]]:

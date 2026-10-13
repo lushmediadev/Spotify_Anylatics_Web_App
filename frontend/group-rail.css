@@ -66,7 +66,7 @@
     border-radius: 14px;
     background: var(--surface-2);
     color: var(--text-main);
-    font: 400 14px/20px "Inter", system-ui, sans-serif;
+    font: 400 14px/20px "Inter", "Inter Tight", system-ui, sans-serif;
     outline: none;
 }
 
@@ -97,7 +97,7 @@
     border: 1px solid transparent;
     border-radius: 8px;
     color: var(--text-muted);
-    font: 500 14px/20px "Inter", system-ui, sans-serif;
+    font: 500 14px/20px "Inter", "Inter Tight", system-ui, sans-serif;
     cursor: pointer;
     user-select: none;
     transition: background-color 140ms ease, color 140ms ease, opacity 140ms ease, box-shadow 180ms ease;
@@ -314,7 +314,7 @@
     background: var(--surface-0);
     box-shadow: 0 8px 28px rgba(0, 0, 0, .16);
     color: var(--text-main);
-    font: 500 14px/20px "Inter", system-ui, sans-serif;
+    font: 500 14px/20px "Inter", "Inter Tight", system-ui, sans-serif;
 }
 
 .group-rail-context-item {
@@ -384,7 +384,7 @@
     border-radius: 14px;
     background: var(--surface-0);
     color: var(--text-main);
-    font: 400 14px/20px "Inter", system-ui, sans-serif;
+    font: 400 14px/20px "Inter", "Inter Tight", system-ui, sans-serif;
     outline: none;
 }
 

@@ -1,6 +1,6 @@
 ﻿/**
  * SpotiCheck — Frontend Application
- * Kết nối API backend, render dynamic rows, quản lý state
+ * Connects to the backend API, renders dynamic rows and manages state
  */
 
 // ═══════════════════════════════════════════════════════════════════
@@ -244,7 +244,7 @@ function getWorkspaceAssignment(prefix, role) {
         .map((input) => input.value);
     if (!workspaces.length) {
         field?.querySelector('input')?.focus();
-        throw new Error('Chọn ít nhất một workspace cho Manager.');
+        throw new Error('Select at least one workspace for the Manager.');
     }
     return { workspaces };
 }
@@ -3665,7 +3665,7 @@ function isMetricSortColumn(colKey) {
 
 function getMetricSortModeLabel(colKey) {
     if (state.metricSortColumn === colKey) {
-        return state.metricSortMode === 'delta' ? 'Biến động' : 'Số lượng';
+        return state.metricSortMode === 'delta' ? 'Delta' : 'Count';
     }
     return 'None';
 }
@@ -3684,7 +3684,7 @@ function updateMetricSortControlsUI() {
 
         if (modeToggle) {
             modeToggle.classList.toggle('is-active', active);
-            modeToggle.setAttribute('title', active ? `Đang lọc: ${getMetricSortModeLabel(colKey)}` : 'Chọn kiểu lọc');
+            modeToggle.setAttribute('title', active ? `Sort: ${getMetricSortModeLabel(colKey)}` : 'Choose sort mode');
         }
 
         if (dirToggle) {
@@ -3696,8 +3696,8 @@ function updateMetricSortControlsUI() {
             }
             dirToggle.classList.toggle('is-active', active);
             dirToggle.setAttribute('title', active
-                ? (direction === 'asc' ? 'Đang tăng dần' : 'Đang giảm dần')
-                : 'Đổi chiều sắp xếp');
+                ? (direction === 'asc' ? 'Ascending' : 'Descending')
+                : 'Toggle sort direction');
         }
 
         if (menu) {
@@ -3740,8 +3740,8 @@ function updateTextSortControlsUI() {
             dirToggle.setAttribute(
                 'title',
                 active
-                    ? (state.textSortDirection === 'asc' ? 'Đang A-Z' : 'Đang Z-A')
-                    : 'Đổi chiều sắp xếp Playlist Owner'
+                    ? (state.textSortDirection === 'asc' ? 'A-Z' : 'Z-A')
+                    : 'Toggle Playlist Owner sort direction'
             );
         }
         if (menu) {
@@ -3806,8 +3806,8 @@ function updateCheckedSortControlsUI() {
         toggle.setAttribute(
             'title',
             active
-                ? `Đang lọc: ${getCheckedSortModeLabel(state.checkedSortMode)}`
-                : 'Chọn kiểu lọc Checked'
+                ? `Sort: ${getCheckedSortModeLabel(state.checkedSortMode)}`
+                : 'Choose Checked sort mode'
         );
     }
     if (menu) {
@@ -3828,12 +3828,12 @@ function ensureCheckedSortControls() {
         controls.className = 'metric-sort-controls checked-sort-controls';
         controls.dataset.checkedSortCol = 'checked';
         controls.innerHTML = `
-            <button type="button" class="metric-sort-mode-toggle" data-checked-sort-menu-toggle aria-label="Chọn kiểu lọc Checked">
+            <button type="button" class="metric-sort-mode-toggle" data-checked-sort-menu-toggle aria-label="Choose Checked sort mode">
                 <span class="metric-sort-triangle">▼</span>
             </button>
             <div class="metric-sort-menu" data-checked-sort-menu>
                 <button type="button" class="metric-sort-menu-item" data-checked-sort-option="${CHECKED_SORT_MODES.NONE}">
-                    <span class="metric-sort-menu-title">None (Mặc định)</span>
+                    <span class="metric-sort-menu-title">None (Default)</span>
                 </button>
                 <button type="button" class="metric-sort-menu-item" data-checked-sort-option="${CHECKED_SORT_MODES.ERROR_FIRST}">
                     <span class="metric-sort-menu-title">Error First</span>
@@ -3917,21 +3917,21 @@ function ensureMetricSortControls() {
         controls.className = 'metric-sort-controls';
         controls.dataset.sortCol = colKey;
         controls.innerHTML = `
-            <button type="button" class="metric-sort-mode-toggle" data-sort-menu-toggle aria-label="Chọn kiểu lọc">
+            <button type="button" class="metric-sort-mode-toggle" data-sort-menu-toggle aria-label="Choose sort mode">
                 <span class="metric-sort-triangle">▼</span>
             </button>
-            <button type="button" class="metric-sort-direction-toggle" data-sort-direction-toggle aria-label="Đổi chiều sắp xếp">
+            <button type="button" class="metric-sort-direction-toggle" data-sort-direction-toggle aria-label="Toggle sort direction">
                 <span class="material-icons-round metric-sort-direction-icon">swap_vert</span>
             </button>
             <div class="metric-sort-menu" data-sort-menu>
                 <button type="button" class="metric-sort-menu-item" data-sort-mode-option="none">
-                    <span class="metric-sort-menu-title">None (Mặc định)</span>
+                    <span class="metric-sort-menu-title">None (Default)</span>
                 </button>
                 <button type="button" class="metric-sort-menu-item" data-sort-mode-option="value">
-                    <span class="metric-sort-menu-title">S&#7889; l&#432;&#7907;ng</span>
+                    <span class="metric-sort-menu-title">Count</span>
                 </button>
                 <button type="button" class="metric-sort-menu-item" data-sort-mode-option="delta">
-                    <span class="metric-sort-menu-title">Bi&#7871;n &#273;&#7897;ng</span>
+                    <span class="metric-sort-menu-title">Delta</span>
                 </button>
             </div>
         `;
@@ -4620,15 +4620,15 @@ function ensureTextSortControls() {
         controls.className = 'metric-sort-controls text-sort-controls';
         controls.dataset.textSortCol = 'playlistOwner';
         controls.innerHTML = `
-            <button type="button" class="metric-sort-mode-toggle" data-text-sort-menu-toggle aria-label="Chọn kiểu lọc Playlist Owner">
+            <button type="button" class="metric-sort-mode-toggle" data-text-sort-menu-toggle aria-label="Choose Playlist Owner sort mode">
                 <span class="metric-sort-triangle">▼</span>
             </button>
-            <button type="button" class="metric-sort-direction-toggle" data-text-sort-direction-toggle aria-label="Đổi chiều sắp xếp Playlist Owner">
+            <button type="button" class="metric-sort-direction-toggle" data-text-sort-direction-toggle aria-label="Toggle Playlist Owner sort direction">
                 <span class="material-icons-round metric-sort-direction-icon">swap_vert</span>
             </button>
             <div class="metric-sort-menu" data-text-sort-menu>
                 <button type="button" class="metric-sort-menu-item" data-text-sort-option="none">
-                    <span class="metric-sort-menu-title">None (Mặc định)</span>
+                    <span class="metric-sort-menu-title">None (Default)</span>
                 </button>
                 <button type="button" class="metric-sort-menu-item" data-text-sort-option="asc">
                     <span class="metric-sort-menu-title">A-Z</span>
@@ -4751,7 +4751,7 @@ function getClipboardContextLabel(items) {
     if (action === 'clipboard-album-type0') return 'Clipboard (Album)';
     if (action === 'clipboard-track-offline') return 'Clipboard (Track)';
     if (action === 'clipboard-artist-basic') return 'Clipboard (Artist)';
-    if ((items || []).length > 0) return 'Clipboard (Chọn cùng 1 loại)';
+    if ((items || []).length > 0) return 'Clipboard (Select one type)';
     return 'Clipboard';
 }
 
@@ -4945,7 +4945,7 @@ async function runStructuredExport(action, items, destination) {
         ? getClipboardRowsForAction(action, payload.rows)
         : payload.rows;
     if (!rows.length) {
-        showToast('Không có dữ liệu phù hợp cho kiểu xuất này', 'info');
+        showToast('No matching data for this export type', 'info');
         return;
     }
     const text = rowsToDelimitedText(rows, '\t');
@@ -5512,7 +5512,7 @@ function updateLoadedItemsById(itemIds, updater) {
 async function handleRefreshItem(item) {
     if (!item) return;
     if (item.id && String(item.id).startsWith('temp-')) {
-        showToast('Link này đang crawl, đợi hoàn tất rồi refresh lại', 'info');
+        showToast('This link is still crawling; refresh it once it finishes', 'info');
         return;
     }
     if (!state.apiOnline) {
@@ -6821,7 +6821,7 @@ function renderAdminUsersLoading() {
     var countEl = document.getElementById('admin-users-count');
     if (!container) return;
     if (countEl) countEl.textContent = 'Loading...';
-    container.innerHTML = '<div class="p-5 rounded-xl border border-white/10 text-sm text-secondary-text" style="background:#1a1d21">Loading users...</div>';
+    container.innerHTML = '<div class="app-card app-card-row text-sm text-secondary-text">Loading users...</div>';
 }
 
 
@@ -6912,7 +6912,7 @@ function renderAdminUsers(users) {
                 '<button data-action="delete-user" data-uid="' + escapeHtml(u.id) + '" data-uname="' + escapeHtml(u.username) + '" class="p-2 rounded-lg hover:bg-white/10 text-secondary-text hover:text-red-500 transition-colors cursor-pointer" title="Delete user permanently"><span class="material-icons-round text-lg">delete_forever</span></button>';
         }
 
-        html += '<div class="p-5 rounded-xl border border-white/10 hover:border-white/20 transition-colors" style="background:#1a1d21">' +
+        html += '<div class="app-card app-card-row">' +
             '<div class="flex items-center gap-4">' +
                 avatarHtml +
                 '<div class="flex-1 min-w-0">' +
@@ -7316,8 +7316,8 @@ document.addEventListener('DOMContentLoaded', async () => {
     if (groupList) {
         window.GroupRailUI.mount(groupList, {
             keyAttr: 'data-group',
-            emptyText: 'Chưa có nhóm. Nhấn + để tạo nhóm.',
-            deleteNote: 'Link trong nhóm sẽ được chuyển về Ungrouped.',
+            emptyText: 'No groups yet. Press + to create one.',
+            deleteNote: 'Links in the group move to Ungrouped.',
             onSelect: (groupId, event) => selectLinkCheckerGroup(groupId, event),
             onContextOpen: (groupId) => {
                 if (state.selectedGroupIds.has(groupId)) return;

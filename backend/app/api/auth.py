@@ -213,12 +213,20 @@ async def _load_global_preferences(db: AsyncSession) -> dict:
 @router.post("/login", response_model=AuthResponse)
 async def login(req: LoginRequest, db: AsyncSession = Depends(get_db)):
     """Authenticate with username/email + password."""
+    # Emails are stored trimmed + lowercase (_resolve_email); usernames keep their
+    # case, so only the email comparison is normalized.
+    identifier = req.username or ""
+    email_identifier = identifier.strip().lower()
     result = await db.execute(
         select(User).where(
-            (User.username == req.username) | (User.email == req.username)
+            (User.username == identifier) | (User.email == email_identifier)
         )
     )
-    user = result.scalar_one_or_none()
+    candidates = list(result.scalars().all())
+    # A username may equal another account's email; an exact username wins.
+    user = next((row for row in candidates if row.username == identifier), None)
+    if user is None and candidates:
+        user = candidates[0]
     if not user or not verify_password(req.password, user.password_hash):
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,

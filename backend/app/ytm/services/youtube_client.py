@@ -3,17 +3,14 @@
 from __future__ import annotations
 
 import asyncio
-import random
-import string
 from collections.abc import Sequence
 from datetime import datetime
 
 import httpx
-from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.services.youtube import _http_error as classify_http_error
 from app.ytm.config import settings
-from app.ytm.models.api_key import ApiKey
 from app.ytm.utils.youtube_urls import ParsedYouTubeChannel
 
 
@@ -24,8 +21,24 @@ _youtube_http_client: httpx.AsyncClient | None = None
 _youtube_http_client_lock = asyncio.Lock()
 
 
+# Error codes (shared classification with app.services.youtube._http_error)
+# that are specific to the key or transient, so the next system key may succeed.
+# Everything else (channel not found, bad request/input, invalid response,
+# unexpected errors) is a property of the request and must not burn more quota.
+ROTATABLE_ERROR_CODES = frozenset({
+    "invalid_key", "quota_exceeded", "rate_limited", "forbidden",
+    "network_error", "api_unavailable",
+})
+
+
 class YouTubeApiError(RuntimeError):
-    pass
+    def __init__(self, message: str, code: str = "api_error"):
+        super().__init__(message)
+        self.code = code
+
+    @property
+    def rotatable(self) -> bool:
+        return self.code in ROTATABLE_ERROR_CODES
 
 
 def _to_int(value) -> int | None:
@@ -52,13 +65,6 @@ async def get_active_api_keys(db: AsyncSession) -> list:
     """Every account refreshes with the admin-managed system key pool."""
     from app.services.youtube_keys import system_api_key_rows
     return [key for key, _ in await system_api_key_rows(db)]
-
-
-async def get_random_api_key(db: AsyncSession) -> ApiKey:
-    keys = await get_active_api_keys(db)
-    if not keys:
-        raise YouTubeApiError("No YouTube API key configured")
-    return random.choice(keys)
 
 
 async def get_youtube_http_client() -> httpx.AsyncClient:
@@ -89,29 +95,28 @@ async def _request(
             f"{YOUTUBE_API_BASE}/{path}", params=dict(params), headers={"X-Goog-Api-Key": api_key},
         )
     except httpx.HTTPError:
-        raise YouTubeApiError("YouTube network request failed") from None
+        raise YouTubeApiError("YouTube network request failed", "network_error") from None
     if res.status_code != 200:
+        code = classify_http_error(res)
+        if code == "api_error" and res.status_code == 400:
+            # Plain 400 (badRequest/invalidParameter) is about the input, not the key;
+            # key problems arrive as 400 + keyInvalid and are classified above.
+            code = "invalid_query"
         detail = res.text[:500].replace(api_key, "[redacted]")
         try:
             payload = res.json()
-            detail = payload.get("error", {}).get("message") or detail
+            error = payload.get("error") if isinstance(payload, dict) else None
+            detail = (error.get("message") if isinstance(error, dict) else None) or detail
         except ValueError:
             pass
-        raise YouTubeApiError(str(detail).replace(api_key, "[redacted]"))
-    return res.json()
-
-
-async def check_api_key(api_key: str) -> tuple[bool, str | None]:
-    query = "".join(random.choice(string.ascii_letters) for _ in range(5))
+        raise YouTubeApiError(str(detail).replace(api_key, "[redacted]"), code)
     try:
-        await _request(
-            "search",
-            {"part": "snippet", "q": query, "maxResults": 1, "type": "channel"},
-            api_key,
-        )
-        return True, None
-    except Exception as exc:
-        return False, str(exc)
+        payload = res.json()
+    except ValueError:
+        raise YouTubeApiError("YouTube API returned an invalid response", "invalid_response") from None
+    if not isinstance(payload, dict):
+        raise YouTubeApiError("YouTube API returned an invalid response", "invalid_response")
+    return payload
 
 
 def _chunked(values: Sequence[str], size: int) -> list[list[str]]:
@@ -180,7 +185,7 @@ async def fetch_channel(parsed: ParsedYouTubeChannel, api_key: str) -> dict:
         data_by_id = await fetch_channels_by_ids([parsed.query], api_key, client=client)
         data = data_by_id.get(parsed.query)
         if not data:
-            raise YouTubeApiError("Channel not found")
+            raise YouTubeApiError("Channel not found", "channel_not_found")
         return data
 
     params: dict[str, str | int] = {
@@ -201,11 +206,11 @@ async def fetch_channel(parsed: ParsedYouTubeChannel, api_key: str) -> dict:
         items = search.get("items") or []
         channel_id = ((items[0].get("id") or {}).get("channelId")) if items else None
         if not channel_id:
-            raise YouTubeApiError("Could not resolve channel from URL")
+            raise YouTubeApiError("Could not resolve channel from URL", "channel_not_found")
         params["id"] = channel_id
 
     payload = await _request("channels", params, api_key, client=client)
     items = payload.get("items") or []
     if not items:
-        raise YouTubeApiError("Channel not found")
+        raise YouTubeApiError("Channel not found", "channel_not_found")
     return _channel_result(items[0], payload)

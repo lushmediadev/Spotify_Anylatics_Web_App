@@ -189,8 +189,8 @@ test('ChannelPlaylists isolated browser behavior', async t => {
             await page.locator('.chp-search').focus(); await page.keyboard.press('Control+a'); await page.keyboard.press('Delete');
             assert.equal(await page.locator('.chp-dialog').count(), 0);
             await page.locator('[data-chp-channel="c1"]').focus(); await page.keyboard.press('Control+a'); await page.keyboard.press('Delete');
-            assert.match(await page.locator('.chp-dialog-body').textContent(), /3 kênh.*Spotify Item/);
-            await page.getByRole('button', { name: 'Xóa kênh', exact: true }).click();
+            assert.match(await page.locator('.chp-dialog-body').textContent(), /3 YouTube channels.*Spotify items/);
+            await page.getByRole('button', { name: 'Delete channels', exact: true }).click();
             await page.waitForFunction(() => window.calls.some(call => call.path === '/youtube/channels/delete'));
             assert.deepEqual(await page.evaluate(() => JSON.parse(window.calls.find(call => call.path === '/youtube/channels/delete').body)), { channel_ids: ['c1', 'c2', 'c3'] });
             assert.equal(await page.evaluate(() => window.calls.some(call => call.method === 'DELETE')), false);
@@ -237,13 +237,13 @@ test('ChannelPlaylists isolated browser behavior', async t => {
             await page.locator('[data-chp-group="Target"]').click({ modifiers: ['Shift'] });
             assert.equal(await page.locator('#channel-group-rail .group-item-multi, #channel-group-rail .group-item-selected').count(), 3);
             await page.keyboard.press('Delete');
-            await page.getByRole('button', { name: 'Xóa nhóm', exact: true }).click();
+            await page.getByRole('button', { name: 'Delete Group', exact: true }).click();
             await page.waitForSelector('[data-chp-group="Ungrouped"]');
             assert.equal(await page.evaluate(() => window.data.items.length), 4);
             assert.equal(await page.evaluate(() => window.calls.some(call => /\/items\//.test(call.path) && call.method === 'DELETE')), false);
             await page.locator('[data-chp-channel="c1"]').click({ button: 'right' });
             await page.locator('[data-menu="clear"]').click();
-            await page.getByRole('button', { name: 'Xóa kênh', exact: true }).click();
+            await page.getByRole('button', { name: 'Delete channels', exact: true }).click();
             await page.waitForFunction(() => window.calls.some(call => call.path === '/youtube/groups/clear'));
             assert.deepEqual(await page.evaluate(() => JSON.parse(window.calls.find(call => call.path === '/youtube/groups/clear').body)), { name: 'Ungrouped' });
             assert.equal(await page.evaluate(() => window.calls.some(call => call.path === '/youtube/channels/delete')), false);
@@ -353,7 +353,7 @@ test('ChannelPlaylists isolated browser behavior', async t => {
             }
             assert.equal(await page.evaluate(() => window.actions.every(entry => entry.items.length === 2 && entry.items.every(item => item.type === 'playlist' && item.user_id === 'owner'))), true);
             await page.locator('[data-chp-playlist="c1:p1"] .stt-cell').click(); await page.keyboard.press('Delete');
-            await page.getByRole('button', { name: 'Xoá link', exact: true }).click();
+            await page.getByRole('button', { name: 'Delete links', exact: true }).click();
             await page.waitForFunction(() => window.actions.some(call => call.action === 'delete-selected-links'));
             assert.deepEqual(await page.evaluate(() => window.actions.find(call => call.action === 'delete-selected-links').items.map(item => item.id)), ['p1']);
             assert.equal(await page.evaluate(() => window.data.items.find(item => item.id === 'c3').playlists.length), 1);
@@ -684,7 +684,7 @@ test('ChannelPlaylists isolated browser behavior', async t => {
             assert.equal(await page.evaluate(() => window.calls.length), count);
             assert.equal(await page.locator('[name="urls"]').inputValue(), 'https://open.spotify.com/playlist/draft');
             assert.equal(await page.locator('[name="urls"]').evaluate(node => node === document.activeElement), true);
-            await page.getByRole('button', { name: 'Hủy', exact: true }).click();
+            await page.getByRole('button', { name: 'Cancel', exact: true }).click();
             await page.evaluate(async () => {
                 document.querySelector('.chp-channel').focus();
                 window.focused = document.activeElement;
@@ -710,7 +710,7 @@ test('ChannelPlaylists isolated browser behavior', async t => {
             assert.equal(await page.evaluate(() => window.originalRow === document.querySelector('.chp-channel')), true);
             assert.match(await page.locator('.chp-numeric').first().textContent(), /2\.328\.473.*\+200\/2/);
             assert.match(await page.locator('.chp-numeric').nth(1).textContent(), /-1\/2/);
-            assert.equal(await page.locator('.chp-delta').first().getAttribute('title'), '+200 trong 2 ngày');
+            assert.equal(await page.locator('.chp-delta').first().getAttribute('title'), '+200 in 2 days');
             assert.equal(await page.locator('.chp-numeric').first().evaluate(node => getComputedStyle(node).whiteSpace), 'nowrap');
             await page.setViewportSize({ width: 1440, height: 900 });
             assert.ok(await page.locator('.chp-numeric').first().evaluate(node => {
@@ -734,7 +734,7 @@ test('ChannelPlaylists isolated browser behavior', async t => {
             assert.equal(await page.locator('.chp-pick, .chp-picker-filters').count(), 0);
             assert.match(await page.locator('[name="urls"]').inputValue(), /open.spotify.com\/playlist\/abc/);
             await page.locator('[name="urls"]').fill('https://open.spotify.com/playlist/new');
-            await page.getByRole('button', { name: 'Lưu liên kết', exact: true }).click();
+            await page.getByRole('button', { name: 'Save links', exact: true }).click();
             await page.waitForSelector('.chp-dialog', { state: 'detached' });
             const calls = await page.evaluate(() => window.calls);
             assert.equal(calls.some(call => call.path.startsWith('/items?') || call.path === '/auth/me/groups'), false);
@@ -751,12 +751,12 @@ test('ChannelPlaylists isolated browser behavior', async t => {
             assert.equal(await page.locator('[data-command="unlink"]').count(), 0);
             assert.equal(await page.locator('[data-command="delete-link"] .material-icons-round').textContent(), 'delete_forever');
             await page.locator('[data-command="delete-link"]').click();
-            assert.match(await page.locator('.chp-dialog-body').textContent(), /Link Checker.*không bị ảnh hưởng/);
+            assert.match(await page.locator('.chp-dialog-body').textContent(), /Link Checker.*not affected/);
             assert.equal(await page.evaluate(() => window.actions.some(call => call.action === 'delete-selected-links')), false);
-            await page.getByRole('button', { name: 'Hủy', exact: true }).click();
+            await page.getByRole('button', { name: 'Cancel', exact: true }).click();
             await page.locator('[data-chp-playlist="c1:p1"]').click({ button: 'right' });
             await page.locator('[data-command="delete-link"]').click();
-            await page.getByRole('button', { name: 'Xoá link', exact: true }).click();
+            await page.getByRole('button', { name: 'Delete links', exact: true }).click();
             await page.waitForSelector('.chp-dialog', { state: 'detached' });
             assert.ok(await page.evaluate(() => window.actions.some(call => call.action === 'delete-selected-links' && call.items.some(item => item.id === 'p1'))));
         } finally { await page.close(); }
@@ -795,7 +795,7 @@ test('ChannelPlaylists isolated browser behavior', async t => {
         try {
             await page.evaluate(() => ChannelPlaylists.show({ userId: 'owner' }));
             await page.locator('[data-chp-action="refresh-all"]').click();
-            await page.waitForFunction(() => document.querySelector('.chp-status').textContent.includes('Đã yêu cầu refresh'));
+            await page.waitForFunction(() => document.querySelector('.chp-status').textContent.includes('Refresh requested'));
             const calls = await page.evaluate(() => window.calls);
             assert.deepEqual(JSON.parse(calls.find(call => call.path === '/youtube/channels/refresh').body), { channel_ids: ['c1'] });
             assert.ok(calls.some(call => call.path === '/youtube/channels/c1/playlists/refresh' && call.method === 'POST'));
@@ -804,7 +804,7 @@ test('ChannelPlaylists isolated browser behavior', async t => {
                 await ChannelPlaylists.reload();
             });
             await page.locator('[data-chp-action="refresh-all"]').click();
-            await page.waitForFunction(() => document.querySelector('.chp-status').textContent.includes('Không có kênh để refresh'));
+            await page.waitForFunction(() => document.querySelector('.chp-status').textContent.includes('No channels to refresh'));
             assert.equal(await page.evaluate(() => window.calls.filter(call => call.method === 'POST').length), 0);
         } finally { await page.close(); }
     });

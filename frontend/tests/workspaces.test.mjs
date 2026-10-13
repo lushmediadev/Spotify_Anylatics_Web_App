@@ -61,7 +61,7 @@ test('admin manager selector prefills, validates at least one option, and sends 
   assert.deepEqual(inputs.map(input => input.checked), [false, true, true]);
   assert.deepEqual(json(context.getWorkspaceAssignment('admin-edit', 'manager')), { workspaces: ['spotify', 'youtube-spotify'] });
   inputs.forEach(input => { input.checked = false; });
-  assert.throws(() => context.getWorkspaceAssignment('admin-edit', 'manager'), /ít nhất/);
+  assert.throws(() => context.getWorkspaceAssignment('admin-edit', 'manager'), /at least one/);
   assert.equal(inputs[0].focused, true);
   assert.deepEqual(json(context.getWorkspaceAssignment('admin-edit', 'user')), {});
   setAccount({ role: 'manager', workspaces: ['spotify'] });
@@ -92,7 +92,7 @@ test('create/edit submit blocks empty manager workspace and manager-created user
   await context.submitAdminCreateUser();
   await context.saveAdminEditUser();
   assert.equal(calls.length, 0);
-  assert.match(elements['admin-edit-status'].textContent, /ít nhất/);
+  assert.match(elements['admin-edit-status'].textContent, /at least one/);
   inputs[2].checked = true;
   await context.submitAdminCreateUser();
   await context.saveAdminEditUser();
