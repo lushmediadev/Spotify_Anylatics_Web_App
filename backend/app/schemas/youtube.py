@@ -72,6 +72,21 @@ class PlaylistReplaceRequest(BaseModel):
     urls: list[str] = Field(default_factory=list, max_length=500)
 
 
+class NoteRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    note: str | None = Field(default=None, max_length=1000)
+
+
+class PlaylistLinkRequest(NoteRequest):
+    url: str | None = Field(default=None, max_length=2048)
+
+
+class ChannelPlaylistResponse(ItemResponse):
+    note: str | None = None
+    note_updated_at: datetime | None = None
+    note_updated_by_name: str | None = None
+
+
 class ChannelResponse(BaseModel):
     id: str
     user_id: str
@@ -91,7 +106,10 @@ class ChannelResponse(BaseModel):
     group: str
     created_at: datetime
     last_checked: datetime | None = None
-    playlists: list[ItemResponse] = Field(default_factory=list)
+    note: str | None = None
+    note_updated_at: datetime | None = None
+    note_updated_by_name: str | None = None
+    playlists: list[ChannelPlaylistResponse] = Field(default_factory=list)
 
 
 class ChannelListResponse(BaseModel):

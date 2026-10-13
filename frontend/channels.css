@@ -18,8 +18,8 @@
 .chp-key-warning { font-size: 14px; }
 .chp-key-warning button { text-decoration: underline; font: inherit; cursor: pointer; }
 .chp-list { overflow-x: auto; }
-.chp-grid.custom-grid-row { grid-template-columns: 58px minmax(280px, 1fr) 160px 150px 160px 200px; min-width: 1178px; }
-.chp-playlist-grid.custom-grid-row { grid-template-columns: 58px minmax(280px, 1fr) 160px 150px 160px 200px; min-width: 1120px; }
+.chp-grid.custom-grid-row { grid-template-columns: 58px minmax(250px, 1fr) 160px 150px 160px 140px 200px; min-width: 1304px; }
+.chp-playlist-grid.custom-grid-row { grid-template-columns: 58px minmax(250px, 1fr) 160px 150px 160px 140px 200px; min-width: 1246px; }
 .chp-channel-labels { display: flex; align-items: center; gap: 8px; margin-bottom: 4px; }
 .chp-channel-labels .list-type-badge { margin-bottom: 0; }
 .chp-playlist-count { font-size: 11px; line-height: 1.1; white-space: nowrap; }
@@ -33,6 +33,11 @@
 .chp-root .list-asset-error { overflow-wrap: anywhere; }
 .chp-cover-empty { display: block; background: var(--surface-3); }
 .chp-numeric, .chp-delta { white-space: nowrap; overflow-wrap: normal; }
+/* Stretch so an empty note is still a double-click target for inline editing. */
+.chp-root .chp-note-cell { align-self: stretch; display: flex; align-items: center; }
+.chp-note-text { flex: 1 1 auto; min-width: 0; display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; overflow: hidden; white-space: pre-line; overflow-wrap: anywhere; font-size: 12px; line-height: 1.4; color: var(--chp-muted); }
+.chp-note-input { display: block; width: 100%; min-height: 44px; padding: 6px 8px; border: 1px solid var(--chp-border); border-radius: 8px; background: var(--surface-0, #fff); color: var(--chp-text); font: inherit; font-size: 12px; line-height: 1.4; resize: vertical; }
+.chp-note-input:focus { border-color: #1db954; outline: none; }
 .chp-empty { padding: 24px 20px; color: var(--chp-muted); }
 .chp-muted { color: var(--text-muted, #606060); }
 .chp-error { color: #b42318; }
@@ -42,7 +47,7 @@
 .chp-drop-before { box-shadow: inset 0 2px var(--text-muted, #606060); }
 .chp-drop-after { box-shadow: inset 0 -2px var(--text-muted, #606060); }
 .chp-playlist-grid:focus-visible, .chp-channel:focus-visible { outline: 1px solid var(--text-muted, #606060); outline-offset: -1px; }
-.chp-root .chp-grid.custom-grid-row, .chp-root .chp-playlist-grid.custom-grid-row { grid-template-columns: var(--chp-columns, 58px minmax(280px, 1fr) 160px 150px 160px 200px); }
+.chp-root .chp-grid.custom-grid-row, .chp-root .chp-playlist-grid.custom-grid-row { grid-template-columns: var(--chp-columns, 58px minmax(250px, 1fr) 160px 150px 160px 140px 200px); }
 .chp-root .head-cell { position: relative; }
 .chp-root .list-head .list-columns-head .head-cell > .column-resize-handle[data-chp-resize] { display: block; position: absolute; top: 0; right: -5px; bottom: 0; width: 10px; cursor: col-resize; touch-action: none; }
 body.chp-resizing { cursor: col-resize; user-select: none; }
@@ -73,9 +78,10 @@ body.chp-resizing { cursor: col-resize; user-select: none; }
 .chp-playlist-editor .chp-dialog-body > p:first-child { margin: 0 0 16px; font-size: 13px; }
 .chp-playlist-editor .chp-dialog-body > label { color: var(--text-muted); font-size: 13px; font-weight: 500; gap: 8px; }
 .chp-playlist-editor .chp-dialog-body > label { margin-bottom: 0; }
-.chp-playlist-editor textarea { box-sizing: border-box; font-family: inherit; font-size: 13px; font-weight: 400; line-height: 1.5; background-color: var(--surface-1); color: var(--text-main); border: 1px solid var(--chp-border); border-radius: 14px; padding: 10px 14px; outline: none; }
+.chp-playlist-editor .chp-dialog-body > label + label { margin-top: 16px; }
+.chp-playlist-editor textarea, .chp-playlist-editor .chp-dialog-body input { box-sizing: border-box; font-family: inherit; font-size: 13px; font-weight: 400; line-height: 1.5; background-color: var(--surface-1); color: var(--text-main); border: 1px solid var(--chp-border); border-radius: 14px; padding: 10px 14px; outline: none; }
 .chp-playlist-editor input::placeholder, .chp-playlist-editor textarea::placeholder { color: var(--text-muted); }
-.chp-playlist-editor textarea:focus { border-color: #1db954; background-color: var(--surface-0); box-shadow: 0 0 0 3px rgba(29, 185, 84, .16); outline: none; }
+.chp-playlist-editor textarea:focus, .chp-playlist-editor .chp-dialog-body input:focus { border-color: #1db954; background-color: var(--surface-0); box-shadow: 0 0 0 3px rgba(29, 185, 84, .16); outline: none; }
 .chp-playlist-editor footer button { display: inline-flex; align-items: center; justify-content: center; gap: 8px; min-height: 44px; padding: 10px 20px; border-radius: 12px; font-size: 13px; font-weight: 700; }
 .chp-playlist-editor footer .material-icons-round { font-size: 18px; }
 .chp-playlist-editor .chp-dialog-status:empty { display: none; }

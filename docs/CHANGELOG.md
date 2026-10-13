@@ -1,5 +1,14 @@
 # Changelog
 
+### 2026-10-13 - Channel & Playlist notes and single-link Edit
+- Added: `Note` column between Delta / Days and Checked (2-line clamp, full text plus last edit time/editor on hover, resizable). Notes are stored per channel–playlist link (`youtube_channel_playlists.note`, `note_updated_at`, `note_updated_by`) and per channel (`youtube_channels.*`); additive `ALTER TABLE … ADD COLUMN IF NOT EXISTS` only.
+- Added: `PATCH /api/youtube/channels/{channel_id}/playlists/{item_id}` `{ url?, note? }` (changing the link re-points the same association, keeps the note and manual order, crawls a new playlist, 409 when the link already exists in the channel) and `PATCH /api/youtube/channels/{channel_id}` `{ note? }`. Both are owner-only; notes are capped at 1000 characters.
+- Added: playlist context menu starts with Edit (Spotify link + Note); channel menu has Edit note; double-click a Note cell to edit inline (Enter saves, Shift+Enter new line, Esc cancels). Channel search also matches notes; channel CSV export appends `Note` and `Playlist Notes` columns.
+- Fixed: Edit playlists (`PUT …/playlists`) no longer deletes and recreates every link, so links that stay keep their note; canonical channel merges in the refresh worker carry notes over.
+- Changed: default grid is `58px minmax(250px, 1fr) 160px 150px 160px 140px 200px`; column widths saved before the Note column are migrated in place.
+- Affected files: `backend/app/models/youtube.py`, `backend/app/schemas/youtube.py`, `backend/app/api/youtube.py`, `backend/app/services/youtube_jobs.py`, `backend/app/database.py`, `frontend/channels.js`, `frontend/channels.css`, `frontend/app.js`, `frontend/index.html`, tests.
+- Impact/Risk: Low; responses only gain fields (`note`, `note_updated_at`, `note_updated_by_name`).
+
 ### 2026-10-13 - Review batch 1: security fixes and admin-only system API key pool
 - Security: escape display names, usernames and avatars everywhere they are rendered (the shared `escapeHtml` now also escapes quotes); server rejects display names with `<>`/control characters or longer than 64 characters and only stores avatars that are base64 PNG/JPEG/WebP/GIF data URLs.
 - Security: the YouTube Link Checker client sends keys in the `X-Goog-Api-Key` header instead of the query string, so keys no longer appear in httpx request logs.

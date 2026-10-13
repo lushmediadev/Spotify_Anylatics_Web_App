@@ -178,6 +178,12 @@ async def init_db():
         "ALTER TABLE users ADD COLUMN IF NOT EXISTS custom_groups TEXT",
         "ALTER TABLE users ADD COLUMN IF NOT EXISTS ui_preferences TEXT",
         "ALTER TABLE metrics_snapshots ADD COLUMN IF NOT EXISTS track_count INTEGER",
+        "ALTER TABLE youtube_channel_playlists ADD COLUMN IF NOT EXISTS note TEXT",
+        "ALTER TABLE youtube_channel_playlists ADD COLUMN IF NOT EXISTS note_updated_at TIMESTAMP",
+        "ALTER TABLE youtube_channel_playlists ADD COLUMN IF NOT EXISTS note_updated_by UUID REFERENCES users(id) ON DELETE SET NULL",
+        "ALTER TABLE youtube_channels ADD COLUMN IF NOT EXISTS note TEXT",
+        "ALTER TABLE youtube_channels ADD COLUMN IF NOT EXISTS note_updated_at TIMESTAMP",
+        "ALTER TABLE youtube_channels ADD COLUMN IF NOT EXISTS note_updated_by UUID REFERENCES users(id) ON DELETE SET NULL",
     ]
     for sql in migrations:
         try:

@@ -1293,3 +1293,99 @@ def test_me_groups_profile_preferences_are_always_actor_owned(env, actor):
         assert other.display_name == env.users[foreign].display_name
     response = env.client.put("/api/auth/admin/preferences", json={"playlist_clipboard_line_limit": 15})
     assert response.status_code == (200 if actor == "admin" else 403)
+
+
+def test_playlist_note_is_per_link_owner_only_searchable_and_survives_replace(env):
+    env.actor = "assigned"
+    channel, item = env.channels["assigned"], env.items["assigned"]
+    with Session(env.engine) as session:
+        second = Channel(user_id=channel.user_id, query_type="handle", query="@second", name="Second",
+                         group="Shared", status="active")
+        session.add(second)
+        session.flush()
+        session.add(ChannelPlaylist(channel_id=second.id, item_id=item.id))
+        session.commit()
+        second_id = second.id
+    path = f"/channels/{channel.id}/playlists/{item.id}"
+    response = request(env, "PATCH", path, json={"note": "  Pitch sent\nwaiting  "})
+    assert response.status_code == 200, response.text
+    playlist = response.json()["playlists"][0]
+    assert playlist["note"] == "Pitch sent\nwaiting" and playlist["note_updated_at"]
+    assert playlist["note_updated_by_name"] == "Display assigned"
+    # The same playlist linked to another channel keeps its own (empty) note.
+    other = request(env, "GET", f"/channels/{second_id}").json()["playlists"][0]
+    assert other["id"] == str(item.id) and other["note"] is None and other["note_updated_at"] is None
+    found = request(env, "GET", params={"search": "pitch SENT"}).json()
+    assert [row["id"] for row in found["items"]] == [str(channel.id)]
+    # Bulk edit keeps the note of every link that stays in the list.
+    replaced = request(env, "PUT", f"/channels/{channel.id}/playlists", json={
+        "urls": [f"spotify:playlist:{NEW_PLAYLIST}", playlist_url(item)]})
+    assert replaced.status_code == 200, replaced.text
+    notes = {row["id"]: row["note"] for row in replaced.json()["playlists"]}
+    assert len(notes) == 2 and notes[str(item.id)] == "Pitch sent\nwaiting"
+    assert [note for key, note in notes.items() if key != str(item.id)] == [None]
+    assert request(env, "PATCH", path, json={"note": "x" * 1001}).status_code == 422
+    assert request(env, "PATCH", path, json={"note": "ok", "owner": "x"}).status_code == 422
+    cleared = request(env, "PATCH", path, json={"note": " "})
+    assert next(row for row in cleared.json()["playlists"] if row["id"] == str(item.id))["note"] is None
+    for actor in ("manager", "admin", "unassigned"):
+        env.actor = actor
+        assert request(env, "PATCH", path, json={"note": "foreign"}).status_code == 404
+    env.actor = "assigned"
+    assert request(env, "PATCH", f"/channels/{channel.id}/playlists/{env.items['manager'].id}",
+                   json={"note": "unlinked"}).status_code == 404
+    with Session(env.engine) as session:
+        assert session.get(ChannelPlaylist, (channel.id, item.id)).note is None
+
+
+def test_playlist_link_url_change_keeps_note_order_recrawls_and_blocks_duplicates(env):
+    env.actor = "assigned"
+    channel, item = env.channels["assigned"], env.items["assigned"]
+    path = f"/channels/{channel.id}/playlists/{item.id}"
+    assert request(env, "PATCH", path, json={"note": "keep me"}).status_code == 200
+    assert request(env, "PUT", "/preferences", json={"playlist_orders": {str(channel.id): [str(item.id)]}}).status_code == 200
+    assert request(env, "PATCH", path, json={"url": "https://open.spotify.com/track/" + NEW_PLAYLIST}).status_code == 400
+    same = request(env, "PATCH", path, json={"url": playlist_url(item)})
+    assert same.status_code == 200 and env.scheduled == []
+    response = request(env, "PATCH", path, json={"url": f"https://open.spotify.com/playlist/{NEW_PLAYLIST}?si=x"})
+    assert response.status_code == 200, response.text
+    playlists = response.json()["playlists"]
+    assert len(playlists) == 1 and playlists[0]["spotify_id"] == NEW_PLAYLIST
+    assert playlists[0]["note"] == "keep me" and playlists[0]["id"] != str(item.id)
+    assert playlists[0]["user_id"] == str(channel.user_id) and playlists[0]["group"] == "Channel Playlists"
+    new_id = playlists[0]["id"]
+    assert len(env.scheduled) == 1 and env.scheduled[0][0] == "run_spotify_job"
+    assert item.id in ids(env, Item)
+    assert request(env, "GET", "/preferences").json()["playlist_orders"] == {str(channel.id): [new_id]}
+    assert request(env, "PATCH", path, json={"note": "gone"}).status_code == 404
+    # Re-link the original, then try to point the new link at it: duplicate in the same channel.
+    both = request(env, "PUT", f"/channels/{channel.id}/playlists", json={
+        "urls": [f"spotify:playlist:{NEW_PLAYLIST}", playlist_url(item)]})
+    assert both.status_code == 200 and len(both.json()["playlists"]) == 2
+    duplicate = request(env, "PATCH", f"/channels/{channel.id}/playlists/{new_id}",
+                        json={"url": playlist_url(item), "note": "must not save"})
+    assert duplicate.status_code == 409, duplicate.text
+    assert link_ids(env, channel) == {item.id, uuid.UUID(new_id)}
+    with Session(env.engine) as session:
+        assert session.get(ChannelPlaylist, (channel.id, uuid.UUID(new_id))).note == "keep me"
+    assert len(env.scheduled) == 1
+
+
+def test_channel_note_owner_patch_search_and_validation(env):
+    env.actor = "assigned"
+    channel = env.channels["assigned"]
+    path = f"/channels/{channel.id}"
+    response = request(env, "PATCH", path, json={"note": " Main brand channel "})
+    assert response.status_code == 200, response.text
+    body = response.json()
+    assert body["note"] == "Main brand channel" and body["note_updated_by_name"] == "Display assigned"
+    assert body["note_updated_at"] and len(body["playlists"]) == 1
+    assert [row["id"] for row in request(env, "GET", params={"search": "brand"}).json()["items"]] == [str(channel.id)]
+    unchanged = request(env, "PATCH", path, json={"note": "Main brand channel"}).json()
+    assert unchanged["note_updated_at"] == body["note_updated_at"]
+    assert request(env, "PATCH", path, json={"note": "x" * 1001}).status_code == 422
+    assert request(env, "PATCH", path, json={"group": "Other"}).status_code == 422
+    env.actor = "manager"
+    assert request(env, "PATCH", path, json={"note": "foreign"}).status_code == 404
+    with Session(env.engine) as session:
+        assert session.get(Channel, channel.id).note == "Main brand channel"

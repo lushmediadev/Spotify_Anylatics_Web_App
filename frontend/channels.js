@@ -113,7 +113,7 @@
         state.tools.querySelector('.chp-groups').addEventListener('change', event => { state.group = event.target.value; changeScope(); });
         host.addEventListener('click', event => {
             if (event.target.matches('.list-cover-image') && state.previewImage && event.target.src) { state.previewImage(event.target.src); return; }
-            if (event.target.closest('a, button, input, select')) return;
+            if (event.target.closest('a, button, input, select, textarea')) return;
             const playlist = event.target.closest('[data-chp-playlist]');
             if (playlist) { selectRows('playlist', playlist.dataset.chpPlaylist, event); playlist.focus(); return; }
             const row = event.target.closest('[data-chp-channel]');
@@ -128,6 +128,8 @@
         host.addEventListener('dblclick', event => {
             if (event.button !== 0 || state.modal || state.drag || state.resize
                 || event.target.closest('a, button, input, select, textarea, img, [data-chp-resize]')) return;
+            const note = event.target.closest('[data-chp-note]');
+            if (note) { event.preventDefault(); startNoteEdit(note); return; }
             const row = event.target.closest('[data-chp-channel]');
             if (!row) return;
             event.preventDefault();
@@ -219,23 +221,76 @@
             <div class="meta-cell stt-cell text-secondary-text">${index + 1}</div>
             <div class="list-asset-cell flex items-center gap-4">${image(item.image)}<div><span class="list-type-badge badge-playlist">playlist</span><h3 class="list-asset-title">${link(item.spotify_url || `https://open.spotify.com/playlist/${encodeURIComponent(item.spotify_id || '')}`, playlistTitle(item))}</h3><div class="list-asset-meta"><p class="list-asset-uri text-secondary-text">spotify:playlist:${escapeHtml(item.spotify_id || '')}</p></div></div></div>
             ${state.renderPlaylistOwnerCell ? state.renderPlaylistOwnerCell(item) : `<div class="meta-cell playlist-owner-cell">${link(item.owner_url, item.owner_name || '-')}</div>`}
-            <div class="meta-cell chp-numeric"><div class="metric-stack"><span class="metric-main">${number(item.saves ?? item.followers)}</span>${metricDelta(item.followers_delta, item.delta_days)}</div></div><div class="meta-cell chp-numeric"><div class="metric-stack"><span class="metric-main">${number(item.track_count)}</span>${metricDelta(item.track_count_delta, item.delta_days)}</div></div><div class="meta-cell text-right">${checked(item)}</div></div>`;
+            <div class="meta-cell chp-numeric"><div class="metric-stack"><span class="metric-main">${number(item.saves ?? item.followers)}</span>${metricDelta(item.followers_delta, item.delta_days)}</div></div><div class="meta-cell chp-numeric"><div class="metric-stack"><span class="metric-main">${number(item.track_count)}</span>${metricDelta(item.track_count_delta, item.delta_days)}</div></div>${noteCell(item)}<div class="meta-cell text-right">${checked(item)}</div></div>`;
     }
     function metricDelta(value, days) {
         if (value == null) return '';
         const label = `${value > 0 ? '+' : ''}${number(value)}${days == null ? '' : ` in ${number(days)} ${days === 1 ? 'day' : 'days'}`}`;
         return `<span title="${escapeHtml(label)}" class="chp-delta metric-delta ${value > 0 ? 'metric-delta-up' : value < 0 ? 'metric-delta-down' : 'metric-delta-flat'}"><span class="material-icons-round">${value > 0 ? 'north' : value < 0 ? 'south' : 'remove'}</span><span>${value > 0 ? '+' : ''}${number(value)}${days == null ? '' : `/${number(days)}`}</span></span>`;
     }
+    const canEdit = channel => String(channel.user_id) === state.userId && state.userId === String(state.getUser()?.id || '');
+    function linkTarget(channelId, itemId) {
+        const channel = state.items.find(row => row.id === channelId);
+        const item = itemId ? (channel?.playlists || []).find(row => row.id === itemId) : null;
+        if (!channel || !canEdit(channel) || (itemId && !item)) return null;
+        return { channel, item, row: item || channel, path: `/youtube/channels/${encodeURIComponent(channel.id)}${item ? `/playlists/${encodeURIComponent(item.id)}` : ''}` };
+    }
+    function noteCell(row) {
+        // Escape exactly like innerHTML serializes, so an unchanged note never forces a list re-render.
+        const text = value => value.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+        const note = String(row.note || '').replace(/\r\n?/g, '\n');
+        const edited = note && row.note_updated_at ? `\n\nLast edited ${date(row.note_updated_at)}${row.note_updated_by_name ? ` · ${row.note_updated_by_name}` : ''}` : '';
+        return `<div class="meta-cell chp-note-cell" data-chp-note=""${note ? ` title="${text(note + edited).replace(/"/g, '&quot;')}"` : ''}><span class="chp-note-text">${text(note)}</span></div>`;
+    }
+    function applyNote(target, data) {
+        // Polling may have replaced the row objects while the editor was open, so update by id.
+        const fresh = target.item ? (data?.playlists || []).find(row => row.id === target.item.id) : data;
+        if (!fresh) return;
+        for (const list of [state.items, state.groupItems]) {
+            const channel = list.find(row => row.id === target.channel.id);
+            const row = target.item ? (channel?.playlists || []).find(item => item.id === target.item.id) : channel;
+            if (row) Object.assign(row, { note: fresh.note, note_updated_at: fresh.note_updated_at, note_updated_by_name: fresh.note_updated_by_name });
+        }
+    }
+    function startNoteEdit(cell) {
+        const playlist = cell.closest('[data-chp-playlist]');
+        const target = linkTarget(playlist ? playlist.dataset.chpParent : cell.closest('[data-chp-channel]')?.dataset.chpChannel, playlist?.dataset.chpItem);
+        if (!target || cell.querySelector('textarea')) return;
+        const row = cell.closest('[draggable]'), input = document.createElement('textarea'), scope = state.scope, before = target.row.note || '';
+        input.className = 'chp-note-input'; input.maxLength = 1000; input.rows = 2; input.value = before; input.setAttribute('aria-label', 'Note');
+        // A draggable row would swallow text selection inside the editor.
+        row.draggable = false; cell.removeAttribute('title'); cell.replaceChildren(input); input.focus(); input.select();
+        let done = false;
+        const finish = async (save, refocus) => {
+            if (done) return;
+            done = true; input.readOnly = true;
+            const note = input.value.trim();
+            try {
+                if (save && note !== before && scope === state.scope) applyNote(target, await api(target.path, 'PATCH', { note }));
+            } catch (error) { if (scope === state.scope) message(errorText(error), true); }
+            if (scope !== state.scope) return;
+            if (!cell.isConnected) { redrawOrder(); return; }
+            cell.outerHTML = noteCell(linkTarget(target.channel.id, target.item?.id)?.row || target.row);
+            row.draggable = true;
+            if (refocus) row.focus({ preventScroll: true });
+        };
+        input.addEventListener('keydown', event => {
+            event.stopPropagation();
+            if (event.key === 'Escape') { event.preventDefault(); finish(false, true); }
+            else if (event.key === 'Enter' && !event.shiftKey && !event.isComposing) { event.preventDefault(); finish(true, true); }
+        });
+        input.addEventListener('blur', () => finish(true, false));
+    }
     function channelRow(item, index) {
         const collapsed = state.collapsed.has(item.id);
         const url = item.youtube_url || (item.youtube_id ? `https://www.youtube.com/channel/${encodeURIComponent(item.youtube_id)}` : item.query);
         return `<section data-chp-block="${escapeHtml(item.id)}"><div class="list-grid"><div class="custom-grid-row chp-grid chp-channel px-4 py-3 bg-white/5 rounded-lg border border-transparent transition-colors group ${state.selected.has(item.id) ? 'row-selected' : ''}" data-chp-channel="${escapeHtml(item.id)}" draggable="true" tabindex="0" aria-selected="${state.selected.has(item.id)}">
             <div class="meta-cell stt-cell text-secondary-text">${index + 1}</div><div class="list-asset-cell flex items-center gap-4">${image(item.image)}<div><div class="chp-channel-labels"><span class="list-type-badge badge-channel">channel</span><span class="chp-playlist-count text-secondary-text">${(item.playlists || []).length} playlists</span></div><h3 class="list-asset-title">${link(url, item.name || item.query || 'YouTube channel')}</h3><div class="list-asset-meta"><p class="list-asset-uri text-secondary-text">${escapeHtml(item.youtube_id || item.query || '')}</p></div></div></div>
-            <div class="meta-cell chp-owner-empty">${collapsed ? number((item.playlists || []).length) : ''}</div><div class="meta-cell"><div class="metric-stack"><span class="metric-main">${number(item.view_count)}</span></div></div><div class="meta-cell">${metricDelta(item.view_count_delta, item.delta_days) || '<span class="metric-empty">-</span>'}</div><div class="meta-cell text-right">${checked(item)}</div></div></div>
+            <div class="meta-cell chp-owner-empty">${collapsed ? number((item.playlists || []).length) : ''}</div><div class="meta-cell"><div class="metric-stack"><span class="metric-main">${number(item.view_count)}</span></div></div><div class="meta-cell">${metricDelta(item.view_count_delta, item.delta_days) || '<span class="metric-empty">-</span>'}</div>${noteCell(item)}<div class="meta-cell text-right">${checked(item)}</div></div></div>
             <div class="chp-children"${collapsed ? ' hidden' : ''} aria-label="Playlists of ${escapeHtml(item.name || item.query)}"><div class="list-grid">${(item.playlists || []).map((playlist, position) => playlistRow(playlist, position, item.id)).join('') || '<p class="chp-empty">No linked playlists. Right-click the channel and choose Edit playlists.</p>'}</div></div></section>`;
     }
     function listHead(labels, grid, filter = false) {
-        const keys = ['', 'name', '', 'view_count', 'view_count_delta', 'last_checked'];
+        const keys = ['', 'name', '', 'view_count', 'view_count_delta', '', 'last_checked'];
         return `<div class="list-head pt-0 pb-0"><div class="list-columns-head custom-grid-row ${grid} px-4 py-3 text-[13px] font-medium">${labels.map((label, index) => `<div class="meta-cell head-cell" data-col-key="${index === 0 ? 'stt' : index === 1 ? 'asset' : label === 'Checked' ? 'checked' : ''}"><span class="head-cell-label">${label}</span>${keys[index] ? `<button type="button" class="metric-sort-mode-toggle ${state.sort?.key === keys[index] ? 'is-active' : ''}" data-chp-sort="${keys[index]}" aria-label="Sort by ${label}" title="Ascending / descending / manual order"><span class="metric-sort-triangle">${state.sort?.key === keys[index] && state.sort.direction === 1 ? '▲' : '▼'}</span></button>` : ''}${filter && label === 'Checked' ? `<div class="metric-sort-controls checked-sort-controls"><button type="button" class="metric-sort-mode-toggle ${state.filter !== 'all' ? 'is-active' : ''}" data-chp-action="filter" aria-label="Filter channel status" aria-haspopup="menu"><span class="metric-sort-triangle">▼</span></button></div>` : ''}<span class="column-resize-handle" data-chp-resize="${index}" role="separator" aria-orientation="vertical" aria-label="Resize ${label} column" title="Drag to resize; double-click to reset"></span></div>`).join('')}</div></div>`;
     }
     function flushRender() {
@@ -244,7 +299,7 @@
         notifyGroup();
         const list = state.host?.querySelector('.chp-list');
         if (!list || list.contains(document.activeElement)) { state.pendingRender = true; return; }
-        const html = listHead(['STT', 'Channel', 'Owner', 'View', 'Delta / Days', 'Checked'], 'chp-grid', true) + (state.group && state.items.length ? state.items.map(channelRow).join('') : `<p class="chp-empty">${state.groups.length ? 'No matching channels. Add a channel or change the filter.' : 'Choose New Group in the group list to get started.'}</p>`);
+        const html = listHead(['STT', 'Channel', 'Owner', 'View', 'Delta / Days', 'Note', 'Checked'], 'chp-grid', true) + (state.group && state.items.length ? state.items.map(channelRow).join('') : `<p class="chp-empty">${state.groups.length ? 'No matching channels. Add a channel or change the filter.' : 'Choose New Group in the group list to get started.'}</p>`);
         if (list.innerHTML !== html) list.innerHTML = html;
         updatePlaylistCountHeader();
         const select = state.tools.querySelector('.chp-groups');
@@ -547,7 +602,7 @@
         }).catch(error => { if (scope === state.scope) message(errorText(error), true); });
     }
     function actionMenu(actions, x, y, run) {
-        const icons = { new: 'add', rename: 'edit', delete: 'delete', clear: 'clear_all',
+        const icons = { new: 'add', rename: 'edit', edit: 'edit', delete: 'delete', clear: 'clear_all',
             unlink: 'link_off', 'delete-link': 'delete_forever', 'copy-selected-links': 'content_copy',
             'fetch-selected': 'refresh', 'clipboard-auto': 'content_paste', 'txt-playlist-type3': 'description',
             'export-listview-excel': 'table_view' };
@@ -620,7 +675,8 @@
     function openPlaylistMenu(row, x, y) {
         if (!state.playlistSelected.has(row.dataset.chpPlaylist)) selectRows('playlist', row.dataset.chpPlaylist);
         state.focusKind = 'playlist';
-        actionMenu([['copy-selected-links', 'Copy Link'], ['fetch-selected', 'Refresh selected playlists'], ['delete-link', 'Delete playlists'], ['clipboard-auto', 'Clipboard Playlist'], ['txt-playlist-type3', 'Export TXT'], ['export-listview-excel', 'Export Excel']], x, y, action => action === 'delete-link' ? deleteSpotifyLinks() : runAction(action));
+        const edit = state.playlistSelected.size === 1 && linkTarget(row.dataset.chpParent, row.dataset.chpItem);
+        actionMenu([...(edit ? [['edit', 'Edit']] : []), ['copy-selected-links', 'Copy Link'], ['fetch-selected', 'Refresh selected playlists'], ['delete-link', 'Delete playlists'], ['clipboard-auto', 'Clipboard Playlist'], ['txt-playlist-type3', 'Export TXT'], ['export-listview-excel', 'Export Excel']], x, y, action => action === 'edit' ? openNoteEdit(edit) : action === 'delete-link' ? deleteSpotifyLinks() : runAction(action));
     }
     function deleteSpotifyLinks() {
         const items = [...new Map(selectedPlaylists().map(({ item }) => [item.id, item])).values()];
@@ -653,7 +709,7 @@
         const items = selectedChannels().length ? selectedChannels() : state.items;
         if (state.exportChannels) return state.exportChannels(items);
         const cell = value => `"${String(value ?? '').replace(/^[=+@\-\t\r]/, "'$&").replace(/"/g, '""')}"`;
-        const content = [['Channel', 'URL', 'View', 'Delta', 'Checked'], ...items.map(item => [item.name || item.query, channelUrl(item), item.view_count, item.view_count_delta, item.last_checked])].map(row => row.map(cell).join(',')).join('\r\n');
+        const content = [['Channel', 'URL', 'View', 'Delta', 'Checked', 'Note'], ...items.map(item => [item.name || item.query, channelUrl(item), item.view_count, item.view_count_delta, item.last_checked, item.note])].map(row => row.map(cell).join(',')).join('\r\n');
         const url = URL.createObjectURL(new Blob(['\uFEFF', content], { type: 'text/csv;charset=utf-8' }));
         const anchor = document.createElement('a'); anchor.href = url; anchor.download = 'youtube-channels.csv'; anchor.click(); setTimeout(() => URL.revokeObjectURL(url), 1000);
     }
@@ -663,7 +719,7 @@
         if (!item) return;
         if (!state.selected.has(id)) selectChannel(id);
         state.focusKind = 'channels';
-        const actions = [...(state.selected.size === 1 ? [['edit', 'edit', 'Edit playlists']] : []), ['add', 'add', 'Add Channel'], ['refresh', 'refresh', 'Refresh channels'], ['playlists', 'refresh', 'Refresh playlists'], ['move', 'drive_file_move', 'Move To Group'], ['copy', 'content_copy', 'Copy Links'], ['export', 'download', 'Export List CSV'], ['clear', 'delete', 'Clear Group'], ['toggle', 'unfold_more', 'Expand / collapse playlists'], ['expand', 'unfold_more', 'Expand all'], ['collapse', 'unfold_less', 'Collapse all'], ['delete', 'delete', 'Delete channels']];
+        const actions = [...(state.selected.size === 1 ? [['edit', 'edit', 'Edit playlists'], ...(canEdit(item) ? [['note', 'sticky_note_2', 'Edit note']] : [])] : []), ['add', 'add', 'Add Channel'], ['refresh', 'refresh', 'Refresh channels'], ['playlists', 'refresh', 'Refresh playlists'], ['move', 'drive_file_move', 'Move To Group'], ['copy', 'content_copy', 'Copy Links'], ['export', 'download', 'Export List CSV'], ['clear', 'delete', 'Clear Group'], ['toggle', 'unfold_more', 'Expand / collapse playlists'], ['expand', 'unfold_more', 'Expand all'], ['collapse', 'unfold_less', 'Collapse all'], ['delete', 'delete', 'Delete channels']];
         const menu = createMenu(actions.map(([action, icon, label]) => `<button type="button" role="menuitem" class="row-context-item ${action === 'delete' ? 'row-context-danger' : ''}" data-menu="${action}"><span class="material-icons-round">${icon}</span>${label}</button>`).join('') + '<div class="row-context-separator"></div>' + filterItems(), x, y);
         bindFilter(menu);
         menu.addEventListener('click', event => {
@@ -676,6 +732,7 @@
             if (action === 'export') Promise.resolve(exportChannelList()).catch(error => message(errorText(error), true));
             if (action === 'clear') clearGroup();
             if (action === 'edit') openEdit(item);
+            if (action === 'note') openNoteEdit(linkTarget(item.id));
             if (action === 'refresh') refreshSelectedChannels();
             if (action === 'playlists') { state.playlistSelected = new Set(selectedChannels().flatMap(row => (row.playlists || []).map(playlist => playlistKey(row.id, playlist.id)))); runAction('fetch-selected'); }
             if (action === 'delete') deleteChannels();
@@ -715,8 +772,10 @@
     function loadWidths() {
         state.widths = null;
         try {
-            const widths = JSON.parse(localStorage.getItem(widthKey()));
-            if (Array.isArray(widths) && widths.length === 6 && widths.every(value => Number.isFinite(value))) state.widths = widths.map(value => Math.min(800, Math.max(48, value)));
+            let widths = JSON.parse(localStorage.getItem(widthKey()));
+            // Saved before the Note column existed: keep those sizes and slot Note in at its default.
+            if (Array.isArray(widths) && widths.length === 6) widths = [...widths.slice(0, 5), 140, widths[5]];
+            if (Array.isArray(widths) && widths.length === 7 && widths.every(value => Number.isFinite(value))) state.widths = widths.map(value => Math.min(800, Math.max(48, value)));
         } catch (_) { /* Private browsing can disable storage. */ }
         applyWidths();
     }
@@ -927,10 +986,26 @@
             await api(`/youtube/channels/${encodeURIComponent(item.id)}/playlists`, 'PUT', { urls });
             notifyItems();
         });
+        styleEditor(modal);
+    }
+    function styleEditor(modal) {
         const editor = modal.node.querySelector('.chp-dialog');
         editor.classList.add('chp-playlist-editor');
         editor.querySelector('header [data-close]').innerHTML = '<span class="material-icons-round" aria-hidden="true">close</span>';
         editor.querySelector('[type="submit"]').insertAdjacentHTML('afterbegin', '<span class="material-icons-round" aria-hidden="true">save</span>');
+    }
+    function openNoteEdit(target) {
+        if (!target) return;
+        const { channel, item, row } = target, url = item ? `https://open.spotify.com/playlist/${item.spotify_id}` : '';
+        styleEditor(dialog(item ? `Edit · ${playlistTitle(item)}` : `Edit note · ${channel.name || channel.query}`,
+            `${item ? `<label>Spotify link<input name="url" required maxlength="2048" spellcheck="false" autocomplete="off" value="${escapeHtml(url)}" placeholder="https://open.spotify.com/playlist/…"></label>` : ''}<label>Note<textarea name="note" rows="5" maxlength="1000" placeholder="Add a note…">${escapeHtml(row.note || '')}</textarea></label>`, 'Save', async node => {
+                const next = node.querySelector('[name="url"]')?.value.trim() || '', note = node.querySelector('[name="note"]').value.trim();
+                const body = { ...(next !== url ? { url: next } : {}), ...(note !== (row.note || '') ? { note } : {}) };
+                if (!Object.keys(body).length) return;
+                await api(target.path, 'PATCH', body);
+                // A changed link points at another playlist item: drop the stale selection and shell caches.
+                if (body.url) { state.playlistSelected.clear(); notifyItems(); }
+            }));
     }
     async function showKeySettings(host) {
         host = typeof host === 'string' ? document.querySelector(host) : host || document.getElementById('youtube-key-settings');

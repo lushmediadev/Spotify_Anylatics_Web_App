@@ -20,7 +20,8 @@ from app.models.item import Item
 from app.models.user import User
 from app.models.youtube import Channel, ChannelPlaylist, ChannelSnapshot, YouTubeApiKey, YouTubeChannelGroup, YouTubeWorkspacePreference
 from app.schemas.youtube import (ChannelCreateRequest, ChannelGroupRequest, ChannelListResponse, ChannelRefreshRequest,
-    ChannelResponse, KeysCheckRequest, KeysRequest, PlaylistReplaceRequest, WorkspacePreferenceResponse,
+    ChannelPlaylistResponse, ChannelResponse, KeysCheckRequest, KeysRequest, NoteRequest, PlaylistLinkRequest,
+    PlaylistReplaceRequest, WorkspacePreferenceResponse,
     WorkspacePreferenceRequest, ChannelBatchRequest, ChannelMoveRequest, ChannelGroupRenameRequest,
     ChannelGroupsDeleteRequest, ChannelGroupClearRequest)
 from app.services.auth import get_admin_user, get_current_user, owner_scope_condition, require_user_access
@@ -319,7 +320,7 @@ async def channel_for_actor(db, actor, channel_id):
 
 
 async def channel_responses(db, channels, preferences=None):
-    playlists = defaultdict(list)
+    playlists, editors = defaultdict(list), {}
     if channels:
         if preferences is None:
             preferences = {row.user_id: row.playlist_orders for row in (await db.execute(
@@ -327,24 +328,32 @@ async def channel_responses(db, channels, preferences=None):
                     {channel.user_id for channel in channels})))).scalars()}
         ranks = {channel.id: {value: index for index, value in enumerate(
             preferences.get(channel.user_id, {}).get(str(channel.id), []))} for channel in channels}
-        rows = (await db.execute(select(ChannelPlaylist.channel_id, Item).join(Item, Item.id == ChannelPlaylist.item_id)
+        rows = (await db.execute(select(ChannelPlaylist, Item).join(Item, Item.id == ChannelPlaylist.item_id)
             .join(Channel, Channel.id == ChannelPlaylist.channel_id).where(
                 Channel.id.in_([row.id for row in channels]), Item.user_id == Channel.user_id,
                 Item.item_type == "playlist",
-            ).order_by(Item.created_at, Item.id))).all()
+            ).order_by(Item.created_at, Item.id).execution_options(populate_existing=True))).all()
         items = list({item.id: item for _, item in rows}.values())
         raw = await _load_latest_raw_data(db, items)
         snapshots = await _load_recent_snapshots(db, items)
         users = await _load_item_users(db, items)
-        for channel_id, item in rows:
-            playlists[channel_id].append(_item_to_response(item, owner_url=_extract_owner_url(item, raw.get(item.spotify_id)), raw_data=raw.get(item.spotify_id),
-                snapshots=snapshots.get(item.id), item_user=users.get(str(item.user_id))))
+        # Only query editors when a note exists, so note-free lists keep their query count.
+        editor_ids = {row.note_updated_by for row in [*channels, *(link for link, _ in rows)]} - {None}
+        if editor_ids:
+            editors = {user.id: user.display_name or user.username for user in (await db.execute(
+                select(User).where(User.id.in_(editor_ids)))).scalars()}
+        for link, item in rows:
+            response = _item_to_response(item, owner_url=_extract_owner_url(item, raw.get(item.spotify_id)), raw_data=raw.get(item.spotify_id),
+                snapshots=snapshots.get(item.id), item_user=users.get(str(item.user_id)))
+            playlists[link.channel_id].append(ChannelPlaylistResponse(**response.model_dump(), note=link.note,
+                note_updated_at=link.note_updated_at, note_updated_by_name=editors.get(link.note_updated_by)))
         for channel_id, values in playlists.items():
             rank = ranks[channel_id]
             values.sort(key=lambda item: rank.get(item.id, len(rank)))
     return [ChannelResponse(**{field: str(getattr(row, field)) if field in {"id", "user_id"} else getattr(row, field)
-        for field in ChannelResponse.model_fields if field not in {"playlists", "youtube_url"}},
+        for field in ChannelResponse.model_fields if field not in {"playlists", "youtube_url", "note_updated_by_name"}},
         youtube_url=f"https://www.youtube.com/channel/{row.youtube_id}" if row.youtube_id else None,
+        note_updated_by_name=editors.get(row.note_updated_by),
         playlists=playlists[row.id]) for row in channels]
 
 
@@ -369,7 +378,9 @@ async def list_channels(user_id: uuid.UUID | None = None, group: str | None = No
         conditions.append(Channel.group == group)
     if search and search.strip():
         pattern = f"%{search.strip()}%"
-        conditions.append(or_(Channel.name.ilike(pattern), Channel.query.ilike(pattern), Channel.youtube_id.ilike(pattern)))
+        conditions.append(or_(Channel.name.ilike(pattern), Channel.query.ilike(pattern), Channel.youtube_id.ilike(pattern),
+            Channel.note.ilike(pattern), select(ChannelPlaylist.item_id).where(
+                ChannelPlaylist.channel_id == Channel.id, ChannelPlaylist.note.ilike(pattern)).exists()))
     if filter == "changed":
         conditions.append(Channel.view_count_delta != 0)
     elif filter == "errors":
@@ -468,6 +479,36 @@ async def get_channel(channel_id: uuid.UUID, db: AsyncSession = Depends(get_db),
     return (await channel_responses(db, [await channel_for_actor(db, current_user, channel_id)]))[0]
 
 
+async def channel_for_owner(db, actor, channel_id):
+    # Notes and single-link edits are owner-only: admins/managers viewing another account stay read-only.
+    await workspace.lock_owner(db, actor.id)
+    row = (await db.execute(select(Channel).where(Channel.id == channel_id,
+        owner_scope_condition(actor, Channel.user_id)).with_for_update()
+        .execution_options(populate_existing=True))).scalar_one_or_none()
+    if row is None:
+        raise HTTPException(404, "Channel not found")
+    if row.user_id != actor.id:
+        raise HTTPException(403, "Only the channel owner can edit this")
+    return row
+
+
+def note_values(current, note, actor):
+    note = (note or "").strip() or None
+    if note == current:
+        return {}
+    return {"note": note, "note_updated_at": datetime.utcnow(), "note_updated_by": actor.id}
+
+
+@router.patch("/channels/{channel_id}", response_model=ChannelResponse)
+async def update_channel(channel_id: uuid.UUID, req: NoteRequest, db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_user)):
+    channel = await channel_for_owner(db, current_user, channel_id)
+    if "note" in req.model_fields_set:
+        for field, value in note_values(channel.note, req.note, current_user).items():
+            setattr(channel, field, value)
+    await db.commit()
+    return (await channel_responses(db, [channel]))[0]
+
+
 @router.post("/channels/{channel_id}/refresh")
 async def refresh_channel(channel_id: uuid.UUID, db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_user)):
     return await claim_refresh(db, [await channel_for_actor(db, current_user, channel_id)])
@@ -539,8 +580,13 @@ async def replace_playlists(channel_id: uuid.UUID, req: PlaylistReplaceRequest, 
             jobs.append((make_spotify_job(db, item), spotify_id))
             by_spotify[spotify_id] = item
         selected.append(item)
-    await db.execute(delete(ChannelPlaylist).where(ChannelPlaylist.channel_id == channel_id))
-    for item_id in {item.id for item in selected}:
+    # Diff instead of delete-all so links that stay keep their note.
+    wanted = {item.id for item in selected}
+    linked = set((await db.execute(select(ChannelPlaylist.item_id).where(ChannelPlaylist.channel_id == channel_id))).scalars())
+    if linked - wanted:
+        await db.execute(delete(ChannelPlaylist).where(ChannelPlaylist.channel_id == channel_id,
+            ChannelPlaylist.item_id.in_(linked - wanted)))
+    for item_id in wanted - linked:
         db.add(ChannelPlaylist(channel_id=channel_id, item_id=item_id))
     await db.flush()
     preference, data = await workspace.load_preferences(db, current_user.id)
@@ -550,6 +596,47 @@ async def replace_playlists(channel_id: uuid.UUID, req: PlaylistReplaceRequest, 
     await db.commit()
     for job, spotify_id in jobs:
         youtube_jobs.track(youtube_jobs.run_spotify_job(job.id, spotify_id))
+    return (await channel_responses(db, [channel]))[0]
+
+
+@router.patch("/channels/{channel_id}/playlists/{item_id}", response_model=ChannelResponse)
+async def update_playlist_link(channel_id: uuid.UUID, item_id: uuid.UUID, req: PlaylistLinkRequest, db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_user)):
+    spotify_id = playlist_id(req.url) if req.url is not None else None
+    if req.url is not None and spotify_id is None:
+        raise HTTPException(400, "Only valid Spotify playlist URLs are accepted")
+    channel = await channel_for_owner(db, current_user, channel_id)
+    found = (await db.execute(select(ChannelPlaylist.note, Item.spotify_id).join(Item, Item.id == ChannelPlaylist.item_id).where(
+        ChannelPlaylist.channel_id == channel_id, ChannelPlaylist.item_id == item_id,
+        Item.user_id == channel.user_id, Item.item_type == "playlist"))).first()
+    if found is None:
+        raise HTTPException(404, "Playlist link not found")
+    values = note_values(found.note, req.note, current_user) if "note" in req.model_fields_set else {}
+    jobs = []
+    if spotify_id and spotify_id != found.spotify_id:
+        if (await db.execute(select(ChannelPlaylist.item_id).join(Item, Item.id == ChannelPlaylist.item_id).where(
+                ChannelPlaylist.channel_id == channel_id, Item.spotify_id == spotify_id))).first():
+            raise HTTPException(409, "This playlist is already linked to the channel")
+        target = (await db.execute(select(Item).where(Item.user_id == channel.user_id, Item.item_type == "playlist",
+            Item.workspace == "channel-playlists", Item.spotify_id == spotify_id)
+            .order_by(Item.created_at, Item.id).with_for_update())).scalars().first()
+        if target is None:
+            target = Item(user_id=channel.user_id, spotify_id=spotify_id, item_type="playlist", workspace="channel-playlists", group="Channel Playlists", status="pending")
+            db.add(target)
+            await db.flush()
+            jobs.append((make_spotify_job(db, target), spotify_id))
+        # Re-point the same association row so its note (and position) survive the link change.
+        values["item_id"] = target.id
+        preference, data = await workspace.load_preferences(db, current_user.id)
+        order = data["playlist_orders"].get(str(channel_id))
+        if preference and order:
+            data["playlist_orders"][str(channel_id)] = [str(target.id) if value == str(item_id) else value for value in order]
+            workspace.save_preferences(db, current_user.id, preference, data)
+    if values:
+        await db.execute(update(ChannelPlaylist).where(ChannelPlaylist.channel_id == channel_id,
+            ChannelPlaylist.item_id == item_id).values(**values))
+    await db.commit()
+    for job, job_spotify_id in jobs:
+        youtube_jobs.track(youtube_jobs.run_spotify_job(job.id, job_spotify_id))
     return (await channel_responses(db, [channel]))[0]
 
 

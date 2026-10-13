@@ -47,6 +47,8 @@
 - Collapsed channel rows show playlist counts in the Owner/Playlist column; fully collapsed groups label it Playlist, mixed groups label it Owner / Playlist.
 - Clipboard (Playlist), TXT and Excel reuse Spotify export helpers and the admin's global clipboard line limit. Refresh selected playlists targets exact owned Item IDs, not the entire Spotify list.
 - Keyboard shortcuts apply only to the active channel view and never consume text editing inside inputs/dialogs.
+- Notes live on the channel–playlist link (and on the channel), never on the shared playlist item: the same playlist under two channels has two notes. Only the channel owner may write them (`PATCH /channels/{id}` and `PATCH /channels/{id}/playlists/{item_id}`); the latter also swaps the Spotify link while keeping the note and order, and rejects a link already present in that channel with 409.
+- Edit playlists must diff associations (delete removed, add new) so surviving links keep their note. Note cells are rendered with the same escaping `innerHTML` serializes, otherwise every poll would re-render the list and close an inline editor.
 - Column resizing is stored per account in the current browser; group/channel/attached-playlist order is stored on the server. Sorting is a view operation and disables drag reorder until cleared.
 
 ## Related Decisions

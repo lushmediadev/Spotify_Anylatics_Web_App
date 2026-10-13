@@ -39,6 +39,9 @@ class Channel(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
     last_checked: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     refresh_started_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    note: Mapped[str | None] = mapped_column(Text, nullable=True)
+    note_updated_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    note_updated_by: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
     __table_args__ = (
         UniqueConstraint("user_id", "query_type", "query"),
         UniqueConstraint("user_id", "youtube_id"),
@@ -65,6 +68,10 @@ class ChannelPlaylist(Base):
     __tablename__ = "youtube_channel_playlists"
     channel_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("youtube_channels.id", ondelete="CASCADE"), primary_key=True)
     item_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("items.id", ondelete="CASCADE"), primary_key=True)
+    # Notes belong to the channel-playlist pair, so one playlist can carry a different note per channel.
+    note: Mapped[str | None] = mapped_column(Text, nullable=True)
+    note_updated_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    note_updated_by: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
 
 
 class YouTubeWorkspacePreference(Base):

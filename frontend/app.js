@@ -5267,9 +5267,11 @@ function exportChannelRows(items) {
     const rows = selected.map(item => [item.name || item.query, item.youtube_url || '', item.group,
         item.view_count ?? '', item.view_count_delta ?? '', item.delta_days ?? '',
         (item.playlists || []).map(playlist => getItemSpotifyUrl(playlist)).join('\n'), item.status,
-        formatUpdatedAt(item.last_checked)]);
+        formatUpdatedAt(item.last_checked), item.note || '',
+        // One line per playlist, aligned with the Spotify Playlists cell.
+        (item.playlists || []).map(playlist => String(playlist.note || '').replace(/\s*\r?\n\s*/g, ' ')).join('\n')]);
     downloadTextFile(buildCsvContent(['Channel', 'YouTube URL', 'Group', 'Views', 'View Delta', 'Days',
-        'Spotify Playlists', 'Status', 'Checked'], rows), buildExportFileName('channel-playlists', 'csv'), 'text/csv;charset=utf-8');
+        'Spotify Playlists', 'Status', 'Checked', 'Note', 'Playlist Notes'], rows), buildExportFileName('channel-playlists', 'csv'), 'text/csv;charset=utf-8');
 }
 
 async function executeRowContextMenuAction(action, opts = {}) {

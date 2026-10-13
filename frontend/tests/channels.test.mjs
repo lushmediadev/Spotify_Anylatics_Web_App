@@ -148,6 +148,14 @@ test('ChannelPlaylists isolated browser behavior', async t => {
                     const item = window.data.items.find(row => row.id === association[1]);
                     item.playlists = item.playlists.filter(row => body.item_ids.includes(row.id));
                 }
+                const edit = requestPath.match(/^\/youtube\/channels\/([^/]+)(?:\/playlists\/([^/]+))?$/);
+                if (edit && options.method === 'PATCH') {
+                    const channel = window.data.items.find(row => row.id === edit[1]);
+                    const row = edit[2] ? channel.playlists.find(item => item.id === edit[2]) : channel;
+                    if ('note' in body) Object.assign(row, { note: body.note || null, note_updated_at: '2026-10-13T03:00:00', note_updated_by_name: 'Owner' });
+                    if (body.url) row.spotify_id = body.url.split('/').pop();
+                    return structuredClone(channel);
+                }
                 return { accepted: 1 };
             };
             window.options = {
@@ -442,7 +450,7 @@ test('ChannelPlaylists isolated browser behavior', async t => {
                 window.actor.id = 'other'; for (const item of window.data.items) item.user_id = 'other';
                 await ChannelPlaylists.syncAccountScope();
             });
-            assert.equal(await page.locator('#channels-panel').evaluate(node => node.style.getPropertyValue('--chp-columns')), '48px 280px 160px 800px 160px 200px');
+            assert.equal(await page.locator('#channels-panel').evaluate(node => node.style.getPropertyValue('--chp-columns')), '48px 280px 160px 800px 160px 140px 200px');
             const next = await page.locator('[data-chp-resize="0"]').boundingBox();
             await page.mouse.move(next.x + 5, next.y + 5); await page.mouse.down();
             await page.evaluate(() => ChannelPlaylists.hide()); await page.mouse.move(next.x + 100, next.y + 5); await page.mouse.up();
@@ -742,6 +750,86 @@ test('ChannelPlaylists isolated browser behavior', async t => {
         } finally { await page.close(); }
     });
 
+    await t.test('Note column clamps, shows edit details, edits inline and through the playlist Edit dialog', async () => {
+        const page = await workspaceFixture();
+        try {
+            const patches = () => page.evaluate(() => window.calls.filter(call => call.method === 'PATCH').map(call => [call.path, JSON.parse(call.body)]));
+            const long = 'Line "one" & <b>\nLine two\nLine three';
+            await page.evaluate(async note => {
+                Object.assign(window.data.items[0].playlists[0], { note, note_updated_at: '2026-10-13T03:00:00', note_updated_by_name: 'Owner' });
+                await ChannelPlaylists.reload();
+                window.noteRow = document.querySelector('[data-chp-playlist="c1:p1"]');
+                await ChannelPlaylists.reload();
+            }, long);
+            const cell = page.locator('[data-chp-playlist="c1:p1"] [data-chp-note]');
+            assert.equal(await page.evaluate(() => window.noteRow === document.querySelector('[data-chp-playlist="c1:p1"]')), true);
+            assert.equal(await cell.locator('.chp-note-text').textContent(), long);
+            assert.equal(await cell.locator('.chp-note-text').evaluate(node => getComputedStyle(node).webkitLineClamp), '2');
+            assert.match(await cell.getAttribute('title'), /Line three\n\nLast edited .+ · Owner$/);
+            assert.equal(await page.locator('.chp-playlist-grid [data-chp-note] b').count(), 0);
+            // Same playlist under another channel and the channel row itself start empty.
+            assert.equal(await page.locator('[data-chp-playlist="c3:p1"] .chp-note-text').textContent(), '');
+            assert.equal(await page.locator('[data-chp-channel="c1"] .chp-note-text').textContent(), '');
+            const head = await page.locator('.chp-list > .list-head .head-cell').nth(5).boundingBox();
+            const box = await cell.boundingBox();
+            assert.ok(Math.abs(head.x - box.x) < 2, 'Note cells align with the Note header');
+
+            await cell.dblclick();
+            const input = page.locator('[data-chp-playlist="c1:p1"] .chp-note-input');
+            assert.equal(await input.inputValue(), long);
+            assert.equal(await input.getAttribute('maxlength'), '1000');
+            await page.evaluate(() => ChannelPlaylists.reload(true));
+            assert.equal(await input.count(), 1, 'polling must not replace an open editor');
+            await input.fill('  Updated note  '); await input.press('Enter');
+            await page.waitForFunction(() => document.querySelector('[data-chp-playlist="c1:p1"] .chp-note-text')?.textContent === 'Updated note');
+            assert.deepEqual(await patches(), [['/youtube/channels/c1/playlists/p1', { note: 'Updated note' }]]);
+            assert.equal(await page.locator('[data-chp-playlist="c3:p1"] .chp-note-text').textContent(), '');
+            assert.equal(await page.locator('[data-chp-playlist="c1:p1"]').getAttribute('draggable'), 'true');
+
+            await page.locator('[data-chp-playlist="c1:p2"] [data-chp-note]').dblclick();
+            await page.locator('[data-chp-playlist="c1:p2"] .chp-note-input').fill('discarded draft');
+            await page.keyboard.press('Escape');
+            assert.equal(await page.locator('.chp-note-input').count(), 0);
+            assert.equal(await page.locator('[data-chp-playlist="c1:p2"] .chp-note-text').textContent(), '');
+            assert.equal((await patches()).length, 1);
+
+            // Channel rows take a note too; double-clicking the cell edits instead of collapsing.
+            await page.locator('[data-chp-channel="c1"] [data-chp-note]').dblclick();
+            await page.locator('[data-chp-channel="c1"] .chp-note-input').fill('Channel note');
+            await page.keyboard.press('Enter');
+            await page.waitForFunction(() => document.querySelector('[data-chp-channel="c1"] .chp-note-text')?.textContent === 'Channel note');
+            assert.equal(await page.locator('[data-chp-playlist="c1:p1"]').isVisible(), true);
+            assert.deepEqual((await patches())[1], ['/youtube/channels/c1', { note: 'Channel note' }]);
+
+            await page.locator('[data-chp-playlist="c1:p2"]').click({ button: 'right' });
+            assert.equal(await page.locator('.chp-menu [data-command]').first().getAttribute('data-command'), 'edit');
+            await page.locator('[data-command="edit"]').click();
+            assert.equal(await page.locator('.chp-dialog [name="url"]').inputValue(), 'https://open.spotify.com/playlist/def');
+            assert.equal(await page.locator('.chp-dialog [name="note"]').getAttribute('maxlength'), '1000');
+            await page.locator('.chp-dialog [name="url"]').fill('https://open.spotify.com/playlist/xyz');
+            await page.locator('.chp-dialog [name="note"]').fill('From dialog\nsecond line');
+            await page.getByRole('button', { name: 'Save', exact: true }).click();
+            await page.waitForSelector('.chp-dialog', { state: 'detached' });
+            assert.deepEqual((await patches())[2], ['/youtube/channels/c1/playlists/p2', { url: 'https://open.spotify.com/playlist/xyz', note: 'From dialog\nsecond line' }]);
+            await page.waitForFunction(() => document.querySelector('[data-chp-playlist="c1:p2"] .chp-note-text')?.textContent === 'From dialog\nsecond line');
+            assert.match(await page.locator('[data-chp-playlist="c1:p2"] .list-asset-uri').textContent(), /xyz/);
+
+            // Unchanged dialog sends nothing; multi-selection has no single Edit entry.
+            await page.locator('[data-chp-playlist="c1:p2"]').click({ button: 'right' });
+            await page.locator('[data-command="edit"]').click();
+            await page.getByRole('button', { name: 'Save', exact: true }).click();
+            await page.waitForSelector('.chp-dialog', { state: 'detached' });
+            assert.equal((await patches()).length, 3);
+            await page.locator('[data-chp-playlist="c1:p1"]').click();
+            await page.locator('[data-chp-playlist="c1:p2"]').click({ modifiers: ['Control'] });
+            await page.locator('[data-chp-playlist="c1:p2"]').click({ button: 'right' });
+            assert.equal(await page.locator('[data-command="edit"]').count(), 0);
+            await page.keyboard.press('Escape');
+            await page.locator('[data-chp-channel="c1"]').click({ button: 'right' });
+            assert.equal(await page.locator('[data-menu="note"]').count(), 1);
+        } finally { await page.close(); }
+    });
+
     await t.test('playlist menu removes unlink and confirms independent playlist deletion', async () => {
         const page = await workspaceFixture();
         try {
@@ -830,14 +918,14 @@ test('ChannelPlaylists isolated browser behavior', async t => {
             assert.equal(await page.locator('.chp-children .list-cover-image').evaluate(node => getComputedStyle(node).width), '70px');
             assert.equal(await page.locator('.chp-channel .status-dot.active').count(), 1);
             assert.equal(await page.locator('.chp-children .list-columns-head').count(), 0);
-            assert.equal(await page.locator('.chp-list > .list-head .head-cell-label').allTextContents().then(labels => labels.join('|')), 'STT|Channel|Owner|View|Delta / Days|Checked');
+            assert.equal(await page.locator('.chp-list > .list-head .head-cell-label').allTextContents().then(labels => labels.join('|')), 'STT|Channel|Owner|View|Delta / Days|Note|Checked');
             for (const width of [1920, 1440, 997]) {
                 await page.setViewportSize({ width, height: 1080 });
                 const head = await page.locator('.chp-list > .list-head .head-cell').nth(2).boundingBox();
                 const owner = await page.locator('.chp-playlist-grid .playlist-owner-cell').boundingBox();
                 assert.ok(Math.abs(head.x - owner.x) < 2, `Owner must align at ${width}px`);
             }
-            assert.equal(await page.locator('.chp-playlist-grid > div').count(), 6);
+            assert.equal(await page.locator('.chp-playlist-grid > div').count(), 7);
             assert.doesNotMatch(await page.locator('.chp-playlist-grid').textContent(), /User <script>/);
             assert.equal(await page.locator('.chp-channel-labels .chp-playlist-count').textContent(), '1 playlists');
             assert.equal(await page.locator('.chp-channel .list-asset-subtitle').count(), 0);

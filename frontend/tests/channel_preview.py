@@ -31,6 +31,9 @@ CHANNELS[0].update({
 YTM_ROWS[0].update({"banner_image": CHANNELS[0]["banner"], "image": CHANNELS[0]["image"]})
 for item in ITEMS:
     item["image"] = "https://image-cdn-ak.spotifycdn.com/image/ab67706c0000da841b8aa5219683fc248f7cbe49"
+# Per-link copies: a note on one channel's link must not leak into another listing of the same item.
+CHANNELS[0]["playlists"] = [dict(item) for item in CHANNELS[0]["playlists"]]
+CHANNELS[0]["playlists"][0].update(note="\n".join(["Pitched 12/10, waiting for the curator.", "Follow up next week", "Third line is clamped"]),note_updated_at=NOW, note_updated_by_name=USER["display_name"])
 CHANNEL_TEMPLATE = dict(CHANNELS[0])
 
 class Handler(SimpleHTTPRequestHandler):
@@ -140,6 +143,13 @@ class Handler(SimpleHTTPRequestHandler):
             for row in CHANNELS:
                 if row["group"] == body["old_name"]: row["group"] = body["new_name"]
             return self.send_json({"name": body["new_name"]})
+        parts = urlsplit(self.path).path.split("/")
+        if parts[:4] == ["", "api", "youtube", "channels"] and len(parts) in (5, 7):
+            row = next(r for r in CHANNELS if r["id"] == parts[4])
+            target = row if len(parts) == 5 else next(i for i in row["playlists"] if i["id"] == parts[6])
+            if "note" in body:
+                target.update(note=body["note"].strip() or None, note_updated_at=NOW, note_updated_by_name=USER["display_name"])
+            return self.send_json(row)
         self.send_json({})
 
 if __name__ == "__main__":

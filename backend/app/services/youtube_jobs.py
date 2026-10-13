@@ -135,11 +135,14 @@ async def refresh_channels(owner_id, channel_ids, attempts=None):
                     ))).scalar_one_or_none()
                     if canonical:
                         source_attempt = expected.get(row.id)
-                        linked = list((await db.execute(select(ChannelPlaylist.item_id).where(ChannelPlaylist.channel_id == row.id))).scalars())
+                        linked = list((await db.execute(select(ChannelPlaylist).where(ChannelPlaylist.channel_id == row.id))).scalars())
                         existing = set((await db.execute(select(ChannelPlaylist.item_id).where(ChannelPlaylist.channel_id == canonical.id))).scalars())
-                        for item_id in linked:
-                            if item_id not in existing:
-                                db.add(ChannelPlaylist(channel_id=canonical.id, item_id=item_id))
+                        for link in linked:
+                            if link.item_id not in existing:
+                                db.add(ChannelPlaylist(channel_id=canonical.id, item_id=link.item_id, note=link.note,
+                                    note_updated_at=link.note_updated_at, note_updated_by=link.note_updated_by))
+                        if row.note and not canonical.note:
+                            canonical.note, canonical.note_updated_at, canonical.note_updated_by = row.note, row.note_updated_at, row.note_updated_by
                         await db.execute(delete(ChannelPlaylist).where(ChannelPlaylist.channel_id == row.id))
                         await db.execute(delete(ChannelSnapshot).where(ChannelSnapshot.channel_id == row.id))
                         await db.delete(row)
