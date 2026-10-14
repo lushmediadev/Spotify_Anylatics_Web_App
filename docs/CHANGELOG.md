@@ -1,5 +1,11 @@
 # Changelog
 
+### 2026-10-14 - Ngừng hai trang cũ, bỏ chuyển hướng
+- Gỡ DNS A `ytm.jazzrelaxation.com` khỏi Cloudflare; `spotify.jazzrelaxation.com` đã không còn record. Hai domain không còn phân giải từ VPS mới.
+- Shared Caddy trên82.197.71.6 trả410/no-store cho HTTP/HTTPS của cả hai domain, không Location và không proxy tới YTM/app mới. Validate/reload thành công; không restart container hay thay đổi mail/DNS khác.
+- Public health `ytm.lushmedia.net/api/health` vẫn200; giữ private standalone YTM containers/database. Cập nhật Caddy reference và hướng dẫn để không khôi phục các domain cũ.
+- Xác minh: 628 backend +84 frontend/browser tests đạt; Caddy runtime/reference validate thành công, DNS công cộng1.1.1.1 trả NXDOMAIN cho cả hai domain cũ.
+
 ### 2026-10-13 - YouTube Link Checker notes
 - Added: `Note` column between Delta / Days and Checked (2-line clamp, full text and last edit time on hover). One note per tracked channel, stored on `ytm_items.note` / `note_updated_at` (additive `ADD COLUMN IF NOT EXISTS` in `app/ytm/database.py`).
 - Added: `PATCH /api/ytm/items-by-id/{item_id}` `{ note? }` (owner-only, 1000 characters). Double-click the Note cell or use Edit note in the row menu; Enter saves, Shift+Enter adds a line, Esc cancels. Search matches notes and the Excel export appends a `Note` column.

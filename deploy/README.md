@@ -10,6 +10,8 @@
 
 ## Legacy Caddy host
 
+Hai domain `ytm.jazzrelaxation.com` và `spotify.jazzrelaxation.com` đã ngừng hoạt động: không còn DNS record, old origin trả HTTP 410 và không redirect. Không dùng hai domain này làm `APP_DOMAIN` hoặc tạo lại DNS khi triển khai. VPS cũ chỉ giữ shared Caddy/mail và các service khác; không rollout lại SpotiCheck lên đó.
+
 This folder contains the tracked runtime config for the VPS stack:
 
 - `docker-compose.vps.yml`: app + PostgreSQL + Caddy
@@ -25,9 +27,9 @@ Recommended rollout:
 3. Verify the app locally on the VPS with:
    - `docker compose -f docker-compose.vps.yml --env-file .env ps`
    - `docker compose -f docker-compose.vps.yml --env-file .env logs -f app`
-   - `curl http://127.0.0.1/api/health -H "Host: spotify.jazzrelaxation.com"`
-4. Point Cloudflare DNS for `spotify.jazzrelaxation.com` to the VPS and keep the record proxied.
-5. Re-check `https://spotify.jazzrelaxation.com/api/health` after DNS cutover.
+   - `curl http://127.0.0.1/api/health -H "Host: ytm.lushmedia.net"`
+4. Với một deployment Caddy mới, trỏ DNS của `APP_DOMAIN` đang dùng tới VPS phù hợp. Production hiện tại dùng Nginx trên `194.233.69.135`.
+5. Kiểm tra `https://ytm.lushmedia.net/api/health` sau DNS cutover.
 
 Operational notes:
 

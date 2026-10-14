@@ -30,10 +30,10 @@ ytb.jazzrelaxation.com {
     reverse_proxy host.docker.internal:8000
 }
 
-ytm.jazzrelaxation.com {
-    encode zstd gzip
-
-    reverse_proxy ytm-app:8000
+# Retired domains: never proxy or redirect to the production app.
+http://spotify.jazzrelaxation.com, https://spotify.jazzrelaxation.com, http://ytm.jazzrelaxation.com, https://ytm.jazzrelaxation.com {
+    header Cache-Control "no-store"
+    respond "This site has been retired." 410
 }
 
 # Meta Ads Copilot application authentication

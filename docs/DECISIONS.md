@@ -2,6 +2,7 @@
 
 | Decision | Reason | Impact | Date |
 | --- | --- | --- | --- |
+| Ngừng hai domain cũ, không chuyển hướng sang production mới | User yêu cầu bỏ ytm.jazzrelaxation.com và spotify.jazzrelaxation.com. | Gỡ DNS YTM; Spotify đã không còn record. Old origin trả410/no-store, không proxy/redirect; giữ shared services và standalone YTM containers/data riêng. Thay thế redirect sau migration. | 2026-10-14 |
 | Share one group right-click menu across Spotify, Channel & Playlist, and YTM | User requires consistent group operations and only three context actions. | `frontend/group-rail.js` owns the shared menu; it shows Create Group, Rename Group, and Delete Group only. Rename/delete are disabled for blank rail space and protected aggregate groups. | 2026-10-12 |
 | Đổi branding public sang YoutubeCheck, dùng logo play đỏ cho toàn site và mở YouTube Link Checker mặc định | User yêu cầu đồng bộ logo YouTube cho login/favicon/sidebar và mặc định mở workspace YouTube sau đăng nhập. | Tất cả favicon và biểu tượng brand trong dashboard, login và trang YTM dùng cùng SVG play đỏ; crawler không theo liên kết trên cả ba trang HTML; nav YTM đứng đầu và là workspace mặc định nếu tài khoản có quyền. | 2026-10-12 |
 | Gỡ SpotiCheck cũ sau khi migration và backup mới đã xác minh | User yêu cầu xoá app khỏi82.197.71.6 sau cutover. | App/database/source/images/backups cũ được gỡ; giữ nguyên shared Caddy/mail mount paths, TLS volumes và redirect để không restart hay làm gián đoạn service khác. Không còn rollback trực tiếp từ container/DB cũ. | 2026-10-09 |
