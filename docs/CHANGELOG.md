@@ -513,3 +513,9 @@
 - Changed: route right-clicks in all three workspace group rails through `frontend/group-rail.js`; menu always contains only Create Group, Rename Group, and Delete Group, with rename/delete disabled for blank space and protected aggregate groups.
 - Affected files: `frontend/group-rail.js`, `frontend/group-rail.css`, `frontend/index.html`, `frontend/ytm/index.html`, `frontend/app.js`, `frontend/channels.js`, `frontend/ytm/app.js`, `docs/UI_SYSTEM.md`, `docs/DECISIONS.md`, `docs/DECISIONS_INDEX.md`
 - Impact/Risk: Low; group context-menu interactions only.
+### 2026-10-16 - Manage downloads from the admin page
+- Added: admin upload flow lets users set a download title, change an existing title, and replace a file while retaining its download name.
+- Changed: download listing now shows saved titles with the underlying file name and size.
+- Added: visible Edit title, Replace file and Get link controls; signed links can be copied and expire after five minutes.
+- Affected files: `backend/app/api/downloads.py`, `frontend/downloads/index.html`
+- Impact/Risk: Low; existing download URLs and signed-link behavior remain unchanged.

@@ -62,8 +62,8 @@ services:
       RAW_RESPONSE_RETENTION_DAYS: ${RAW_RESPONSE_RETENTION_DAYS:-30}
       CRAWL_JOB_RETENTION_DAYS: ${CRAWL_JOB_RETENTION_DAYS:-90}
     volumes:
-      # Admin-only installers listed at /downloads; copy files into /opt/spoticheck/downloads on the VPS.
-      - ${DOWNLOADS_HOST_DIR:-/opt/spoticheck/downloads}:/downloads:ro
+      # Admin-only installers listed, uploaded and deleted at /downloads (writable for web uploads).
+      - ${DOWNLOADS_HOST_DIR:-/opt/spoticheck/downloads}:/downloads
     expose:
       - "8000"
     healthcheck:

@@ -103,11 +103,60 @@
             text-align: center;
         }
         .dl-error { color: #c62828; }
+        .dl-head { display: flex; align-items: flex-start; gap: 16px; margin: 0 0 28px; }
+        .dl-head-text { flex: 1 1 auto; min-width: 0; }
+        .dl-head .dl-sub { margin: 0; }
+        .dl-btn[hidden], .dl-upload[hidden] { display: none; }
+        .dl-btn-ghost {
+            background: var(--surface-1);
+            color: var(--text-main);
+            border: 1px solid var(--stroke-mid);
+        }
+        .dl-btn-ghost:hover { border-color: var(--text-main); }
+        .dl-btn-danger:hover { border-color: #c62828; color: #c62828; }
+        .dl-actions { width: 100%; display: flex; flex-wrap: wrap; gap: 8px; padding-left: 60px; box-sizing: border-box; }
+        .dl-file { flex-wrap: wrap; }
+        .dl-file-title { font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+        .dl-file-original { color: var(--text-muted); font-size: 12px; margin-top: 2px; overflow-wrap: anywhere; }
+        .dl-upload {
+            margin: 0 0 16px;
+            padding: 16px 18px;
+            border: 1px solid var(--stroke-mid);
+            border-radius: 16px;
+            background: var(--surface-1);
+        }
+        .dl-upload-row { display: flex; align-items: center; gap: 12px; }
+        .dl-upload-row .dl-file-body { flex: 1 1 auto; }
+        .dl-upload-title-field { display: block; margin-top: 14px; color: var(--text-muted); font-size: 12px; }
+        .dl-upload-title-field input, .dl-title-input {
+            display: block; width: 100%; box-sizing: border-box; margin-top: 5px; padding: 9px 11px;
+            border: 1px solid var(--stroke-mid); border-radius: 8px; background: var(--surface-0);
+            color: var(--text-main); font: 400 14px/20px "Inter", system-ui, sans-serif;
+        }
+        .dl-upload-footer { display: flex; justify-content: flex-end; gap: 8px; margin-top: 12px; }
+        .dl-title-dialog { width: min(420px, calc(100vw - 40px)); border: 1px solid var(--stroke-mid); border-radius: 12px; padding: 20px; color: var(--text-main); background: var(--surface-0); }
+        .dl-title-dialog::backdrop { background: rgba(0, 0, 0, .35); }
+        .dl-title-dialog h2 { margin: 0 0 16px; font-size: 18px; }
+        .dl-title-dialog label { color: var(--text-muted); font-size: 13px; }
+        .dl-title-dialog-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 18px; }
+        .dl-link-note { margin: 12px 0 0; color: var(--text-muted); font-size: 12px; }
+        .dl-progress {
+            height: 8px;
+            margin-top: 12px;
+            border-radius: 999px;
+            background: var(--surface-2);
+            overflow: hidden;
+        }
+        .dl-progress-bar { height: 100%; width: 0; border-radius: inherit; background: #0f0f0f; transition: width .2s ease; }
+        [data-theme="dark"] .dl-progress-bar { background: var(--text-main); }
         @media (max-width: 560px) {
             .dl-top { padding: 12px 16px; }
             .dl-user, .dl-link span:not(.icon) { display: none; }
             .dl-main { padding: 28px 16px 48px; }
+            .dl-head { flex-direction: column; }
             .dl-file { flex-wrap: wrap; }
+            .dl-actions { padding-left: 0; }
+            .dl-actions .dl-btn { flex: 1 1 0; }
             .dl-btn { width: 100%; justify-content: center; }
         }
     </style>
@@ -124,10 +173,56 @@
     </header>
 
     <main class="dl-main">
-        <h1>Downloads</h1>
-        <p class="dl-sub">Installers and tools for admin accounts.</p>
+        <div class="dl-head">
+            <div class="dl-head-text">
+                <h1>Downloads</h1>
+                <p class="dl-sub">Installers and tools for admin accounts.</p>
+            </div>
+            <button class="dl-btn" type="button" id="dl-upload-btn" hidden><span class="icon" aria-hidden="true">upload</span>Upload file</button>
+            <input type="file" id="dl-upload-input" hidden>
+        </div>
+        <div class="dl-upload" id="dl-upload" hidden>
+            <div class="dl-upload-row">
+                <span class="dl-file-icon"><span class="icon" aria-hidden="true">upload_file</span></span>
+                <div class="dl-file-body">
+                    <div class="dl-file-name" id="dl-upload-name"></div>
+                    <div class="dl-file-meta" id="dl-upload-meta"></div>
+                </div>
+            </div>
+            <label class="dl-upload-title-field" for="dl-upload-title">Download title
+                <input id="dl-upload-title" type="text" maxlength="160" required autocomplete="off">
+            </label>
+            <div class="dl-progress"><div class="dl-progress-bar" id="dl-upload-bar"></div></div>
+            <div class="dl-upload-footer">
+                <button class="dl-btn dl-btn-ghost" type="button" id="dl-upload-cancel">Cancel</button>
+                <button class="dl-btn" type="button" id="dl-upload-start">Upload</button>
+            </div>
+        </div>
         <div class="dl-list" id="dl-list"><div class="dl-state">Loading...</div></div>
     </main>
+
+    <dialog class="dl-title-dialog" id="dl-title-dialog" aria-labelledby="dl-title-heading">
+        <form id="dl-title-form">
+            <h2 id="dl-title-heading">Edit download title</h2>
+            <label for="dl-title-input">Title</label>
+            <input class="dl-title-input" id="dl-title-input" type="text" maxlength="160" required autocomplete="off">
+            <div class="dl-title-dialog-actions">
+                <button class="dl-btn dl-btn-ghost" type="button" id="dl-title-cancel">Cancel</button>
+                <button class="dl-btn" type="submit" id="dl-title-save">Save</button>
+            </div>
+        </form>
+    </dialog>
+
+    <dialog class="dl-title-dialog" id="dl-link-dialog" aria-labelledby="dl-link-heading">
+        <h2 id="dl-link-heading">Download link</h2>
+        <label for="dl-link-input">Link</label>
+        <input class="dl-title-input" id="dl-link-input" type="url" readonly>
+        <p class="dl-link-note" id="dl-link-note"></p>
+        <div class="dl-title-dialog-actions">
+            <button class="dl-btn dl-btn-ghost" type="button" id="dl-link-close">Close</button>
+            <button class="dl-btn" type="button" id="dl-link-copy">Copy link</button>
+        </div>
+    </dialog>
 
     <script>
         (function () {
@@ -135,6 +230,7 @@
             const TOKEN_KEY = 'spoticheck_token';
             const LOGIN_URL = '/login.html?next=' + encodeURIComponent('/downloads/');
             const list = document.getElementById('dl-list');
+            const downloadItems = new Map();
             const token = localStorage.getItem(TOKEN_KEY);
             if (!token) { location.replace(LOGIN_URL); return; }
 
@@ -167,23 +263,86 @@
                 });
                 if (res.status === 401) { signOut(); throw new Error('Session expired'); }
                 const data = await res.json().catch(() => ({}));
-                if (!res.ok) throw new Error(data.detail || `Request failed (${res.status})`);
+                if (!res.ok) {
+                    const detail = data.detail;
+                    const error = new Error((detail && detail.message) || (typeof detail === 'string' && detail) || `Request failed (${res.status})`);
+                    error.status = res.status;
+                    error.detail = detail;
+                    throw error;
+                }
                 return data;
+            }
+            const jsonBody = body => ({ headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+            async function refresh() {
+                render((await api('/downloads')).files || []);
             }
 
             function render(files) {
+                downloadItems.clear();
+                files.forEach(file => downloadItems.set(file.name, file));
                 if (!files.length) { showState('No files available yet.'); return; }
                 list.innerHTML = files.map(file => `<div class="dl-file">
                     <span class="dl-file-icon"><span class="icon" aria-hidden="true">folder_zip</span></span>
                     <div class="dl-file-body">
-                        <div class="dl-file-name" title="${escapeHtml(file.name)}">${escapeHtml(file.name)}</div>
-                        <div class="dl-file-meta">${escapeHtml(formatSize(file.size))} · Updated ${escapeHtml(formatDate(file.modified_at))}</div>
+                        <div class="dl-file-title" title="${escapeHtml(file.title || file.name)}">${escapeHtml(file.title || file.name)}</div>
+                        <div class="dl-file-original">${escapeHtml(file.name)} · ${escapeHtml(formatSize(file.size))} · Updated ${escapeHtml(formatDate(file.modified_at))}</div>
                     </div>
-                    <button class="dl-btn" type="button" data-file="${escapeHtml(file.name)}"><span class="icon" aria-hidden="true">download</span>Download</button>
+                    <div class="dl-actions">
+                        <button class="dl-btn dl-btn-ghost" type="button" data-edit-title="${escapeHtml(file.name)}"><span class="icon" aria-hidden="true">edit</span>Edit title</button>
+                        <button class="dl-btn dl-btn-ghost" type="button" data-replace="${escapeHtml(file.name)}"><span class="icon" aria-hidden="true">sync</span>Replace file</button>
+                        <button class="dl-btn dl-btn-ghost" type="button" data-link="${escapeHtml(file.name)}"><span class="icon" aria-hidden="true">link</span>Get link</button>
+                        <button class="dl-btn dl-btn-ghost dl-btn-danger" type="button" data-delete="${escapeHtml(file.name)}" title="Delete"><span class="icon" aria-hidden="true">delete</span>Delete</button>
+                        <button class="dl-btn" type="button" data-file="${escapeHtml(file.name)}"><span class="icon" aria-hidden="true">download</span>Download</button>
+                    </div>
                 </div>`).join('');
             }
 
             list.addEventListener('click', async event => {
+                const getLink = event.target.closest('[data-link]');
+                if (getLink) {
+                    getLink.disabled = true;
+                    try {
+                        const link = await api(`/downloads/${encodeURIComponent(getLink.dataset.link)}/link`, { method: 'POST' });
+                        linkInput.value = new URL(link.url, location.origin).href;
+                        linkNote.textContent = `This download link expires in ${Math.ceil(link.expires_in / 60)} minutes.`;
+                        linkCopy.textContent = 'Copy link';
+                        linkDialog.showModal();
+                        linkInput.focus();
+                        linkInput.select();
+                    } catch (error) {
+                        alert(error.message);
+                    } finally {
+                        getLink.disabled = false;
+                    }
+                    return;
+                }
+                const editTitle = event.target.closest('[data-edit-title]');
+                if (editTitle) {
+                    const file = downloadItems.get(editTitle.dataset.editTitle);
+                    if (file) openTitleDialog(file);
+                    return;
+                }
+                const replace = event.target.closest('[data-replace]');
+                if (replace) {
+                    if (activeUpload) return;
+                    replaceTarget = downloadItems.get(replace.dataset.replace) || null;
+                    if (replaceTarget) uploadInput.click();
+                    return;
+                }
+                const remove = event.target.closest('[data-delete]');
+                if (remove) {
+                    const name = remove.dataset.delete;
+                    if (!confirm(`Delete ${name} from the server? This cannot be undone.`)) return;
+                    remove.disabled = true;
+                    try {
+                        await api(`/downloads/${encodeURIComponent(name)}`, { method: 'DELETE' });
+                        await refresh();
+                    } catch (error) {
+                        alert(error.message);
+                        remove.disabled = false;
+                    }
+                    return;
+                }
                 const button = event.target.closest('[data-file]');
                 if (!button) return;
                 button.disabled = true;
@@ -199,13 +358,224 @@
             });
             document.getElementById('dl-logout').addEventListener('click', signOut);
 
+            // Uploads go up in chunks (each well under the proxy body limits) so large
+            // installers pass through Cloudflare; the server assembles them in order.
+            const uploadBtn = document.getElementById('dl-upload-btn');
+            const uploadInput = document.getElementById('dl-upload-input');
+            const uploadPanel = document.getElementById('dl-upload');
+            const uploadName = document.getElementById('dl-upload-name');
+            const uploadMeta = document.getElementById('dl-upload-meta');
+            const uploadBar = document.getElementById('dl-upload-bar');
+            const uploadTitle = document.getElementById('dl-upload-title');
+            const uploadCancel = document.getElementById('dl-upload-cancel');
+            const uploadStart = document.getElementById('dl-upload-start');
+            const titleDialog = document.getElementById('dl-title-dialog');
+            const titleForm = document.getElementById('dl-title-form');
+            const titleInput = document.getElementById('dl-title-input');
+            const titleSave = document.getElementById('dl-title-save');
+            const linkDialog = document.getElementById('dl-link-dialog');
+            const linkInput = document.getElementById('dl-link-input');
+            const linkNote = document.getElementById('dl-link-note');
+            const linkCopy = document.getElementById('dl-link-copy');
+            let activeUpload = null;
+            let pendingUpload = null;
+            let replaceTarget = null;
+            let editingTitle = null;
+
+            document.getElementById('dl-link-close').addEventListener('click', () => linkDialog.close());
+            linkCopy.addEventListener('click', async () => {
+                try {
+                    await navigator.clipboard.writeText(linkInput.value);
+                    linkCopy.textContent = 'Copied';
+                } catch (_) {
+                    linkInput.focus();
+                    linkInput.select();
+                    linkNote.textContent = 'Press Ctrl+C (or Cmd+C) to copy the selected link. Links expire after 5 minutes.';
+                }
+            });
+
+            function openTitleDialog(file) {
+                editingTitle = file;
+                titleInput.value = file.title || file.name;
+                titleDialog.showModal();
+                titleInput.focus();
+                titleInput.select();
+            }
+            document.getElementById('dl-title-cancel').addEventListener('click', () => titleDialog.close());
+            titleForm.addEventListener('submit', async event => {
+                event.preventDefault();
+                if (!editingTitle) return;
+                const title = titleInput.value.trim();
+                if (!title) { titleInput.focus(); return; }
+                titleSave.disabled = true;
+                try {
+                    await api(`/downloads/${encodeURIComponent(editingTitle.name)}`, { method: 'PATCH', ...jsonBody({ title }) });
+                    titleDialog.close();
+                    editingTitle = null;
+                    await refresh();
+                } catch (error) {
+                    alert(error.message);
+                } finally {
+                    titleSave.disabled = false;
+                }
+            });
+
+            const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
+            function setUploadProgress(done, total) {
+                const percent = total ? Math.min(100, (done / total) * 100) : 0;
+                uploadBar.style.width = `${percent.toFixed(1)}%`;
+                uploadMeta.textContent = `${formatSize(done)} of ${formatSize(total)} · ${Math.floor(percent)}%`;
+            }
+            function sendChunk(state, offset, blob) {
+                return new Promise((resolve, reject) => {
+                    const xhr = new XMLHttpRequest();
+                    state.xhr = xhr;
+                    xhr.open('PUT', `/api/downloads/uploads/${state.id}?offset=${offset}`);
+                    xhr.setRequestHeader('Authorization', 'Bearer ' + token);
+                    xhr.setRequestHeader('Content-Type', 'application/octet-stream');
+                    xhr.upload.onprogress = event => setUploadProgress(offset + event.loaded, state.file.size);
+                    xhr.onload = () => {
+                        let data = {};
+                        try { data = JSON.parse(xhr.responseText || '{}'); } catch (_) { /* non-JSON proxy error page */ }
+                        if (xhr.status >= 200 && xhr.status < 300) { resolve(data); return; }
+                        if (xhr.status === 401) signOut();
+                        const detail = data.detail;
+                        const error = new Error((detail && detail.message) || (typeof detail === 'string' && detail) || `Upload failed (${xhr.status})`);
+                        error.status = xhr.status;
+                        error.detail = detail;
+                        reject(error);
+                    };
+                    xhr.onerror = () => reject(new Error('Network error while uploading'));
+                    xhr.onabort = () => reject(new Error('Upload cancelled'));
+                    xhr.send(blob);
+                });
+            }
+            async function startUpload(file, targetName, title, replaceExisting) {
+                const body = { name: targetName, size: file.size, title };
+                if (replaceExisting) {
+                    return api('/downloads/uploads', { method: 'POST', ...jsonBody({ ...body, overwrite: true }) });
+                }
+                try {
+                    return await api('/downloads/uploads', { method: 'POST', ...jsonBody(body) });
+                } catch (error) {
+                    if (error.status !== 409) throw error;
+                    if (!confirm(`${targetName} already exists. Replace it?`)) return null;
+                    return api('/downloads/uploads', { method: 'POST', ...jsonBody({ ...body, overwrite: true }) });
+                }
+            }
+            async function uploadFile(file, targetName, title, replaceExisting) {
+                const state = { file, id: null, xhr: null, cancelled: false };
+                activeUpload = state;
+                uploadBtn.disabled = true;
+                uploadStart.disabled = true;
+                uploadTitle.disabled = true;
+                if (replaceExisting && !confirm(`Replace ${targetName} with the selected file?`)) {
+                    activeUpload = null;
+                    uploadBtn.disabled = false;
+                    uploadStart.disabled = false;
+                    uploadTitle.disabled = false;
+                    uploadPanel.hidden = true;
+                    return;
+                }
+                uploadName.textContent = file.name;
+                uploadName.title = file.name;
+                uploadCancel.disabled = false;
+                uploadPanel.hidden = false;
+                setUploadProgress(0, file.size);
+                try {
+                    const start = await startUpload(file, targetName, title, replaceExisting);
+                    if (!start) { state.cancelled = true; throw new Error('Upload cancelled'); }
+                    state.id = start.upload_id;
+                    const chunkSize = start.chunk_size;
+                    let offset = 0;
+                    let retries = 0;
+                    while (offset < file.size) {
+                        if (state.cancelled) throw new Error('Upload cancelled');
+                        try {
+                            const result = await sendChunk(state, offset, file.slice(offset, offset + chunkSize));
+                            offset = result.received;
+                            retries = 0;
+                        } catch (error) {
+                            if (state.cancelled) throw error;
+                            if (error.status === 409 && error.detail && typeof error.detail.received === 'number') {
+                                offset = error.detail.received; // server holds a different amount: resume from there
+                                continue;
+                            }
+                            const retryable = !error.status || error.status >= 500 || error.status === 408 || error.status === 429;
+                            if (!retryable || ++retries > 5) throw error;
+                            uploadMeta.textContent = `Connection problem, retrying (${retries}/5)...`;
+                            await sleep(1000 * 2 ** retries);
+                        }
+                        setUploadProgress(offset, file.size);
+                    }
+                    uploadCancel.disabled = true;
+                    uploadMeta.textContent = 'Finishing...';
+                    await api(`/downloads/uploads/${state.id}/complete`, { method: 'POST' });
+                    uploadPanel.hidden = true;
+                    await refresh();
+                } catch (error) {
+                    if (state.id) api(`/downloads/uploads/${state.id}`, { method: 'DELETE' }).catch(() => {});
+                    uploadPanel.hidden = true;
+                    if (!state.cancelled) alert(error.message);
+                } finally {
+                    activeUpload = null;
+                    uploadBtn.disabled = false;
+                    uploadStart.disabled = false;
+                    uploadTitle.disabled = false;
+                    uploadInput.value = '';
+                }
+            }
+            uploadBtn.addEventListener('click', () => { replaceTarget = null; uploadInput.click(); });
+            uploadInput.addEventListener('change', () => {
+                const file = uploadInput.files && uploadInput.files[0];
+                if (!file || activeUpload) { replaceTarget = null; return; }
+                pendingUpload = {
+                    file,
+                    targetName: replaceTarget ? replaceTarget.name : file.name,
+                    title: replaceTarget ? (replaceTarget.title || replaceTarget.name) : file.name.replace(/\.[^.]+$/, ''),
+                    replaceExisting: Boolean(replaceTarget),
+                };
+                uploadName.textContent = file.name;
+                uploadName.title = file.name;
+                uploadMeta.textContent = pendingUpload.replaceExisting ? `Replacing ${pendingUpload.targetName}` : formatSize(file.size);
+                uploadTitle.value = pendingUpload.title;
+                uploadTitle.disabled = false;
+                uploadStart.disabled = false;
+                uploadCancel.disabled = false;
+                uploadPanel.hidden = false;
+                setUploadProgress(0, file.size);
+                replaceTarget = null;
+            });
+            uploadStart.addEventListener('click', () => {
+                if (!pendingUpload || activeUpload) return;
+                const title = uploadTitle.value.trim();
+                if (!title) { uploadTitle.focus(); return; }
+                const selection = pendingUpload;
+                pendingUpload = null;
+                uploadFile(selection.file, selection.targetName, title, selection.replaceExisting);
+            });
+            uploadCancel.addEventListener('click', () => {
+                if (!activeUpload) {
+                    pendingUpload = null;
+                    uploadInput.value = '';
+                    uploadPanel.hidden = true;
+                    return;
+                }
+                activeUpload.cancelled = true;
+                if (activeUpload.xhr) activeUpload.xhr.abort();
+            });
+            window.addEventListener('beforeunload', event => {
+                if (activeUpload) { event.preventDefault(); event.returnValue = ''; }
+            });
+
             (async () => {
                 try {
                     const me = await api('/auth/me');
                     const user = me.user || me;
                     document.getElementById('dl-user').textContent = user.display_name || user.username || '';
                     if (user.role !== 'admin') { showState('Downloads are available to admin accounts only.', true); return; }
-                    render((await api('/downloads')).files || []);
+                    uploadBtn.hidden = false;
+                    await refresh();
                 } catch (error) {
                     showState(error.message, true);
                 }
