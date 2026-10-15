@@ -6959,14 +6959,84 @@ async function loadAdminUsers(opts) {
     }
 }
 
-function renderAdminUsers(users) {
+/* Search + manager filter for User Management. manager: '' = all, 'none' = users without a manager, else a manager id (itself + its users). */
+const _adminUsersFilter = { query: '', manager: '', bound: false };
+
+function _foldSearchText(value) {
+    return String(value || '').toLocaleLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/đ/g, 'd');
+}
+
+function _adminUserName(u) {
+    return u ? (u.display_name || u.username || '') : '';
+}
+
+function setupAdminUsersFilters(users) {
+    var search = document.getElementById('admin-users-search');
+    var slot = document.getElementById('admin-users-manager-slot');
+    if (search && !_adminUsersFilter.bound) {
+        _adminUsersFilter.bound = true;
+        search.addEventListener('input', function() {
+            _adminUsersFilter.query = search.value;
+            renderAdminUsers(_adminUsersCache);
+        });
+    }
+    if (!slot) return;
+    // Managers only see themselves and their users, so the manager filter is for admins.
+    var managers = getAuthUser()?.role === 'admin'
+        ? users.filter(function(u) { return u.role === 'manager'; })
+            .sort(function(a, b) { return _adminUserName(a).localeCompare(_adminUserName(b), 'vi', { sensitivity: 'base' }); })
+        : [];
+    slot.hidden = !managers.length;
+    if (!managers.length) { _adminUsersFilter.manager = ''; return; }
+    if (_adminUsersFilter.manager && _adminUsersFilter.manager !== 'none'
+        && !managers.some(function(m) { return m.id === _adminUsersFilter.manager; })) {
+        _adminUsersFilter.manager = '';
+    }
+    var options = [{ value: '', label: 'All managers' }, { value: 'none', label: 'Users without manager' }]
+        .concat(managers.map(function(m) { return { value: m.id, label: _adminUserName(m) }; }));
+    if (document.getElementById('admin-users-manager-dropdown')) {
+        updateCustomDropdownOptions('admin-users-manager-dropdown', options, _adminUsersFilter.manager);
+    } else {
+        slot.appendChild(createCustomDropdown({
+            id: 'admin-users-manager',
+            options: options,
+            selected: _adminUsersFilter.manager,
+            onChange: function(value) {
+                _adminUsersFilter.manager = value;
+                renderAdminUsers(_adminUsersCache);
+            },
+        }));
+    }
+}
+
+function filterAdminUsers(users) {
+    var query = _foldSearchText(_adminUsersFilter.query.trim());
+    var manager = _adminUsersFilter.manager;
+    return users.filter(function(u) {
+        if (manager === 'none' && (u.role !== 'user' || u.manager_id)) return false;
+        if (manager && manager !== 'none' && u.id !== manager && u.manager_id !== manager) return false;
+        if (!query) return true;
+        var managerUser = u.manager_id ? users.find(function(m) { return m.id === u.manager_id; }) : null;
+        return _foldSearchText([u.display_name, u.username, getRoleLabel(u.role), _adminUserName(managerUser)].join(' ')).includes(query);
+    });
+}
+
+function renderAdminUsers(allUsers) {
     var container = document.getElementById('admin-users-list');
     var countEl = document.getElementById('admin-users-count');
     if (!container) return;
-    if (countEl) countEl.textContent = users.length + ' user' + (users.length !== 1 ? 's' : '');
+    setupAdminUsersFilters(allUsers);
+    var users = filterAdminUsers(allUsers);
+    if (countEl) {
+        countEl.textContent = (users.length !== allUsers.length ? users.length + ' of ' : '')
+            + allUsers.length + ' user' + (allUsers.length !== 1 ? 's' : '');
+    }
 
     var currentUser = getAuthUser();
     var html = '';
+    if (!users.length && allUsers.length) {
+        html = '<div class="app-card app-card-row text-sm text-secondary-text">No users match the current search or filter.</div>';
+    }
 
     for (var i = 0; i < users.length; i++) {
         var u = users[i];
