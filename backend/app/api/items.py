@@ -13,6 +13,7 @@ from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 from sqlalchemy import and_, case, delete, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import aliased
 
 from app.database import get_db
 from app.models.crawl_job import CrawlJob
@@ -530,9 +531,17 @@ async def _load_item_users(db: AsyncSession, items: list[Item]) -> dict[str, Use
     if not user_ids:
         return {}
 
-    result = await db.execute(select(User).where(User.id.in_(user_ids)))
-    users = result.scalars().all()
-    return {str(user.id): user for user in users}
+    manager = aliased(User)
+    result = await db.execute(
+        select(User, func.coalesce(manager.display_name, manager.username))
+        .outerjoin(manager, manager.id == User.manager_id)
+        .where(User.id.in_(user_ids))
+    )
+    users = {}
+    for user, manager_name in result.all():
+        user.manager_name = manager_name
+        users[str(user.id)] = user
+    return users
 
 
 async def _delete_raw_if_unreferenced(
@@ -631,6 +640,7 @@ def _item_to_response(
         user_id=str(item.user_id) if item.user_id else None,
         user_name=(item_user.display_name or item_user.username) if item_user else None,
         user_avatar=item_user.avatar if item_user else None,
+        manager_name=getattr(item_user, "manager_name", None) if item_user else None,
         added_date=_format_added_date(item.created_at),
         last_checked=item.last_checked,
         created_at=item.created_at,
@@ -1046,7 +1056,7 @@ async def list_items(
     type: str | None = Query(None, description="Filter by item type"),
     group: str | None = Query(None, description="Filter by group"),
     status: str | None = Query(None, description="Filter by status"),
-    user_id: str | None = Query(None, description="Optional own account ID; other IDs return no items"),
+    user_id: str | None = Query(None, description="Filter by accessible user"),
     search: str | None = Query(None, description="Search by title, owner, group, or Spotify ID"),
     sort: str | None = Query(None, description="Sort key"),
     sort_direction: str | None = Query(None, description="Sort direction"),
@@ -1232,7 +1242,11 @@ async def rename_group(
             raise HTTPException(status_code=400, detail="Invalid user_id") from exc
 
     query = select(Item).where(Item.group.is_not(None))
-    query = _apply_item_scope(query, current_user, target_user_id)
+    if current_user.role == "admin" and str(target_user_id) == str(current_user.id):
+        # Legacy admin rows may still have null user_id.
+        query = query.where(or_(Item.user_id == target_user_id, Item.user_id.is_(None)))
+    else:
+        query = _apply_item_scope(query, current_user, target_user_id)
 
     items = (await db.execute(query)).scalars().all()
     updated = 0

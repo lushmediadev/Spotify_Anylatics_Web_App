@@ -37,7 +37,7 @@ test("channel playlist actions reuse Spotify exporters and refresh exactly selec
   assert.deepEqual(calls, ['p1']);
 });
 
-test("YouTube Link Checker is the first navigation item and the default landing view", () => {
+test("YouTube Checker is the first navigation item and the default landing view", () => {
   assert.ok(indexHtml.indexOf('id="nav-ytm"') < indexHtml.indexOf('id="nav-channels"'));
   assert.ok(indexHtml.indexOf('id="nav-channels"') < indexHtml.indexOf('id="nav-links"'));
   assert.match(appJs, /state\.currentView = 'ytm'/);
@@ -93,25 +93,38 @@ test("account filter UI and stale filter state are removed", () => {
   assert.match(appJs, /ChannelPlaylists\?\.show\(\)/);
 });
 
-test("group preference requests never target another account", async () => {
+test("group requests follow the owner chosen in the owner filter", async () => {
   const calls = [];
+  const cached = [];
+  let owner = 'own';
   const context = vm.createContext({
     state: { customGroups: ['Own'] },
     getAuthUser: () => ({ id: 'own', role: 'admin' }), getAuthToken: () => 'fixture',
     getUserGroupStorageKey: () => 'own-groups', normalizeStoredGroupName: value => value,
-    localStorage: { setItem: () => {} }, CONFIG: { API_BASE: '/api' }, console,
+    localStorage: { setItem: (key, value) => cached.push(value) }, CONFIG: { API_BASE: '/api' }, console,
     syncGroupUI: () => {},
-    fetch: async (url, options) => { calls.push({ url, options }); return { ok: true, json: async () => ({ groups: ['Own'] }) }; },
+    getViewOwnerId: () => owner, isViewingOwnWorkspace: () => owner === 'own',
+    fetch: async (url, options) => {
+      calls.push({ url, method: options?.method || 'GET' });
+      return { ok: true, json: async () => ({ groups: url.includes('/users/foreign/') ? ['Foreign'] : ['Own'] }) };
+    },
   });
   vm.runInContext(appJs.slice(appJs.indexOf('function getOwnerCustomGroups('), appJs.indexOf('function saveCustomGroups()')), context);
-  context.setOwnerCustomGroups('foreign', ['Foreign']);
-  await context.syncGroupsFromServer('foreign');
-  await context.saveGroupsToServer(['Foreign'], 'foreign');
-  assert.deepEqual(context.state.customGroups, ['Own']);
-  assert.equal(calls.length, 0);
+  owner = 'foreign';
   await context.syncGroupsFromServer();
-  await context.saveGroupsToServer(['Own']);
-  assert.deepEqual(calls.map(call => call.url), ['/api/auth/me/groups', '/api/auth/me/groups']);
+  assert.deepEqual([...context.state.customGroups], ['Foreign']);
+  await context.saveGroupsToServer(['Foreign']);
+  // A request for an owner other than the one on screen is ignored.
+  await context.syncGroupsFromServer('someone-else');
+  assert.deepEqual(calls, [
+    { url: '/api/auth/users/foreign/groups', method: 'GET' },
+    { url: '/api/auth/users/foreign/groups', method: 'PUT' },
+  ]);
+  assert.deepEqual(cached, [], "another account's groups never reach the local cache");
+  owner = 'own';
+  await context.syncGroupsFromServer();
+  assert.equal(calls.at(-1).url, '/api/auth/me/groups');
+  assert.deepEqual([...context.state.customGroups], ['Own']);
 });
 
 test("Spotify group navigation excludes aggregate and selects a named group", () => {
@@ -168,11 +181,13 @@ test("Spotify bootstrap discovers groups but never requests an aggregate item pa
   }
 });
 
-test("all roles use own data while manager account role restrictions remain", () => {
+test("list params follow the owner filter for admins and managers only", () => {
   let account = { id: 'manager-id', role: 'manager' };
+  let selected = 'assigned-user';
   const context = vm.createContext({
     localStorage: { getItem: () => JSON.stringify(account) },
-    state: { adminFilterUserId: 'assigned-user', activeGroup: 'Jazz' },
+    window: { OwnerFilterUI: { value: () => selected } },
+    state: { activeGroup: 'Jazz' },
     getGroupEntryById: () => ({ id: 'Jazz', name: 'Jazz' }),
     normalizeStoredGroupName: (value) => value,
     ALL_GROUP_ID: 'all',
@@ -180,15 +195,18 @@ test("all roles use own data while manager account role restrictions remain", ()
     METRIC_SORT_CONFIG: {},
   });
   vm.runInContext(appJs.slice(appJs.indexOf('function getAuthUser()'), appJs.indexOf('function logout()')), context);
-  vm.runInContext(appJs.slice(appJs.indexOf('function getAdminTargetUserId()'), appJs.indexOf('function getScopedGroupOwnerUserId()')), context);
+  vm.runInContext(appJs.slice(appJs.indexOf('function getViewOwnerId()'), appJs.indexOf('function getAdminGroupBaseName(')), context);
   vm.runInContext(appJs.slice(appJs.indexOf('function getBackendListParams()'), appJs.indexOf('function getBackendListScopeKey(')), context);
   assert.equal(vm.runInContext('canManageUsers()', context), true);
   assert.equal(vm.runInContext('getAssignableRoles().map(role => role.value).join(",")', context), 'user');
-  assert.equal(vm.runInContext('getBackendListParams().user_id', context), 'manager-id');
+  assert.equal(vm.runInContext('getBackendListParams().user_id', context), 'assigned-user');
+  assert.equal(vm.runInContext('isViewingOwnWorkspace()', context), false);
   account = { id: 'user-id', role: 'user' };
   assert.equal(vm.runInContext('canManageUsers()', context), false);
   assert.equal(vm.runInContext('getBackendListParams().user_id', context), undefined);
+  assert.equal(vm.runInContext('getViewOwnerId()', context), 'user-id', 'a plain user cannot be pointed at another account');
   account = { id: 'admin-id', role: 'admin' };
+  selected = 'admin-id';
   assert.equal(vm.runInContext('getBackendListParams().user_id', context), 'admin-id');
   assert.equal(vm.runInContext('getAssignableRoles().map(role => role.value).join(",")', context), 'user,manager,admin');
 });
@@ -242,7 +260,7 @@ test("loadData does not pin the dashboard to a frontend item cap", () => {
 test("large lists use backend summary and virtual page loading", () => {
   assert.match(appJs, /LIST_PAGE_SIZE: 120/);
   assert.match(appJs, /LIST_SCOPE_CACHE_LIMIT: 18/);
-  assert.match(appJs, /VIRTUAL_ROW_HEIGHT: 104/);
+  assert.match(appJs, /ROW_HEIGHT: 76,\s*VIRTUAL_ROW_HEIGHT: 86/);
   assert.match(appJs, /function renderVirtualPlaceholder/);
   assert.match(appJs, /queueVirtualPagesForRange\(range\.start, range\.end\)/);
   assert.match(appJs, /api\.getItemsSummary\(params\)/);
@@ -412,7 +430,7 @@ test("refresh all loads the full virtual scope before batching", () => {
   assert.match(appJs, /updateLoadedItemsById\(refreshableItems\.map\(\(item\) => item\.id\)/);
 });
 
-test("YouTube Link Checker renders in-page with the shared shell instead of an iframe", () => {
+test("YouTube Checker renders in-page with the shared shell instead of an iframe", () => {
   assert.doesNotMatch(indexHtml, /<iframe|ytm-frame/);
   assert.doesNotMatch(appJs, /ytm-frame|spoticheck-workspace-forbidden/);
   for (const id of ['ytm-panel', 'ytm-header-tools', 'ytm-group-list', 'ytm-link-list', 'ytm-add-modal']) {
@@ -424,7 +442,7 @@ test("YouTube Link Checker renders in-page with the shared shell instead of an i
   assert.match(appJs, /window\.YouTubeChecker\?\.init\(/);
   assert.match(ytmJs, /window\.YouTubeChecker = \{/);
   assert.doesNotMatch(ytmJs, /window\.parent|postMessage|localStorage\.getItem\('spoticheck_token'\)/);
-  // Rows reuse the Link Checker row component.
+  // Rows reuse the Spotify Checker row component.
   for (const cls of ['custom-grid-row', 'list-asset-cell', 'list-asset-title', 'list-asset-uri', 'checked-stack']) {
     assert.match(ytmJs, new RegExp(cls));
   }

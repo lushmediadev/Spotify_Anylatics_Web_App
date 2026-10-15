@@ -35,6 +35,18 @@ for item in ITEMS:
 CHANNELS[0]["playlists"] = [dict(item) for item in CHANNELS[0]["playlists"]]
 CHANNELS[0]["playlists"][0].update(note="\n".join(["Pitched 12/10, waiting for the curator.", "Follow up next week", "Third line is clamped"]),note_updated_at=NOW, note_updated_by_name=USER["display_name"])
 CHANNEL_TEMPLATE = dict(CHANNELS[0])
+# A manager and one of their users, so the owner filter has someone to switch to.
+MANAGER = {"id": "44444444-4444-4444-8444-444444444444", "username": "lan", "display_name": "Lan", "role": "manager", "is_active": True}
+MANAGED = {"id": "55555555-5555-4555-8555-555555555555", "username": "minh", "display_name": "Minh", "role": "user", "is_active": True, "manager_id": MANAGER["id"]}
+USERS = [USER, MANAGER, MANAGED]
+CHANNELS[1].update(user_id=MANAGED["id"], user_name="Minh", manager_name="Lan")
+ITEMS.append(dict(ITEMS[0], id="22222222-2222-4222-8222-999999999999", name="Lo-fi for Minh", user_id=MANAGED["id"], user_name="Minh", manager_name="Lan"))
+YTM_ROWS.append(dict(YTM_ROWS[0], id="66666666-6666-4666-8666-666666666666", name="Minh Music", user_id=MANAGED["id"], user_name="Minh", manager_name="Lan"))
+
+
+def owned(rows, query):
+    owner = (query.get("user_id") or [USER["id"]])[0]
+    return [row for row in rows if row.get("user_id", USER["id"]) == owner]
 
 class Handler(SimpleHTTPRequestHandler):
     def __init__(self, *args, **kwargs):
@@ -58,19 +70,23 @@ class Handler(SimpleHTTPRequestHandler):
         if route == "/api/ytm/auth/me/preferences": return self.send_json({"preferences": {}})
         if route == "/api/ytm/health": return self.send_json({"status": "ok"})
         if route == "/api/ytm/items/summary": return self.send_json({"total": 1, "all_total": 1, "active": 1, "errors": 0, "crawling": 0, "groups": [{"name": name, "count": 1} for name in YTM_GROUPS]})
-        if route == "/api/ytm/items": return self.send_json({"items": YTM_ROWS, "total": len(YTM_ROWS)})
+        if route == "/api/ytm/items":
+            rows = owned(YTM_ROWS, parse_qs(urlsplit(self.path).query))
+            return self.send_json({"items": rows, "total": len(rows)})
         if route == "/api/auth/me": return self.send_json(USER)
-        if route == "/api/auth/users": return self.send_json([USER])
+        if route == "/api/auth/users": return self.send_json(USERS)
         if route == "/api/auth/me/groups": return self.send_json({"groups": ["Jazz", "Jazz-Tracks", "Album", "Tracks", "BluesEditor-Playlist", "BluesEditor-Track", "LofiEditor-Playlist"]})
         if route == "/api/auth/me/preferences": return self.send_json({"preferences": {}, "global_preferences": {"playlist_clipboard_line_limit": 200}})
         if route == "/api/health": return self.send_json({"status": "ok"})
         if route == "/api/items/summary": return self.send_json({"total": 3, "all_total": 3, "active": 3, "errors": 0, "crawling": 0, "groups": [{"name": "Jazz", "count": 3}]})
-        if route == "/api/items": return self.send_json({"items": ITEMS, "total": len(ITEMS)})
+        if route == "/api/items":
+            rows = owned(ITEMS, parse_qs(urlsplit(self.path).query))
+            return self.send_json({"items": rows, "total": len(rows)})
         if route == "/api/youtube/keys": return self.send_json(masked_keys())
         if route == "/api/youtube/preferences": return self.send_json(PREFERENCES)
         if route == "/api/youtube/channels":
             query = parse_qs(urlsplit(self.path).query)
-            rows = [r for r in CHANNELS if not query.get("search") or query["search"][0].lower() in r["name"].lower()]
+            rows = [r for r in owned(CHANNELS, query) if not query.get("search") or query["search"][0].lower() in r["name"].lower()]
             if query.get("group"):
                 rows = [r for r in rows if r["group"] == query["group"][0]]
             names = sorted(GROUPS, key=lambda name: (PREFERENCES["group_order"].index(name) if name in PREFERENCES["group_order"] else len(GROUPS), name))

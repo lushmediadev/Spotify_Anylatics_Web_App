@@ -58,6 +58,7 @@ class ItemResponse(BaseModel):
     user_id: str | None = None
     user_name: str | None = None
     user_avatar: str | None = None
+    manager_name: str | None = None
     added_date: str | None = None
 
     # Timestamps

@@ -1,13 +1,29 @@
 /* YouTube Link Checker — only the channel-specific geometry.
  * Shell, hero, rows, footer, menus and the group rail come from style.css and group-rail.css. */
+/* Proportional columns: STT, Channel, Owner/Updated, Video, Subscriber, View, Delta, Note, Checked. */
 .ytm-root .ytm-grid.custom-grid-row {
-    grid-template-columns: 52px minmax(230px, 1fr) 160px 90px 120px 130px 130px 140px 120px;
-    min-width: 1300px;
+    grid-template-columns: 52px minmax(200px, 2.2fr) minmax(160px, 1.1fr) minmax(90px, .55fr) minmax(112px, .75fr) minmax(96px, .75fr) minmax(130px, .9fr) minmax(110px, 1fr) minmax(96px, .75fr);
+    min-width: 1206px;
 }
 
 .ytm-root .list-head,
 .ytm-root .list-grid {
-    min-width: 1300px;
+    min-width: 1206px;
+}
+
+@media (max-width: 1099.98px) {
+    .ytm-root .ytm-grid.custom-grid-row {
+        grid-template-columns: 52px minmax(170px, 2.2fr) minmax(130px, 1.1fr) minmax(70px, .55fr) minmax(92px, .75fr) minmax(80px, .75fr) minmax(90px, 1fr);
+        min-width: 810px;
+    }
+    .ytm-root .list-head,
+    .ytm-root .list-grid {
+        min-width: 810px;
+    }
+    .ytm-root .ytm-grid.custom-grid-row > :nth-child(7),
+    .ytm-root .ytm-grid.custom-grid-row > :nth-child(9) {
+        display: none;
+    }
 }
 
 /* Stretch so an empty note is still a double-click target for inline editing. */

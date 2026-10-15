@@ -11,10 +11,10 @@
     <link rel="shortcut icon" type="image/svg+xml" href="/favicon.svg?v=3">
     <script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Inter+Tight:wght@600;700;800&family=Material+Symbols+Rounded:opsz,wght,FILL,GRAD@20..48,500,0..1,0&display=swap" rel="stylesheet">
-    <link rel="stylesheet" href="style.css?v=20261013-ui-2">
-    <link rel="stylesheet" href="channels.css?v=20261013-note-1">
-    <link rel="stylesheet" href="group-rail.css?v=20261013-ui-2">
-    <link rel="stylesheet" href="ytm/style.css?v=20261013-note-2">
+    <link rel="stylesheet" href="style.css?v=20261014-owner-4">
+    <link rel="stylesheet" href="channels.css?v=20261014-owner-4">
+    <link rel="stylesheet" href="group-rail.css?v=20261014-owner-4">
+    <link rel="stylesheet" href="ytm/style.css?v=20261014-owner-4">
     <script id="tailwind-config">
         tailwind.config = {
             darkMode: "class",
@@ -53,17 +53,17 @@
             <span id="sidebar-brand-name" class="font-bold text-xl tracking-tight sidebar-logo-text">SpotiCheck</span>
         </div>
         <nav class="flex-1 px-3 space-y-1">
-            <a id="nav-ytm" class="sidebar-tooltip-target flex items-center gap-4 px-3 py-3 rounded-lg text-secondary-text hover:text-white transition-colors group cursor-pointer" data-tooltip="YouTube Link Checker" href="#">
+            <a id="nav-ytm" class="sidebar-tooltip-target flex items-center gap-4 px-3 py-3 rounded-lg text-secondary-text hover:text-white transition-colors group cursor-pointer" data-tooltip="YouTube Checker" href="#">
                 <span class="material-icons-round">smart_display</span>
-                <span class="font-medium sidebar-label">YouTube Link Checker</span>
+                <span class="font-medium sidebar-label">YouTube Checker</span>
             </a>
             <a id="nav-channels" class="sidebar-tooltip-target flex items-center gap-4 px-3 py-3 rounded-lg text-white bg-white/10 group cursor-pointer" data-tooltip="Channel &amp; Playlist" href="#">
                 <span class="material-icons-round text-primary">subscriptions</span>
                 <span class="font-medium sidebar-label">Channel &amp; Playlist</span>
             </a>
-            <a id="nav-links" class="sidebar-tooltip-target flex items-center gap-4 px-3 py-3 rounded-lg text-secondary-text hover:text-white transition-colors group cursor-pointer" data-tooltip="Link Checker" href="#">
+            <a id="nav-links" class="sidebar-tooltip-target flex items-center gap-4 px-3 py-3 rounded-lg text-secondary-text hover:text-white transition-colors group cursor-pointer" data-tooltip="Spotify Checker" href="#">
                 <span class="material-icons-round">link</span>
-                <span class="font-medium sidebar-label">Link Checker</span>
+                <span class="font-medium sidebar-label">Spotify Checker</span>
             </a>
             <a id="nav-settings" class="sidebar-tooltip-target flex items-center gap-4 px-3 py-3 rounded-lg text-secondary-text hover:text-white transition-colors group cursor-pointer" data-tooltip="Settings" href="#">
                 <span class="material-icons-round">settings</span>
@@ -88,15 +88,16 @@
                 <h2>Groups</h2>
                 <button id="btn-new-group" type="button" class="group-rail-add-btn" aria-label="Create group" title="Create group"><span class="material-icons-round" aria-hidden="true">add</span></button>
             </div>
+            <div id="manager-filter-wrap" class="owner-filter-wrap" hidden></div>
             <label class="group-rail-search-wrap">
                 <span class="material-icons-round" aria-hidden="true">search</span>
                 <input id="group-search" type="search" placeholder="Search groups..." class="group-rail-search" aria-label="Search groups" autocomplete="off">
             </label>
         </div>
         <!-- One rail per workspace; only the active one is shown. Items are rendered by GroupRailUI. -->
-        <div id="group-list" class="group-rail flex-1 overflow-y-auto p-3" data-rail-view="linkchecker" role="group" aria-label="Link Checker groups"></div>
+        <div id="group-list" class="group-rail flex-1 overflow-y-auto p-3" data-rail-view="linkchecker" role="group" aria-label="Spotify Checker groups"></div>
         <div id="channel-group-rail" class="group-rail flex-1 overflow-y-auto p-3" data-rail-view="channels" role="group" aria-label="Channel &amp; Playlist groups" hidden></div>
-        <div id="ytm-group-list" class="group-rail flex-1 overflow-y-auto p-3" data-rail-view="ytm" role="group" aria-label="YouTube Link Checker groups" hidden></div>
+        <div id="ytm-group-list" class="group-rail flex-1 overflow-y-auto p-3" data-rail-view="ytm" role="group" aria-label="YouTube Checker groups" hidden></div>
     </section>
 
     <!-- Zone 3: List Panel -->
@@ -105,7 +106,7 @@
         <header class="topbar h-20 flex-shrink-0 flex items-center justify-between px-8 border-b border-white/5">
             <div class="flex flex-col">
                 <nav class="flex items-center gap-2 text-xs text-secondary-text mb-1">
-                    <span id="breadcrumb-parent">Link Checker</span>
+                    <span id="breadcrumb-parent">Spotify Checker</span>
                     <span class="material-icons-round text-xs" aria-hidden="true">chevron_right</span>
                     <span id="breadcrumb-group" class="text-white">Choose a group</span>
                 </nav>
@@ -301,8 +302,8 @@
 
 
         <section id="channels-panel" class="flex-1 overflow-y-auto" style="display:none" aria-label="Channel &amp; Playlist"></section>
-        <!-- YouTube Link Checker: rendered in-page by ytm/app.js with the same hero, list and footer components as Link Checker. -->
-        <section id="ytm-panel" class="ytm-root flex-1 flex-col overflow-hidden" style="display:none" aria-label="YouTube Link Checker">
+        <!-- YouTube Checker: rendered in-page by ytm/app.js with the same hero, list and footer components as Spotify Checker. -->
+        <section id="ytm-panel" class="ytm-root flex-1 flex-col overflow-hidden" style="display:none" aria-label="YouTube Checker">
             <div id="ytm-links-view" class="flex-1 overflow-y-auto list-scroll">
                 <div class="list-shell">
                     <section id="ytm-hero" class="playlist-hero px-5 py-8 mb-0">
@@ -345,6 +346,10 @@
                         <b class="text-white">Selected:</b>
                         <span id="ytm-footer-selected" class="tabular-nums text-right min-w-[13px]">0</span>
                     </span>
+                    <span id="ytm-footer-selection-actions" class="footer-selection-actions" hidden>
+                    <button type="button" id="ytm-btn-clear-selection" class="footer-selection-btn" title="Clear selection" aria-label="Clear selection"><span class="material-icons-round" aria-hidden="true">close</span></button>
+                    <button type="button" id="ytm-btn-delete-selection" class="footer-selection-btn is-danger" title="Delete selected rows" aria-label="Delete selected rows"><span class="material-icons-round" aria-hidden="true">delete</span></button>
+                </span>
                     <div class="w-[1px] h-3 bg-white/10"></div>
                     <span>API Status: <span id="ytm-api-status" class="text-primary font-bold uppercase">Connecting...</span></span>
                 </div>
@@ -485,6 +490,10 @@
                     <b class="text-white">Selected:</b>
                     <span id="footer-selected" class="tabular-nums text-right min-w-[13px]">0</span>
                 </span>
+                <span id="footer-selection-actions" class="footer-selection-actions" hidden>
+                    <button type="button" id="btn-clear-selection" class="footer-selection-btn" title="Clear selection" aria-label="Clear selection"><span class="material-icons-round" aria-hidden="true">close</span></button>
+                    <button type="button" id="btn-delete-selection" class="footer-selection-btn is-danger" title="Delete selected rows" aria-label="Delete selected rows"><span class="material-icons-round" aria-hidden="true">delete</span></button>
+                </span>
                 <div class="w-[1px] h-3 bg-white/10"></div>
                 <span>API Status: <span id="api-status" class="text-primary font-bold uppercase">Connecting...</span></span>
             </div>
@@ -530,7 +539,7 @@
         </div>
     </div>
 
-    <!-- ═══ Add YouTube Channel Modal (YouTube Link Checker) ═══ -->
+    <!-- ═══ Add YouTube Channel Modal (YouTube Checker) ═══ -->
     <div id="ytm-add-modal" class="modal-overlay" role="dialog" aria-modal="true" aria-labelledby="ytm-add-modal-title">
         <div class="modal-content">
             <div class="flex items-center justify-between mb-6">
@@ -604,9 +613,9 @@
                     </div>
                     <fieldset id="admin-edit-workspace-field" class="manager-workspaces" hidden>
                         <legend>Workspace</legend>
-                        <label><input type="checkbox" name="workspaces" value="youtube"> Youtube</label>
-                        <label><input type="checkbox" name="workspaces" value="spotify"> Spotify</label>
-                        <label><input type="checkbox" name="workspaces" value="youtube-spotify"> Youtube-Spotify</label>
+                        <label><input type="checkbox" name="workspaces" value="youtube"> YouTube Checker</label>
+                        <label><input type="checkbox" name="workspaces" value="spotify"> Spotify Checker</label>
+                        <label><input type="checkbox" name="workspaces" value="youtube-spotify"> Channel &amp; Playlist</label>
                     </fieldset>
                     <div class="pt-2 flex gap-3">
                         <button onclick="closeAdminEditModal()" class="flex-1 btn-ghost px-4 py-3 rounded-xl border border-white/20 text-sm font-bold cursor-pointer">Cancel</button>
@@ -667,9 +676,9 @@
                     </div>
                     <fieldset id="admin-create-workspace-field" class="manager-workspaces" hidden>
                         <legend>Workspace</legend>
-                        <label><input type="checkbox" name="workspaces" value="youtube"> Youtube</label>
-                        <label><input type="checkbox" name="workspaces" value="spotify"> Spotify</label>
-                        <label><input type="checkbox" name="workspaces" value="youtube-spotify"> Youtube-Spotify</label>
+                        <label><input type="checkbox" name="workspaces" value="youtube"> YouTube Checker</label>
+                        <label><input type="checkbox" name="workspaces" value="spotify"> Spotify Checker</label>
+                        <label><input type="checkbox" name="workspaces" value="youtube-spotify"> Channel &amp; Playlist</label>
                     </fieldset>
                     <div>
                         <label class="block text-[13px] font-semibold text-secondary-text mb-2">Display Name <span class="text-secondary-text font-normal">(optional)</span></label>
@@ -752,9 +761,10 @@
             </div>
         </div>
 
-    <script src="group-rail.js?v=20261013-ui-2"></script>
-    <script src="channels.js?v=20261013-note-1"></script>
-    <script src="ytm/app.js?v=20261013-note-2"></script>
-    <script src="app.js?v=20261013-note-1"></script>
+    <script src="owner-filter.js?v=20261014-owner-4"></script>
+    <script src="group-rail.js?v=20261014-owner-4"></script>
+    <script src="channels.js?v=20261014-owner-4"></script>
+    <script src="ytm/app.js?v=20261014-owner-4"></script>
+    <script src="app.js?v=20261014-owner-4"></script>
 </body>
 </html>

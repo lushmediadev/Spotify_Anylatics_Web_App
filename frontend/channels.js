@@ -14,7 +14,7 @@
         preferenceQueue: Promise.resolve(), writePending: 0, scope: 0, drag: null, scrollFrame: null,
         groupSelected: new Set(), playlistSelected: new Set(), focusKind: 'channels', anchors: {}, cut: null,
         runPlaylistAction: null, copyLinks: null, previewImage: null, exportChannels: null, sort: null,
-        widths: null, resize: null
+        widths: null, resize: null, actorId: '', getOwner: null
     };
     const escapeHtml = value => String(value ?? '').replace(/[&<>"']/g, ch => ({
         '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
@@ -29,6 +29,9 @@
     };
     const NO_SYSTEM_KEY = 'No system API key configured — contact an admin.';
     const isAdmin = () => state.getUser()?.role === 'admin';
+    // state.userId is the workspace owner being shown; state.actorId the signed-in account.
+    const sameActor = () => state.actorId === String(state.getUser()?.id || '');
+    const scoped = path => state.userId ? `${path}${path.includes('?') ? '&' : '?'}user_id=${encodeURIComponent(state.userId)}` : path;
     function safeUrl(value) {
         try {
             const url = new URL(value);
@@ -84,7 +87,13 @@
             <label class="chp-mobile-groups">Group <select class="chp-groups" aria-label="Channel groups"></select></label><button type="button" class="chp-new-group-toolbar group-rail-add-btn" data-chp-action="new-group" aria-label="New group" title="New group"><span class="material-icons-round" aria-hidden="true">add</span></button>`;
         state.tools.addEventListener('click', panelClick);
         host.innerHTML = `<section class="playlist-hero px-5 py-8 mb-0"><div class="flex items-end justify-between gap-6"><div><p class="text-[11px] uppercase tracking-[0.16em] text-secondary-text font-bold">Live Monitoring</p><h2 class="text-[30px] leading-none font-bold mt-2">Channel &amp; Playlist</h2><p class="text-sm text-secondary-text mt-2">Track YouTube channels and their linked Spotify playlists.</p></div><div class="chp-kpis flex items-center gap-4 text-xs">${['Channels', 'Active', 'Errors', 'Crawling', 'Selected'].map(key => `<span class="hero-kpi"><b data-chp-kpi="${key}">0</b><em>${key}</em></span>`).join('')}</div></div></section>
-            <div class="chp-key-warning" hidden></div><div class="chp-status" role="status" aria-live="polite"></div><div class="chp-list" aria-label="Channel list"></div>`;
+            <div class="chp-key-warning" hidden></div><div class="chp-status" role="status" aria-live="polite"></div><div class="chp-list" aria-label="Channel list"></div>
+            <footer class="chp-footer"><span class="chp-footer-stats"><span><b>Channels:</b> <span data-chp-footer="channels">0</span></span><span><b>Playlists:</b> <span data-chp-footer="playlists">0</span></span></span>
+                <span><b>Selected:</b> <span data-chp-footer="selected">0</span></span>
+                <span class="footer-selection-actions" data-chp-selection-actions hidden>
+                    <button type="button" class="footer-selection-btn" data-chp-action="clear-selection" title="Clear selection" aria-label="Clear selection"><span class="material-icons-round" aria-hidden="true">close</span></button>
+                    <button type="button" class="footer-selection-btn is-danger" data-chp-action="delete-selection" title="Delete selected rows" aria-label="Delete selected rows"><span class="material-icons-round" aria-hidden="true">delete</span></button>
+                </span></footer>`;
         host.addEventListener('click', panelClick);
         host.addEventListener('contextmenu', event => {
             const playlist = event.target.closest('[data-chp-playlist]');
@@ -113,6 +122,15 @@
         state.tools.querySelector('.chp-groups').addEventListener('change', event => { state.group = event.target.value; changeScope(); });
         host.addEventListener('click', event => {
             if (event.target.matches('.list-cover-image') && state.previewImage && event.target.src) { state.previewImage(event.target.src); return; }
+            const check = event.target.closest('[data-row-check]');
+            if (check) {
+                // Checkbox = Ctrl/Cmd-click toggle; Shift extends the range.
+                const toggle = { ctrlKey: !event.shiftKey, shiftKey: event.shiftKey };
+                const playlistRow = check.closest('[data-chp-playlist]');
+                if (playlistRow) selectRows('playlist', playlistRow.dataset.chpPlaylist, toggle);
+                else selectChannel(check.closest('[data-chp-channel]')?.dataset.chpChannel, toggle);
+                return;
+            }
             if (event.target.closest('a, button, input, select, textarea')) return;
             const playlist = event.target.closest('[data-chp-playlist]');
             if (playlist) { selectRows('playlist', playlist.dataset.chpPlaylist, event); playlist.focus(); return; }
@@ -167,14 +185,13 @@
     }
     function paintSelection() {
         if (!state.host) return;
-        for (const row of state.host.querySelectorAll('[data-chp-channel]')) {
-            const selected = state.selected.has(row.dataset.chpChannel);
+        const paint = (row, selected) => {
             row.classList.toggle('row-selected', selected); row.setAttribute('aria-selected', String(selected));
-        }
-        for (const row of state.host.querySelectorAll('[data-chp-playlist]')) {
-            const selected = state.playlistSelected.has(row.dataset.chpPlaylist);
-            row.classList.toggle('row-selected', selected); row.setAttribute('aria-selected', String(selected));
-        }
+            const check = row.querySelector(':scope > .list-asset-cell > [data-row-check]');
+            if (check) check.checked = selected;
+        };
+        for (const row of state.host.querySelectorAll('[data-chp-channel]')) paint(row, state.selected.has(row.dataset.chpChannel));
+        for (const row of state.host.querySelectorAll('[data-chp-playlist]')) paint(row, state.playlistSelected.has(row.dataset.chpPlaylist));
         renderRail();
         updateHero();
     }
@@ -197,6 +214,11 @@
             Errors: rows.filter(item => item.status === 'error').length, Crawling: rows.filter(item => item.status === 'crawling').length,
             Selected: state.selected.size };
         for (const [key, value] of Object.entries(counts)) hero.querySelector(`[data-chp-kpi="${key}"]`).textContent = number(value);
+        const selected = state.selected.size + state.playlistSelected.size;
+        const footer = { channels: rows.length, playlists: state.items.reduce((sum, item) => sum + (item.playlists || []).length, 0), selected };
+        for (const [key, value] of Object.entries(footer)) { const node = state.host.querySelector(`[data-chp-footer="${key}"]`); if (node) node.textContent = number(value); }
+        const actions = state.host.querySelector('[data-chp-selection-actions]');
+        if (actions) actions.hidden = !selected;
     }
     function notifyGroup() {
         if (!state.visible) return;
@@ -219,7 +241,7 @@
         const key = playlistKey(parent, item.id);
         return `<div data-chp-playlist="${escapeHtml(key)}" data-chp-parent="${escapeHtml(parent)}" data-chp-item="${escapeHtml(item.id)}" draggable="true" tabindex="0" aria-selected="${state.playlistSelected.has(key)}" class="custom-grid-row chp-playlist-grid px-4 py-3 bg-white/5 rounded-lg border border-transparent transition-colors group ${state.playlistSelected.has(key) ? 'row-selected' : ''}">
             <div class="meta-cell stt-cell text-secondary-text">${index + 1}</div>
-            <div class="list-asset-cell flex items-center gap-4">${image(item.image)}<div><span class="list-type-badge badge-playlist">playlist</span><h3 class="list-asset-title">${link(item.spotify_url || `https://open.spotify.com/playlist/${encodeURIComponent(item.spotify_id || '')}`, playlistTitle(item))}</h3><div class="list-asset-meta"><p class="list-asset-uri text-secondary-text">spotify:playlist:${escapeHtml(item.spotify_id || '')}</p></div></div></div>
+            <div class="list-asset-cell flex items-center gap-4"><input type="checkbox" class="row-check" data-row-check="" tabindex="-1" aria-label="Select row"${state.playlistSelected.has(key) ? ' checked=""' : ''}>${image(item.image)}<div><span class="list-type-badge badge-playlist">playlist</span><h3 class="list-asset-title">${link(item.spotify_url || `https://open.spotify.com/playlist/${encodeURIComponent(item.spotify_id || '')}`, playlistTitle(item))}</h3><div class="list-asset-meta"><p class="list-asset-uri text-secondary-text">spotify:playlist:${escapeHtml(item.spotify_id || '')}</p></div></div></div>
             ${state.renderPlaylistOwnerCell ? state.renderPlaylistOwnerCell(item) : `<div class="meta-cell playlist-owner-cell">${link(item.owner_url, item.owner_name || '-')}</div>`}
             <div class="meta-cell chp-numeric"><div class="metric-stack"><span class="metric-main">${number(item.saves ?? item.followers)}</span>${metricDelta(item.followers_delta, item.delta_days)}</div></div><div class="meta-cell chp-numeric"><div class="metric-stack"><span class="metric-main">${number(item.track_count)}</span>${metricDelta(item.track_count_delta, item.delta_days)}</div></div>${noteCell(item)}<div class="meta-cell text-right">${checked(item)}</div></div>`;
     }
@@ -228,7 +250,7 @@
         const label = `${value > 0 ? '+' : ''}${number(value)}${days == null ? '' : ` in ${number(days)} ${days === 1 ? 'day' : 'days'}`}`;
         return `<span title="${escapeHtml(label)}" class="chp-delta metric-delta ${value > 0 ? 'metric-delta-up' : value < 0 ? 'metric-delta-down' : 'metric-delta-flat'}"><span class="material-icons-round">${value > 0 ? 'north' : value < 0 ? 'south' : 'remove'}</span><span>${value > 0 ? '+' : ''}${number(value)}${days == null ? '' : `/${number(days)}`}</span></span>`;
     }
-    const canEdit = channel => String(channel.user_id) === state.userId && state.userId === String(state.getUser()?.id || '');
+    const canEdit = channel => String(channel.user_id) === state.userId && sameActor();
     function linkTarget(channelId, itemId) {
         const channel = state.items.find(row => row.id === channelId);
         const item = itemId ? (channel?.playlists || []).find(row => row.id === itemId) : null;
@@ -285,7 +307,7 @@
         const collapsed = state.collapsed.has(item.id);
         const url = item.youtube_url || (item.youtube_id ? `https://www.youtube.com/channel/${encodeURIComponent(item.youtube_id)}` : item.query);
         return `<section data-chp-block="${escapeHtml(item.id)}"><div class="list-grid"><div class="custom-grid-row chp-grid chp-channel px-4 py-3 bg-white/5 rounded-lg border border-transparent transition-colors group ${state.selected.has(item.id) ? 'row-selected' : ''}" data-chp-channel="${escapeHtml(item.id)}" draggable="true" tabindex="0" aria-selected="${state.selected.has(item.id)}">
-            <div class="meta-cell stt-cell text-secondary-text">${index + 1}</div><div class="list-asset-cell flex items-center gap-4">${image(item.image)}<div><div class="chp-channel-labels"><span class="list-type-badge badge-channel">channel</span><span class="chp-playlist-count text-secondary-text">${(item.playlists || []).length} playlists</span></div><h3 class="list-asset-title">${link(url, item.name || item.query || 'YouTube channel')}</h3><div class="list-asset-meta"><p class="list-asset-uri text-secondary-text">${escapeHtml(item.youtube_id || item.query || '')}</p></div></div></div>
+            <div class="meta-cell stt-cell text-secondary-text">${index + 1}</div><div class="list-asset-cell flex items-center gap-4"><input type="checkbox" class="row-check" data-row-check="" tabindex="-1" aria-label="Select row"${state.selected.has(item.id) ? ' checked=""' : ''}>${image(item.image)}<div><div class="chp-channel-labels"><span class="list-type-badge badge-channel">channel</span><span class="chp-playlist-count text-secondary-text">${(item.playlists || []).length} playlists</span></div><h3 class="list-asset-title">${link(url, item.name || item.query || 'YouTube channel')}</h3><div class="list-asset-meta"><p class="list-asset-uri text-secondary-text">${escapeHtml(item.youtube_id || item.query || '')}</p></div></div></div>
             <div class="meta-cell chp-owner-empty">${collapsed ? number((item.playlists || []).length) : ''}</div><div class="meta-cell"><div class="metric-stack"><span class="metric-main">${number(item.view_count)}</span></div></div><div class="meta-cell">${metricDelta(item.view_count_delta, item.delta_days) || '<span class="metric-empty">-</span>'}</div>${noteCell(item)}<div class="meta-cell text-right">${checked(item)}</div></div></div>
             <div class="chp-children"${collapsed ? ' hidden' : ''} aria-label="Playlists of ${escapeHtml(item.name || item.query)}"><div class="list-grid">${(item.playlists || []).map((playlist, position) => playlistRow(playlist, position, item.id)).join('') || '<p class="chp-empty">No linked playlists. Right-click the channel and choose Edit playlists.</p>'}</div></div></section>`;
     }
@@ -381,7 +403,7 @@
             if (generation !== state.generation || !state.visible) return;
             if (!Array.isArray(data?.items)) throw new Error('Invalid channel list response.');
             if (!state.writePending || !state.preferencesLoaded) {
-                const prefs = await api('/youtube/preferences', 'GET', undefined, controller.signal);
+                const prefs = await api(scoped('/youtube/preferences'), 'GET', undefined, controller.signal);
                 if (generation !== state.generation || !state.visible) return;
                 state.preferences = { group_order: prefs.group_order || [], channel_orders: prefs.channel_orders || {}, playlist_orders: prefs.playlist_orders || {} }; state.preferencesLoaded = true;
             }
@@ -499,6 +521,10 @@
             if (nav) nav.click(); else message('Open Settings in the app menu to configure YouTube API keys.');
         }
         else if (action === 'refresh-all') refreshAll(button);
+        else if (action === 'clear-selection') { state.selected.clear(); state.playlistSelected.clear(); paintSelection(); }
+        else if (action === 'delete-selection') {
+            if (state.playlistSelected.size && (state.focusKind === 'playlist' || !state.selected.size)) deleteSpotifyLinks(); else deleteChannels();
+        }
         else if (action === 'filter') { const rect = button.getBoundingClientRect(); openFilterMenu(rect.left, rect.bottom); }
         else if (['toggle', 'expand', 'collapse'].includes(action)) {
             const ids = action === 'toggle' ? [button.dataset.chpId] : state.items.map(item => item.id);
@@ -563,10 +589,10 @@
         invalidate();
         for (const [field, value] of Object.entries(patch)) state.preferences[field] = field === 'group_order' ? value : { ...state.preferences[field], ...value };
         state.writePending++;
-        const current = () => scope === state.scope && owner === state.userId && owner === String(state.getUser()?.id || '') && state.visible;
+        const current = () => scope === state.scope && owner === state.userId && sameActor() && state.visible;
         const job = state.preferenceQueue.then(async () => {
             if (!current()) return;
-            await api('/youtube/preferences', 'PUT', patch);
+            await api(scoped('/youtube/preferences'), 'PUT', patch);
         }).catch(async error => {
             if (!current()) return;
             state.preferencesLoaded = false;
@@ -597,7 +623,7 @@
         if (!items.length) return;
         if (!state.runPlaylistAction) { message('Playlist actions are not connected to the app.', true); return; }
         const scope = state.scope;
-        Promise.resolve().then(() => { if (scope === state.scope && state.userId === String(state.getUser()?.id || '')) return state.runPlaylistAction(action, items); }).then(() => {
+        Promise.resolve().then(() => { if (scope === state.scope && sameActor()) return state.runPlaylistAction(action, items); }).then(() => {
             if (scope === state.scope && action === 'fetch-selected') { notifyItems(); return reload(); }
         }).catch(error => { if (scope === state.scope) message(errorText(error), true); });
     }
@@ -620,7 +646,7 @@
             return false;
         }
         const scope = state.scope;
-        await api('/youtube/groups', 'PATCH', { old_name: name, new_name: next });
+        await api(scoped('/youtube/groups'), 'PATCH', { old_name: name, new_name: next });
         if (scope !== state.scope) return true;
         state.preferencesLoaded = false;
         state.groupSelected.delete(name); state.groupSelected.add(next);
@@ -632,7 +658,7 @@
         const scope = state.scope;
         for (let offset = 0; offset < names.length; offset += 500) {
             if (scope !== state.scope) return;
-            await api('/youtube/groups/delete', 'POST', { names: names.slice(offset, offset + 500) });
+            await api(scoped('/youtube/groups/delete'), 'POST', { names: names.slice(offset, offset + 500) });
         }
         if (scope !== state.scope) return;
         state.groupSelected.clear(); state.preferencesLoaded = false;
@@ -643,7 +669,7 @@
     function clearGroup() {
         const name = state.group;
         if (!name || !state.groupItems.length) return;
-        dialog('Clear Group', `<p>Delete all ${state.groupItems.length} YouTube channels in ${escapeHtml(name)}? The group and Spotify items are kept.</p>`, 'Delete channels', () => api('/youtube/groups/clear', 'POST', { name }));
+        dialog('Clear Group', `<p>Delete all ${state.groupItems.length} YouTube channels in ${escapeHtml(name)}? The group and Spotify items are kept.</p>`, 'Delete channels', () => api(scoped('/youtube/groups/clear'), 'POST', { name }));
     }
     function deleteChannels(items = selectedChannels()) {
         const ids = items.filter(item => String(item.user_id) === state.userId).map(item => item.id);
@@ -652,19 +678,19 @@
         dialog('Delete Channels', `<p>Delete ${ids.length} YouTube channels? Linked Spotify items are kept.</p>`, 'Delete channels', async () => {
             for (let offset = 0; offset < ids.length; offset += 500) {
                 if (scope !== state.scope) return;
-                await api('/youtube/channels/delete', 'POST', { channel_ids: ids.slice(offset, offset + 500) });
+                await api(scoped('/youtube/channels/delete'), 'POST', { channel_ids: ids.slice(offset, offset + 500) });
             }
         });
     }
     async function moveChannels(ids, group, owner = state.userId) {
-        if (!ids.length || owner !== state.userId || owner !== String(state.getUser()?.id || '') || !state.groups.some(row => row.name === group)) return;
+        if (!ids.length || owner !== state.userId || !sameActor() || !state.groups.some(row => row.name === group)) return;
         const scope = state.scope;
         invalidate();
         state.writePending++;
         try {
             for (let offset = 0; offset < ids.length; offset += 500) {
-                if (scope !== state.scope || owner !== String(state.getUser()?.id || '')) return;
-                await api('/youtube/channels/move', 'POST', { channel_ids: ids.slice(offset, offset + 500), group });
+                if (scope !== state.scope || owner !== state.userId || !sameActor()) return;
+                await api(scoped('/youtube/channels/move'), 'POST', { channel_ids: ids.slice(offset, offset + 500), group });
             }
             if (scope !== state.scope || owner !== state.userId) return;
             state.cut = null; state.preferencesLoaded = false;
@@ -682,8 +708,8 @@
         const items = [...new Map(selectedPlaylists().map(({ item }) => [item.id, item])).values()];
         if (!items.length || !state.runPlaylistAction) return;
         const owner = state.userId, scope = state.scope;
-        dialog('Delete Playlists', `<p>Delete ${items.length} playlists and their tracking history from Channel & Playlist, including links used by other channels? Link Checker and the playlists on Spotify are not affected.</p>`, 'Delete links', async () => {
-            if (scope !== state.scope || owner !== String(state.getUser()?.id || '')) return;
+        dialog('Delete Playlists', `<p>Delete ${items.length} playlists and their tracking history from Channel & Playlist, including links used by other channels? Spotify Checker and the playlists on Spotify are not affected.</p>`, 'Delete links', async () => {
+            if (scope !== state.scope || owner !== state.userId || !sameActor()) return;
             await state.runPlaylistAction('delete-selected-links', items);
             notifyItems(); state.playlistSelected.clear();
         });
@@ -768,7 +794,8 @@
         // Hidden rows keep their slots; only the visible subsequence changes order.
         return full.map(id => visibleSet.has(id) ? rest[position++] : id);
     }
-    function widthKey() { return `spoticheck_channel_column_widths_${state.userId}`; }
+    // Column widths are the viewer's preference, whichever owner they are looking at.
+    function widthKey() { return `spoticheck_channel_column_widths_${state.actorId}`; }
     function loadWidths() {
         state.widths = null;
         try {
@@ -781,8 +808,14 @@
     }
     function applyWidths() {
         if (!state.host) return;
-        if (state.widths) state.host.style.setProperty('--chp-columns', state.widths.map(value => `${value}px`).join(' '));
-        else state.host.style.removeProperty('--chp-columns');
+        if (state.widths) {
+            state.host.style.setProperty('--chp-columns', state.widths.map(value => `${value}px`).join(' '));
+            // Below 1100px Delta (4) and Checked (6) are hidden; keep the user's other widths.
+            state.host.style.setProperty('--chp-columns-narrow', state.widths.filter((_, index) => index !== 4 && index !== 6).map(value => `${value}px`).join(' '));
+        } else {
+            state.host.style.removeProperty('--chp-columns');
+            state.host.style.removeProperty('--chp-columns-narrow');
+        }
     }
     function saveWidths() {
         try { if (state.widths) localStorage.setItem(widthKey(), JSON.stringify(state.widths)); else localStorage.removeItem(widthKey()); } catch (_) { /* Resizing remains usable without storage. */ }
@@ -796,12 +829,14 @@
         const handle = event.target.closest('[data-chp-resize]');
         if (!handle || event.button !== 0 || !state.visible || state.modal) return;
         event.preventDefault(); event.stopImmediatePropagation(); invalidate(); cancelResize();
-        const widths = [...handle.closest('.custom-grid-row').children].map(node => Math.min(800, Math.max(48, node.getBoundingClientRect().width)));
+        // Hidden columns (narrow screens) measure 0: keep their stored width instead.
+        const widths = [...handle.closest('.custom-grid-row').children].map((node, index) => Math.min(800, Math.max(48,
+            node.getBoundingClientRect().width || state.widths?.[index] || 140)));
         const index = Number(handle.dataset.chpResize), scope = state.scope, owner = state.userId, startX = event.clientX;
         const controller = new AbortController();
         state.resize = { controller }; document.body.classList.add('chp-resizing');
         const move = event => {
-            if (scope !== state.scope || owner !== String(state.getUser()?.id || '')) { cancelResize(); return; }
+            if (scope !== state.scope || owner !== state.userId || !sameActor()) { cancelResize(); return; }
             event.preventDefault(); event.stopImmediatePropagation();
             state.widths = [...widths]; state.widths[index] = Math.min(800, Math.max(48, widths[index] + event.clientX - startX)); applyWidths();
         };
@@ -835,7 +870,7 @@
     }
     function dragTarget(event) {
         const drag = state.drag;
-        if (!drag || drag.scope !== state.scope || drag.owner !== String(state.getUser()?.id || '') || state.sort) return null;
+        if (!drag || drag.scope !== state.scope || drag.owner !== state.userId || !sameActor() || state.sort) return null;
         if (drag.kind === 'channelgroup') return event.target.closest('[data-chp-group]');
         if (drag.kind === 'channels') return event.target.closest('[data-chp-group], [data-chp-channel]');
         const row = event.target.closest('[data-chp-playlist]');
@@ -895,7 +930,7 @@
         host.addEventListener('dragend', () => { stopDrag(); if (state.pendingRender) flushRender(); });
     }
     function keyboard(event) {
-        if (!state.visible || state.host?.hidden || state.modal || state.menu || state.userId !== String(state.getUser()?.id || '') || event.target.closest('input, textarea, select, [contenteditable]:not([contenteditable="false"]), [role="dialog"], [role="alertdialog"]')) return;
+        if (!state.visible || state.host?.hidden || state.modal || state.menu || !sameActor() || event.target.closest('input, textarea, select, [contenteditable]:not([contenteditable="false"]), [role="dialog"], [role="alertdialog"]')) return;
         const focus = document.activeElement;
         if (focus?.closest('[data-chp-playlist]')) state.focusKind = 'playlist';
         else if (focus?.closest('[data-chp-channel]')) state.focusKind = 'channels';
@@ -978,7 +1013,7 @@
         });
     }
     async function openEdit(item) {
-        if (String(item.user_id) !== state.userId || state.userId !== String(state.getUser()?.id || '')) return;
+        if (String(item.user_id) !== state.userId || !sameActor()) return;
         const urls = (item.playlists || []).map(playlist => `https://open.spotify.com/playlist/${playlist.spotify_id}`).join('\n');
         const modal = dialog(`Edit playlists · ${item.name || item.query}`, `<label>Paste playlist URLs, one per line<textarea name="urls" rows="9" placeholder="https://open.spotify.com/playlist/…">${escapeHtml(urls)}</textarea></label>`, 'Save links', async node => {
             const urls = lines(node.querySelector('[name="urls"]').value);
@@ -1086,10 +1121,15 @@
             }));
         } catch (_) { if (current()) host.textContent = 'Could not load system API keys. Reopen Settings to retry.'; }
     }
+    /* Follow the signed-in account and the owner picked in the shared owner filter. */
     function syncAccountScope() {
-        const next = String(state.getUser()?.id || '');
-        if (state.userId === next) return;
-        cancelResize(); closeModal(); closeMenu(); state.userId = next; loadWidths();
+        const actor = String(state.getUser()?.id || '');
+        const owner = String(state.getOwner?.() || actor);
+        if (state.actorId === actor && state.userId === owner) return;
+        const actorChanged = state.actorId !== actor;
+        cancelResize(); closeModal(); closeMenu(); state.actorId = actor; state.userId = owner;
+        if (actorChanged) loadWidths();
+        // changeScope resets the previous owner's rows; it only fetches while the view is visible.
         return changeScope(true);
     }
     function show() {
@@ -1114,13 +1154,14 @@
     function init(options) {
         if (typeof options?.request !== 'function' || typeof options?.getUser !== 'function') throw new TypeError('init requires request and getUser functions');
         hide(); state.request = options.request; state.getUser = options.getUser; state.onItemChanged = options.onItemChanged; state.onGroupChanged = options.onGroupChanged;
+        state.getOwner = typeof options.getOwner === 'function' ? options.getOwner : null;
         state.formatChecked = typeof options.formatChecked === 'function' ? options.formatChecked : null;
         state.formatUpdatedAt = typeof options.formatUpdatedAt === 'function' ? options.formatUpdatedAt : null;
         state.renderUserCell = typeof options.renderUserCell === 'function' ? options.renderUserCell : null;
         state.renderPlaylistOwnerCell = typeof options.renderPlaylistOwnerCell === 'function' ? options.renderPlaylistOwnerCell : null;
         for (const name of ['runPlaylistAction', 'copyLinks', 'previewImage', 'exportChannels']) state[name] = typeof options[name] === 'function' ? options[name] : null;
         state.settingsGeneration++;
-        state.userId = ''; state.group = ''; state.search = ''; state.filter = 'all'; state.offset = 0;
+        state.userId = ''; state.actorId = ''; state.group = ''; state.search = ''; state.filter = 'all'; state.offset = 0;
         state.items = []; state.groupItems = []; state.groups = []; state.total = 0; state.collapsed.clear(); state.selected.clear(); state.groupSearch = '';
         state.preferencesLoaded = false; state.preferences = { group_order: [], channel_orders: {}, playlist_orders: {} };
         state.groupSelected.clear(); state.playlistSelected.clear(); state.anchors = {}; state.cut = null; state.sort = null; state.focusKind = 'channels';

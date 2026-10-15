@@ -106,6 +106,8 @@ class ChannelResponse(BaseModel):
     group: str
     created_at: datetime
     last_checked: datetime | None = None
+    user_name: str | None = None
+    manager_name: str | None = None
     note: str | None = None
     note_updated_at: datetime | None = None
     note_updated_by_name: str | None = None

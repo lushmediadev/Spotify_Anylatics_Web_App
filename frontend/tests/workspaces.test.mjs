@@ -117,7 +117,7 @@ test('sidebar and direct view navigation enforce effective assigned-user access'
   context.document.body = { classList: { toggle() {} } };
   Object.assign(context, {
     state: {}, ALL_GROUP_ID: 'all', window: { ChannelPlaylists: { hide() {}, show() { throw new Error('forbidden combined view'); }, showKeySettings() {} } },
-    updateAddLinkAvailability() {}, rebuildGroups() {}, renderList() {}, updateGroupHeader() {},
+    updateAddLinkAvailability() {}, rebuildGroups() {}, syncColumnWidthsToViewport() {}, renderList() {}, updateGroupHeader() {},
     showInstantListOrLoading() {}, getBackendListParams: () => ({}), loadData() {}, loadSettingsData() {},
     syncGroupPanel() {}, renderGroups() {},
   });
@@ -228,6 +228,7 @@ test('a periodic role refresh creates a working Users link without duplicate cli
   context.setElementDisplay = (element, mode) => { if (element) element.style.display = mode; };
   const navigation = [];
   context.switchToView = view => navigation.push(view);
+  context.setupOwnerFilter = () => {};
   const start = source.indexOf('function setupAuthUI()');
   vm.runInContext(source.slice(start, source.indexOf('\n}', start) + 2), context);
   context.setupAuthUI();

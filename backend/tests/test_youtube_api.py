@@ -78,7 +78,10 @@ class AsyncSessionAdapter:
 
 
 NAMES = ("manager", "assigned", "unassigned", "other_manager", "admin", "linked_admin")
-ALLOWED = {"manager"}
+# Data scope: admins see everyone, managers themselves plus their users, everyone else themselves.
+SCOPE = {"manager": {"manager", "assigned"}, "assigned": {"assigned"}, "unassigned": {"unassigned"},
+         "other_manager": {"other_manager"}, "admin": set(NAMES), "linked_admin": set(NAMES)}
+ALLOWED = SCOPE["manager"]
 CHANNEL_ID = "UC" + "a" * 22
 NEW_PLAYLIST = "N" * 22
 # Active admins in creation order: the only keys any refresh may use.
@@ -235,10 +238,10 @@ def playlist_url(item):
 
 
 @pytest.mark.parametrize("actor,visible", [
-    ("manager", ALLOWED), ("assigned", {"assigned"}), ("unassigned", {"unassigned"}),
+    ("manager", {"manager"}), ("assigned", {"assigned"}), ("unassigned", {"unassigned"}),
     ("admin", {"admin"}),
 ])
-def test_list_owner_scopes_and_system_key_counts(env, actor, visible):
+def test_list_defaults_to_own_workspace_and_system_key_counts(env, actor, visible):
     env.actor = actor
     response = request(env, "GET")
     assert response.status_code == 200, response.text
@@ -263,7 +266,7 @@ def test_explicit_owner_filter_intersects_manager_scope(env, owner):
 @pytest.mark.parametrize("actor,owner", [(a, o) for a in ("manager", "assigned", "admin") for o in NAMES])
 def test_detail_and_mutation_scopes(env, actor, owner):
     env.actor = actor
-    allowed = owner == actor
+    allowed = owner in SCOPE[actor]
     path = f"/channels/{env.channels[owner].id}"
     response = request(env, "GET", path)
     assert response.status_code == (200 if allowed else 404), response.text
@@ -509,10 +512,10 @@ def test_batch_refresh_is_atomic_scoped_grouped_by_owner_and_skips_claimed(env):
     assert env.scheduled == []
     assert all(row.status != "crawling" for row in rows(env, Channel))
     body = request(env, "POST", "/channels/refresh", json={}).json()
-    assert body["accepted"] == 1 and body["skipped"] == 0
+    assert body["accepted"] == len(ALLOWED) and body["skipped"] == 0
     assert {args["owner_id"] for _, args in env.scheduled} == {env.users[name].id for name in ALLOWED}
     repeat = request(env, "POST", "/channels/refresh", json={}).json()
-    assert repeat["accepted"] == 0 and repeat["skipped"] == 1 and len(env.scheduled) == 1
+    assert repeat["accepted"] == 0 and repeat["skipped"] == len(ALLOWED) and len(env.scheduled) == len(ALLOWED)
     assert all(row.group == "Shared" for row in rows(env, Channel))
 
 
@@ -1090,10 +1093,10 @@ def test_stale_spotify_recovery_only_marked_jobs_not_fresh_or_unrelated(env):
 
 
 @pytest.mark.parametrize("actor,target,allowed", [
-    ("manager", "manager", True), ("manager", "assigned", False),
+    ("manager", "manager", True), ("manager", "assigned", True),
     ("manager", "unassigned", False), ("manager", "linked_admin", False),
     ("assigned", "assigned", True), ("assigned", "manager", False),
-    ("unassigned", "unassigned", True), ("admin", "unassigned", False), ("admin", "admin", True),
+    ("unassigned", "unassigned", True), ("admin", "unassigned", True), ("admin", "admin", True),
 ])
 def test_group_create_owner_scope_and_empty_reload(env, actor, target, allowed):
     env.actor = actor
@@ -1170,7 +1173,7 @@ def test_spotify_http_owner_scope_denies_foreign_rows(env, actor, owner):
     env.actor = actor
     item = env.items[owner]
     path = f"/api/items/playlist/{item.spotify_id}"
-    own = actor == owner
+    own = owner in SCOPE[actor]
     assert env.client.get(path).status_code == (200 if own else 404)
     exported = env.client.post("/api/items/export", json={
         "action": "listview-excel", "item_ids": [str(item.id)], "deep_fetch": False,
@@ -1203,8 +1206,10 @@ def test_spotify_own_http_crud_and_jobs(env, actor):
     env.actor = actor
     own = env.items[actor]
     own_user = str(env.users[actor].id)
-    assert env.client.get("/api/items").json()["total"] == 1
-    assert env.client.get("/api/items/summary").json()["all_total"] == 1
+    visible = SCOPE[actor]
+    assert env.client.get("/api/items").json()["total"] == len(visible)
+    assert env.client.get("/api/items/summary").json()["all_total"] == len(visible)
+    assert env.client.get("/api/items", params={"user_id": own_user}).json()["total"] == 1
     moved = env.client.post("/api/items/move", json={
         "item_ids": [str(own.id)], "user_id": own_user, "group": "Own moved",
     })
@@ -1225,9 +1230,10 @@ def test_spotify_own_http_crud_and_jobs(env, actor):
         assert all(job.user_id == env.users[actor].id for job in jobs)
         assert all(session.get(Item, job.item_id).user_id == env.users[actor].id for job in jobs)
     assert env.client.delete(f"/api/items-by-id/{own.id}").status_code == 200
-    assert env.client.delete("/api/items").json()["deleted"] == 1
-    assert ids(env, Item) == {env.items[name].id for name in NAMES if name != actor}
-    assert len(rows(env, RawResponse)) == len(NAMES) - 1
+    # The new track created above replaces the deleted own item in the visible set.
+    assert env.client.delete("/api/items").json()["deleted"] == len(visible)
+    assert ids(env, Item) == {env.items[name].id for name in NAMES if name not in visible}
+    assert len(rows(env, RawResponse)) == len(NAMES) - len(visible)
 
 
 @pytest.mark.parametrize("actor", ["admin", "manager"])
@@ -1251,8 +1257,9 @@ def test_management_responses_redact_private_data_but_keep_account_access(env, a
     response = env.client.patch(f"/api/auth/users/{target}", json={"display_name": "Managed"})
     assert response.status_code == 200 and response.json()["custom_groups"] == []
     assert env.client.post(f"/api/auth/users/{target}/reset-password", json={"new_password": "pass"}).status_code == 200
-    assert env.client.get(f"/api/auth/users/{target}/groups").status_code == 403
-    assert env.client.put(f"/api/auth/users/{target}/groups", json={"groups": ["Denied"]}).status_code == 403
+    # Managing an account includes reading and organising its groups.
+    assert env.client.get(f"/api/auth/users/{target}/groups").json() == {"groups": ["private-assigned"]}
+    assert env.client.put(f"/api/auth/users/{target}/groups", json={"groups": ["Managed group"]}).status_code == 200
     mine = env.client.get("/api/auth/me/preferences")
     assert mine.status_code == 200 and mine.json()["preferences"]["row_order"] == [f"private-{actor}"]
     saved = env.client.put("/api/auth/me/preferences", json={
@@ -1261,7 +1268,7 @@ def test_management_responses_redact_private_data_but_keep_account_access(env, a
     assert saved.status_code == 200
     with Session(env.engine) as session:
         foreign = session.get(User, env.users["assigned"].id)
-        assert json.loads(foreign.custom_groups) == ["private-assigned"]
+        assert json.loads(foreign.custom_groups) == ["Managed group"]
         assert json.loads(foreign.ui_preferences)["row_order"] == ["private-assigned"]
     global_saved = env.client.put("/api/auth/admin/preferences", json={"playlist_clipboard_line_limit": 12})
     assert global_saved.status_code == (200 if actor == "admin" else 403)
@@ -1328,9 +1335,14 @@ def test_playlist_note_is_per_link_owner_only_searchable_and_survives_replace(en
     assert request(env, "PATCH", path, json={"note": "ok", "owner": "x"}).status_code == 422
     cleared = request(env, "PATCH", path, json={"note": " "})
     assert next(row for row in cleared.json()["playlists"] if row["id"] == str(item.id))["note"] is None
-    for actor in ("manager", "admin", "unassigned"):
-        env.actor = actor
-        assert request(env, "PATCH", path, json={"note": "foreign"}).status_code == 404
+    env.actor = "unassigned"
+    assert request(env, "PATCH", path, json={"note": "foreign"}).status_code == 404
+    env.actor = "manager"
+    managed = request(env, "PATCH", path, json={"note": "Set by manager"})
+    assert managed.status_code == 200, managed.text
+    assert managed.json()["playlists"][0]["note_updated_by_name"] == "Display manager"
+    assert managed.json()["user_name"] == "Display assigned" and managed.json()["manager_name"] == "Display manager"
+    assert request(env, "PATCH", path, json={"note": " "}).status_code == 200
     env.actor = "assigned"
     assert request(env, "PATCH", f"/channels/{channel.id}/playlists/{env.items['manager'].id}",
                    json={"note": "unlinked"}).status_code == 404
@@ -1385,7 +1397,7 @@ def test_channel_note_owner_patch_search_and_validation(env):
     assert unchanged["note_updated_at"] == body["note_updated_at"]
     assert request(env, "PATCH", path, json={"note": "x" * 1001}).status_code == 422
     assert request(env, "PATCH", path, json={"group": "Other"}).status_code == 422
-    env.actor = "manager"
+    env.actor = "unassigned"
     assert request(env, "PATCH", path, json={"note": "foreign"}).status_code == 404
     with Session(env.engine) as session:
         assert session.get(Channel, channel.id).note == "Main brand channel"

@@ -131,13 +131,16 @@ def test_invalid_or_inactive_manager_inheritance_fails_closed(env, change):
         assert client.patch('/api/auth/me', json={'display_name': 'Still accessible'}).status_code == 200
 
 
-def test_granted_manager_still_cannot_read_assigned_users_private_items(env):
+def test_granted_manager_reads_assigned_users_items_in_every_workspace(env):
     with Session(env.engine) as db:
         db.get(User, env.users['manager'].id).workspace_access = list(WORKSPACES)
         db.commit()
     env.actor = 'manager'
     with fresh_client(env) as client:
         assert client.get('/api/youtube/channels').status_code == 200
-        assert client.get('/api/youtube/channels?user_id=' + str(env.users['assigned'].id)).json()['total'] == 0
-        assert client.get('/api/items?user_id=' + str(env.users['assigned'].id)).json()['total'] == 0
-        assert client.get('/api/ytm/items?user_id=' + str(env.users['assigned'].id)).status_code == 403
+        assert client.get('/api/youtube/channels?user_id=' + str(env.users['assigned'].id)).json()['total'] == 1
+        assert client.get('/api/channel-playlists/items?user_id=' + str(env.users['assigned'].id)).json()['total'] == 1
+        assert client.get('/api/ytm/items?user_id=' + str(env.users['assigned'].id)).status_code == 200
+        # Another manager's user stays out of reach.
+        assert client.get('/api/youtube/channels?user_id=' + str(env.users['unassigned'].id)).json()['total'] == 0
+        assert client.get('/api/ytm/items?user_id=' + str(env.users['unassigned'].id)).status_code == 403

@@ -1,5 +1,15 @@
 # Changelog
 
+### 2026-10-14 - Owner filter, compact rows, row checkboxes, renamed workspaces
+- Renamed: YouTube Link Checker → YouTube Checker, Link Checker → Spotify Checker (navigation, headers, workspace checkboxes).
+- Changed (access): admins see and manage every account's data, managers their own plus their users', users their own — in all three workspaces (`owner_scope_condition`, YTM `visible_owner_ids`). Edits, deletes, refreshes and notes on a managed account are allowed. Replaces the 2026-10-03 own-account-only rule.
+- Added: owner filter (`frontend/owner-filter.js`, `#manager-filter-wrap`) above the group search for admins/managers, searchable, defaulting to yourself; the chosen account applies to every workspace. Owner names show as `User (Manager)` (`manager_name` added to item and channel responses).
+- API: Channel & Playlist workspace routes (`/preferences`, `/groups` rename/delete/clear, `/channels/move`, `/channels/delete`) accept `?user_id=`; `GET /youtube/channels` lists one owner (default: the actor). YTM `/auth/users/{id}/groups` works for managed owners.
+- Changed (UI): rows 76px with a 10px gap (86px virtual step), 44px covers, proportional columns; below 1100px Delta / Days and Checked are hidden. Channel & Playlist playlists are indented inside the Channel cell so every column lines up.
+- Added: a checkbox at the start of every row (toggle like Ctrl/Cmd-click, Shift for ranges) and Clear selection / Delete selected buttons next to "Selected: n" in all three footers (Channel & Playlist gains a footer).
+- Affected files: `backend/app/services/auth.py`, `backend/app/api/{items,crawl,jobs,youtube}.py`, `backend/app/ytm/**`, `backend/app/schemas/{item,youtube}.py`, `frontend/{app,channels,owner-filter,group-rail}.js`, `frontend/ytm/app.js`, CSS, `index.html`, tests.
+- Impact/Risk: High — access widening is intentional; verify manager/user assignments before deploy.
+
 ### 2026-10-14 - Ngừng hai trang cũ, bỏ chuyển hướng
 - Gỡ DNS A `ytm.jazzrelaxation.com` khỏi Cloudflare; `spotify.jazzrelaxation.com` đã không còn record. Hai domain không còn phân giải từ VPS mới.
 - Shared Caddy trên82.197.71.6 trả410/no-store cho HTTP/HTTPS của cả hai domain, không Location và không proxy tới YTM/app mới. Validate/reload thành công; không restart container hay thay đổi mail/DNS khác.

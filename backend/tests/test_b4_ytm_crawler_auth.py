@@ -322,3 +322,40 @@ def test_ytm_item_note_is_owner_only_trimmed_searchable_and_exported(env):
         assert exported["rows"][0]["note"] == saved.note
         cleared = asyncio.run(ytm_items.update_item_note(item_id, ItemNoteRequest(note="  "), db, owner))
         assert cleared.note is None
+
+
+def test_ytm_manager_sees_and_manages_assigned_users_only(env):
+    from fastapi import HTTPException
+    from app.ytm.api import items as ytm_items
+    from app.ytm.schemas.item import ItemNoteRequest
+    from app.ytm.services.auth import owner_for, visible_owner_ids
+
+    ytm_database.Base.metadata.create_all(env.engine)
+    with Session(env.engine, expire_on_commit=False) as session:
+        mirrors = {}
+        for name in ("manager", "assigned", "unassigned"):
+            shared = env.users[name]
+            mirrors[name] = YTMUser(id=str(shared.id), shared_user_id=shared.id, username=name,
+                                    email=f"{name}@internal.invalid", password_hash="x", role="user")
+        session.add_all(mirrors.values())
+        session.flush()
+        items = {name: Item(query=f"@{name}", query_type="handle", user_id=mirrors[name].id, status="active")
+                 for name in ("assigned", "unassigned")}
+        session.add_all(items.values())
+        session.commit()
+        db = AsyncSessionAdapter(session)
+        manager = mirrors["manager"]
+        assert set(asyncio.run(visible_owner_ids(db, manager))) == {str(env.users[n].id) for n in ("manager", "assigned")}
+        listed = asyncio.run(ytm_items.list_items(None, mirrors["assigned"].id, None, None, "asc", 50, 0, db, manager))
+        assert [row.id for row in listed.items] == [items["assigned"].id]
+        assert (listed.items[0].user_name, listed.items[0].manager_name) == ("Display assigned", "Display manager")
+        noted = asyncio.run(ytm_items.update_item_note(items["assigned"].id, ItemNoteRequest(note="managed"), db, manager))
+        assert noted.note == "managed"
+        with pytest.raises(HTTPException) as denied:
+            asyncio.run(ytm_items.list_items(None, mirrors["unassigned"].id, None, None, "asc", 50, 0, db, manager))
+        assert denied.value.status_code == 403
+        with pytest.raises(HTTPException):
+            asyncio.run(ytm_items.update_item_note(items["unassigned"].id, ItemNoteRequest(note="x"), db, manager))
+        with pytest.raises(HTTPException):
+            asyncio.run(owner_for(db, manager, mirrors["unassigned"].id))
+        assert asyncio.run(owner_for(db, manager, mirrors["assigned"].id)) == mirrors["assigned"].id

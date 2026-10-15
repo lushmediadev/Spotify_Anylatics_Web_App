@@ -1,4 +1,4 @@
-/* Shared group rail used by Link Checker, Channel & Playlist and YouTube Link Checker.
+/* Shared group rail used by Spotify Checker, Channel & Playlist and YouTube Checker.
  * One markup, one inline editor, one confirm dialog and one set of mouse/keyboard rules:
  * click selects, double-click/F2 renames inline, Delete/trash/context menu deletes after confirmation.
  */

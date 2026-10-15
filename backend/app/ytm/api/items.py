@@ -17,7 +17,7 @@ from app.ytm.models.item import Item
 from app.ytm.models.user import User
 from app.ytm.schemas.item import (ItemGroupSummary, ItemIdsResponse, ItemListResponse, ItemMoveRequest, ItemNoteRequest,
     ItemResponse, ItemSummaryResponse)
-from app.ytm.services.auth import get_current_user
+from app.ytm.services.auth import get_current_user, owner_labels, visible_owner_ids
 from app.ytm.utils.youtube_urls import build_channel_url
 
 router = APIRouter()
@@ -28,50 +28,26 @@ def _plain_query_value(value, default=None):
 
 
 async def _visible_user_ids(db: AsyncSession, actor: User, requested_user_id: str | None = None) -> list[str]:
-    if actor.role == "admin":
-        if requested_user_id:
-            return [requested_user_id]
-        result = await db.execute(select(User.id))
-        return [row[0] for row in result.all()]
-    if actor.role == "manager":
-        if requested_user_id:
-            result = await db.execute(
-                select(User).where(or_(User.id == actor.id, User.manager_id == actor.id), User.id == requested_user_id)
-            )
-            if not result.scalar_one_or_none():
-                raise HTTPException(status_code=403, detail="Not authorized for this user")
-            return [requested_user_id]
-        result = await db.execute(select(User.id).where(or_(User.id == actor.id, User.manager_id == actor.id)))
-        return [row[0] for row in result.all()]
-    if requested_user_id and requested_user_id != actor.id:
-        raise HTTPException(status_code=403, detail="Not authorized for this user")
-    return [actor.id]
+    visible = await visible_owner_ids(db, actor)
+    if requested_user_id:
+        if str(requested_user_id) not in visible:
+            raise HTTPException(status_code=403, detail="Not authorized for this user")
+        return [str(requested_user_id)]
+    return visible
 
 
-async def _user_map(db: AsyncSession, user_ids: list[str]) -> dict[str, User]:
-    if not user_ids:
-        return {}
-    clean_ids = list({str(user_id) for user_id in user_ids if user_id})
-    result = await db.execute(select(User).where(User.id.in_(clean_ids)))
-    users = {user.id: user for user in result.scalars().all()}
-    manager_ids = list({user.manager_id for user in users.values() if user.manager_id and user.manager_id not in users})
-    if manager_ids:
-        manager_result = await db.execute(select(User).where(User.id.in_(manager_ids)))
-        users.update({user.id: user for user in manager_result.scalars().all()})
-    return users
+async def _user_map(db: AsyncSession, user_ids: list[str]) -> dict[str, dict]:
+    return await owner_labels(db, user_ids)
 
 
 def _format_added_date(dt: datetime | None) -> str | None:
     return dt.strftime("%d/%m %H:%M") if dt else None
 
 
-def _response(item: Item, user: User | None = None, users_by_id: dict[str, User] | None = None) -> ItemResponse:
+def _response(item: Item, user: dict | None = None, users_by_id: dict | None = None) -> ItemResponse:
     url = build_channel_url(item.youtube_id, item.query if item.query_type == "url" else None)
-    user_name = user.username if user else None
-    manager_name = None
-    if user and user.manager_id and users_by_id:
-        manager = users_by_id.get(user.manager_id)
-        manager_name = manager.username if manager else None
+    user_name = user["name"] if user else None
+    manager_name = user["manager"] if user else None
     return ItemResponse(
         id=item.id,
         youtube_id=item.youtube_id,
@@ -102,7 +78,7 @@ def _response(item: Item, user: User | None = None, users_by_id: dict[str, User]
         user_id=item.user_id,
         user_name=user_name,
         manager_name=manager_name,
-        user_avatar=user.avatar if user else None,
+        user_avatar=user["avatar"] if user else None,
         added_date=_format_added_date(item.created_at),
         last_checked=item.last_checked,
         created_at=item.created_at,
@@ -339,8 +315,9 @@ async def update_item_note(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    # Notes are owner-only, like every other write in this workspace.
-    result = await db.execute(select(Item).where(Item.id == item_id, Item.user_id == current_user.id))
+    # Owners, their manager and admins may edit notes, like every other write here.
+    visible_ids = await _visible_user_ids(db, current_user)
+    result = await db.execute(select(Item).where(Item.id == item_id, Item.user_id.in_(visible_ids)))
     item = result.scalar_one_or_none()
     if not item:
         raise HTTPException(status_code=404, detail="Item not found")

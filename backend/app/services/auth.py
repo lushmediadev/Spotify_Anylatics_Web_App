@@ -127,7 +127,7 @@ async def get_manager_or_admin_user(
 
 
 def user_scope_condition(actor: User):
-    """Account-management scope only; do not use this for private data."""
+    """Accounts the actor manages: admin -> everyone, manager -> self + own users, user -> self."""
     if actor.role == "admin":
         return true()
     if actor.role == "manager":
@@ -136,7 +136,11 @@ def user_scope_condition(actor: User):
 
 
 def owner_scope_condition(actor: User, owner_column):
-    """Data is private to its owner, independently of account-management roles."""
+    """Data an actor may view and manage: their own plus that of every account they manage."""
+    if actor.role == "admin":
+        return true()
+    if actor.role == "manager":
+        return owner_column.in_(select(User.id).where(user_scope_condition(actor)))
     return owner_column == actor.id
 
 
@@ -160,7 +164,8 @@ async def require_user_access(
         actor.role == "manager" and target.role == "user"
         and str(target.manager_id) == str(actor.id)
     )
-    allowed = (actor.role == "admin" or assigned) if management else own
+    # Data access covers the actor's own account; management rights cover managed accounts too.
+    allowed = actor.role == "admin" or assigned or (own and not management)
     if not allowed:
         raise HTTPException(status_code=403, detail="Not authorized to access this user")
     return target

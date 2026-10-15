@@ -75,7 +75,7 @@ def test_copy_legacy_snapshots_order_idempotently_and_delete_only_independent_pl
         assert session.scalars(select(RawResponse).where(RawResponse.spotify_id == "L" * 22)).one() is not None
 
 
-def test_manager_only_ytm_own_resources_no_key_access_and_no_import(env, monkeypatch):
+def test_manager_only_ytm_resources_no_key_access_and_no_import(env, monkeypatch):
     monkeypatch.setattr(ytm_crawl, 'schedule_crawl_jobs', lambda jobs: None)
     env.actor = 'manager'
     with full_client(env) as client:
@@ -93,7 +93,9 @@ def test_manager_only_ytm_own_resources_no_key_access_and_no_import(env, monkeyp
         assert client.put('/api/ytm/auth/me/groups', json={'groups': ['YTM Empty']}).status_code == 200
         assert client.get('/api/ytm/auth/me/groups').json()['groups'] == ['YTM Empty']
         env.actor = 'admin'
-        assert client.get('/api/ytm/items').json()['total'] == 0
+        assert client.get('/api/ytm/items').json()['total'] == 1  # admins see every account's channels
+        assert client.get('/api/ytm/items?user_id=' + str(env.users['admin'].id)).json()['total'] == 0
+        assert client.get('/api/ytm/auth/users/' + str(env.users['manager'].id) + '/groups').json()['groups'] == ['YTM Empty']
         assert client.get('/api/ytm/auth/me/groups').json()['groups'] == []
         assert client.get('/api/youtube/channels').json()['total'] > 0
 

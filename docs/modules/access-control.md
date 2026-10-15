@@ -14,9 +14,10 @@
 - `backend/app/services/workspace_access.py`: canonical workspace grants, dynamic inheritance và HTTP authorization.
 
 ## Invariants
-- Resource data luôn own-account-only; có workspace không cho phép xem dữ liệu của user được quản lý. Admin và user không thuộc manager có cả ba workspace. Keys/profile/settings dùng chung.
+- Phạm vi dữ liệu (`owner_scope_condition`, YTM `visible_owner_ids`): admin xem/sửa/xóa/refresh dữ liệu của mọi tài khoản; manager của chính mình và của user (role `user`) có `manager_id` = manager đó; user chỉ của mình. Áp dụng như nhau cho YouTube Checker, Channel & Playlist và Spotify Checker. Admin và user không thuộc manager có cả ba workspace. Keys/profile/settings dùng chung.
+- UI: bộ lọc owner (`frontend/owner-filter.js`, `#manager-filter-wrap` trong group panel) chỉ hiện cho admin/manager, mặc định là chính mình, chọn một tài khoản áp cho cả ba workspace. Mọi lệnh ghi gửi kèm owner (`user_id` / `target_user_id`) để không bao giờ tác động lên toàn bộ phạm vi khi xem một tài khoản. Tên hiển thị `User (Manager)`.
 - Admin quản lý mọi tài khoản và global preferences. Manager có Users cùng các workspace được admin gán; user dưới quyền kế thừa workspace hiện tại của manager, không có bản quyền riêng để manager tự thay đổi.
-- ID/label workspace: `youtube` = Youtube/YouTube Link Checker; `spotify` = Spotify/Link Checker; `youtube-spotify` = Youtube-Spotify/Channel & Playlist riêng. Checkbox có thể chọn nhiều, ít nhất một.
+- ID/label workspace: `youtube` = YouTube Checker; `spotify` = Spotify Checker; `youtube-spotify` = Channel & Playlist. Checkbox có thể chọn nhiều, ít nhất một.
 - `User.workspace_access` là nullable JSON cho manager; API request/response thêm `workspaces` array. Manager cũ/null mặc định Youtube; admin/standalone user giữ cả ba. Assigned user resolve từ manager mỗi request, manager invalid/inactive fail closed với [] và chỉ còn shared profile/settings.
 - Chỉ admin đặt workspace khi create/update role manager. Manager/user gửi field này bị chặn; field omitted giữ nguyên cấu hình, null/empty/unknown không được dùng để mở rộng quyền. API gates và navigation dùng cùng effective response.
 - Manager tạo duy nhất role user; backend tự gắn manager_id của manager đang đăng nhập. Admin thấy và sửa/reset-password được tất cả tài khoản; manager chỉ sửa/reset-password/activate/delete user được gắn manager_id của mình. Không nhân bản user sang một danh sách riêng.

@@ -9,7 +9,7 @@ from app.ytm.models.crawl_job import CrawlJob
 from app.ytm.models.item import Item
 from app.ytm.models.user import User
 from app.ytm.schemas.crawl import CrawlBatchRequest, CrawlBatchResponse, CrawlRequest, CrawlResponse, CrawlScopeRequest
-from app.ytm.services.auth import get_current_user
+from app.ytm.services.auth import get_current_user, owner_for, visible_owner_ids
 from app.ytm.services.crawler import schedule_crawl_jobs
 from app.ytm.utils.youtube_urls import build_channel_url, parse_youtube_channel_url
 
@@ -17,21 +17,7 @@ router = APIRouter()
 
 
 async def _target_user_id(db: AsyncSession, actor: User, requested_user_id: str | None) -> str:
-    if not requested_user_id:
-        return actor.id
-    if actor.role == "admin":
-        target = await db.get(User, requested_user_id)
-        if not target:
-            raise HTTPException(status_code=404, detail="Target user not found")
-        return target.id
-    if actor.role == "manager":
-        target = await db.get(User, requested_user_id)
-        if not target or not (target.id == actor.id or target.manager_id == actor.id):
-            raise HTTPException(status_code=403, detail="Not authorized to set target user")
-        return target.id
-    if requested_user_id != actor.id:
-        raise HTTPException(status_code=403, detail="Not authorized to set target user")
-    return actor.id
+    return await owner_for(db, actor, requested_user_id)
 
 
 async def _existing_item(db: AsyncSession, target_user_id: str, query_type: str, query: str) -> Item | None:
@@ -46,17 +32,8 @@ async def _existing_item(db: AsyncSession, target_user_id: str, query_type: str,
 
 
 async def _ensure_item_access(db: AsyncSession, actor: User, item: Item) -> None:
-    if actor.role == "admin":
-        return
-    if actor.role == "manager":
-        allowed = await db.execute(
-            select(User.id).where(or_(User.id == actor.id, User.manager_id == actor.id))
-        )
-        if item.user_id in {row[0] for row in allowed.all()}:
-            return
-    elif item.user_id == actor.id:
-        return
-    raise HTTPException(status_code=403, detail="Not authorized to refresh this item")
+    if item.user_id not in await visible_owner_ids(db, actor):
+        raise HTTPException(status_code=403, detail="Not authorized to refresh this item")
 
 
 def _plain_query_value(value, default=None):
@@ -76,24 +53,12 @@ def _item_matches_search(item: Item, search: str | None) -> bool:
 
 
 async def _visible_user_ids(db: AsyncSession, actor: User, requested_user_id: str | None = None) -> list[str]:
-    if actor.role == "admin":
-        if requested_user_id:
-            return [requested_user_id]
-        result = await db.execute(select(User.id))
-        return [row[0] for row in result.all()]
-    if actor.role == "manager":
-        if requested_user_id:
-            result = await db.execute(
-                select(User).where(or_(User.id == actor.id, User.manager_id == actor.id), User.id == requested_user_id)
-            )
-            if not result.scalar_one_or_none():
-                raise HTTPException(status_code=403, detail="Not authorized for this user")
-            return [requested_user_id]
-        result = await db.execute(select(User.id).where(or_(User.id == actor.id, User.manager_id == actor.id)))
-        return [row[0] for row in result.all()]
-    if requested_user_id and requested_user_id != actor.id:
-        raise HTTPException(status_code=403, detail="Not authorized for this user")
-    return [actor.id]
+    visible = await visible_owner_ids(db, actor)
+    if requested_user_id:
+        if str(requested_user_id) not in visible:
+            raise HTTPException(status_code=403, detail="Not authorized for this user")
+        return [str(requested_user_id)]
+    return visible
 
 
 async def _create_refresh_jobs(

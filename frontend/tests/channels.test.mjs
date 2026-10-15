@@ -85,8 +85,10 @@ test('ChannelPlaylists isolated browser behavior', async t => {
                 onGroupChanged: name => { (window.groupChanges ||= []).push(name); },
                 onItemChanged: () => { window.itemChangeCount = (window.itemChangeCount || 0) + 1; },
                 request: (requestPath, options) => {
-                    window.calls.push({ path: requestPath, ...options });
-                    return window.handleRequest(requestPath, options);
+                    // Workspace writes carry ?user_id=<owner>; keep paths comparable and record the owner.
+                    const path = requestPath.startsWith('/youtube/channels?') ? requestPath : requestPath.replace(/[?&]user_id=[^&]*$/, '');
+                    window.calls.push({ path, owner: new URL(requestPath, 'https://local').searchParams.get('user_id'), ...options });
+                    return window.handleRequest(path, options);
                 },
             });
         });
@@ -160,7 +162,11 @@ test('ChannelPlaylists isolated browser behavior', async t => {
             };
             window.options = {
                 getUser: () => window.actor,
-                request: (path, options) => { window.calls.push({ path, ...options }); return window.handleRequest(path, options); },
+                request: (requestPath, options) => {
+                    const path = requestPath.startsWith('/youtube/channels?') ? requestPath : requestPath.replace(/[?&]user_id=[^&]*$/, '');
+                    window.calls.push({ path, owner: new URL(requestPath, 'https://local').searchParams.get('user_id'), ...options });
+                    return window.handleRequest(path, options);
+                },
                 runPlaylistAction: async (action, items) => { window.actions.push({ action, items: structuredClone(items) }); },
                 copyLinks: async text => { window.copies.push(text); },
                 previewImage: url => { window.previews.push(url); },
@@ -724,16 +730,19 @@ test('ChannelPlaylists isolated browser behavior', async t => {
             assert.ok(await page.locator('.chp-numeric').first().evaluate(node => {
                 const next = node.nextElementSibling.getBoundingClientRect();
                 const delta = node.querySelector('.chp-delta').getBoundingClientRect();
-                return delta.right < next.left && node.getBoundingClientRect().width >= 150;
+                return delta.right < next.left && node.getBoundingClientRect().width >= 96;
             }));
             await page.setViewportSize({ width: 997, height: 900 });
-            assert.equal(await page.locator('.chp-list').evaluate(node => node.scrollWidth > node.clientWidth), true);
+            // Below 1100px Delta / Days and Checked are hidden, so the list fits without horizontal scroll.
+            assert.equal(await page.locator('.chp-list').evaluate(node => node.scrollWidth > node.clientWidth), false);
+            assert.equal(await page.locator('.chp-list > .list-head .head-cell').nth(4).isVisible(), false);
+            assert.equal(await page.locator('.chp-list > .list-head .head-cell').nth(6).isVisible(), false);
             await page.locator('[data-chp-group="Nhóm Việt"]').click();
             assert.equal(await page.locator('[data-chp-group="Nhóm Việt"]').getAttribute('aria-pressed'), 'true');
         } finally { await page.close(); }
     });
 
-    await t.test('paste-only edit is prefilled and never reads Link Checker groups or items', async () => {
+    await t.test('paste-only edit is prefilled and never reads Spotify Checker groups or items', async () => {
         const page = await fixture();
         try {
             await page.evaluate(() => ChannelPlaylists.show());
@@ -839,7 +848,7 @@ test('ChannelPlaylists isolated browser behavior', async t => {
             assert.equal(await page.locator('[data-command="unlink"]').count(), 0);
             assert.equal(await page.locator('[data-command="delete-link"] .material-icons-round').textContent(), 'delete_forever');
             await page.locator('[data-command="delete-link"]').click();
-            assert.match(await page.locator('.chp-dialog-body').textContent(), /Link Checker.*not affected/);
+            assert.match(await page.locator('.chp-dialog-body').textContent(), /Spotify Checker.*not affected/);
             assert.equal(await page.evaluate(() => window.actions.some(call => call.action === 'delete-selected-links')), false);
             await page.getByRole('button', { name: 'Cancel', exact: true }).click();
             await page.locator('[data-chp-playlist="c1:p1"]').click({ button: 'right' });
@@ -913,9 +922,9 @@ test('ChannelPlaylists isolated browser behavior', async t => {
             assert.equal(await page.locator('.playlist-hero').evaluate(node => getComputedStyle(node).minHeight), '230px');
             assert.equal(await page.locator('.playlist-hero h2').evaluate(node => getComputedStyle(node).fontSize), '52px');
             assert.deepEqual(await page.locator('.chp-channel .list-asset-title').evaluate(node => [getComputedStyle(node).fontSize, getComputedStyle(node).fontWeight]), ['15px', '700']);
-            // Same row geometry as Link Checker / YouTube Link Checker.
-            assert.equal(await page.locator('.chp-channel .list-cover-image').evaluate(node => getComputedStyle(node).width), '70px');
-            assert.equal(await page.locator('.chp-children .list-cover-image').evaluate(node => getComputedStyle(node).width), '70px');
+            // Same row geometry as Spotify Checker / YouTube Checker.
+            assert.equal(await page.locator('.chp-channel .list-cover-image').evaluate(node => getComputedStyle(node).width), '44px');
+            assert.equal(await page.locator('.chp-children .list-cover-image').evaluate(node => getComputedStyle(node).width), '44px');
             assert.equal(await page.locator('.chp-channel .status-dot.active').count(), 1);
             assert.equal(await page.locator('.chp-children .list-columns-head').count(), 0);
             assert.equal(await page.locator('.chp-list > .list-head .head-cell-label').allTextContents().then(labels => labels.join('|')), 'STT|Channel|Owner|View|Delta / Days|Note|Checked');
@@ -932,8 +941,8 @@ test('ChannelPlaylists isolated browser behavior', async t => {
             const bounds = await page.locator('.chp-channel-labels').evaluate(node => [...node.children].map(child => child.getBoundingClientRect().toJSON()));
             assert.ok(Math.abs(bounds[0].top - bounds[1].top) < 3);
             assert.ok(bounds[1].left > bounds[0].right);
-            assert.equal(await page.locator('.chp-channel').evaluate(node => getComputedStyle(node).minHeight), '104px');
-            assert.equal(await page.locator('.chp-playlist-grid').evaluate(node => getComputedStyle(node).minHeight), '104px');
+            assert.equal(await page.locator('.chp-channel').evaluate(node => getComputedStyle(node).minHeight), '76px');
+            assert.equal(await page.locator('.chp-playlist-grid').evaluate(node => getComputedStyle(node).minHeight), '76px');
             assert.equal(await page.locator('.chp-list > .list-head .head-cell').first().evaluate(node => getComputedStyle(node).minHeight), '46px');
         } finally { await page.close(); }
     });
@@ -1018,6 +1027,9 @@ test('ChannelPlaylists isolated browser behavior', async t => {
             await page.locator('.chp-channel').click({ button: 'right' });
             await page.locator('[data-menu="expand"]').click();
             assert.equal(await page.locator('.chp-children').isVisible(), true);
+            // The Checked column (with its filter button) is hidden below 1100px; the row menu keeps the filters.
+            assert.equal(await page.locator('[data-chp-action="filter"]').isVisible(), false);
+            await page.setViewportSize({ width: 1280, height: 900 });
             await page.locator('[data-chp-action="filter"]').click();
             await page.locator('[data-filter="changed"]').click();
             await page.waitForFunction(() => window.calls.some(call => call.path.includes('filter=changed')));

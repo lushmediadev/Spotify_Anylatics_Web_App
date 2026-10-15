@@ -73,7 +73,7 @@ h3 {
 :root {
   --meta-gap: 12px;
   --stt-col: 52px;
-  --asset-col: 420px;
+  --asset-col: 340px;
   --owner-col: 160px;
   --playlist-owner-col: 160px;
   --playlist-save-col: 92px;
@@ -835,9 +835,23 @@ h3 {
   overflow: hidden;
 }
 
-/* Same row height in every workspace (matches the virtual-list row height). */
-.list-grid > .custom-grid-row {
-  min-height: 104px;
+/* Compact rows in every workspace: 76px tall + 10px gap = the 86px virtual-list step. */
+.list-grid > .custom-grid-row,
+.list-grid > .virtual-row-placeholder {
+  min-height: 76px;
+  padding-top: 8px;
+  padding-bottom: 8px;
+  margin-bottom: 10px;
+}
+
+/* Row checkbox: toggles one row like Ctrl/Cmd-click, Shift-click selects a range. */
+.row-check {
+  flex: 0 0 16px;
+  width: 16px;
+  height: 16px;
+  margin: 0;
+  accent-color: #1db954;
+  cursor: pointer;
 }
 
 .list-grid > .custom-grid-row:hover {
@@ -863,13 +877,13 @@ h3 {
 
 /* List row sizing/typography locked to final3.html */
 .list-cover-image {
-  width: 70px;
-  min-width: 70px;
-  max-width: 70px;
-  height: 70px;
-  min-height: 70px;
-  max-height: 70px;
-  flex: 0 0 70px;
+  width: 44px;
+  min-width: 44px;
+  max-width: 44px;
+  height: 44px;
+  min-height: 44px;
+  max-height: 44px;
+  flex: 0 0 44px;
   border-radius: 0.5rem;
   object-fit: cover;
   box-shadow: none;
@@ -1046,10 +1060,10 @@ h3 {
 
 .list-cover-trigger {
   display: inline-flex;
-  flex: 0 0 70px;
-  width: 70px;
-  min-width: 70px;
-  height: 70px;
+  flex: 0 0 44px;
+  width: 44px;
+  min-width: 44px;
+  height: 44px;
   padding: 0;
   border: none;
   background: transparent;
@@ -1709,20 +1723,32 @@ h3 {
   }
 }
 
+@media (max-width: 1099.98px) {
+  .meta-grid {
+    grid-template-columns:
+      var(--owner-col) var(--playlist-owner-col) var(--playlist-save-col)
+      var(--playlist-count-col) var(--album-count-col) var(--artist-followers-col)
+      var(--artist-listeners-col) var(--track-views-col);
+  }
+  .meta-grid > :nth-child(9) {
+    display: none;
+  }
+}
+
 @media (max-width: 1024px) {
   .meta-grid {
     grid-template-columns:
       var(--owner-col) var(--playlist-owner-col) var(--playlist-save-col)
-      var(--artist-followers-col) var(--track-views-col) var(--checked-col);
+      var(--artist-followers-col) var(--track-views-col);
     min-width: calc(
       var(--owner-col) + var(--playlist-owner-col) + var(--playlist-save-col) +
-        var(--artist-followers-col) + var(--track-views-col) +
-        var(--checked-col) + (5 * var(--meta-gap))
+        var(--artist-followers-col) + var(--track-views-col) + (4 * var(--meta-gap))
     );
   }
   .meta-grid > :nth-child(4),
   .meta-grid > :nth-child(5),
-  .meta-grid > :nth-child(7) {
+  .meta-grid > :nth-child(7),
+  .meta-grid > :nth-child(9) {
     display: none;
   }
 }
@@ -2208,3 +2234,22 @@ html[data-theme="light"] body .text-red-300,
 html[data-theme="light"] body .text-red-400 { color: #b91c1c; }
 html[data-theme="light"] body .text-blue-400 { color: #1d4ed8; }
 html[data-theme="light"] body .text-yellow-500 { color: #a16207; }
+
+/* Footer selection actions (shown next to "Selected: n" while rows are selected). */
+.footer-selection-actions { display: inline-flex; align-items: center; gap: 4px; }
+.footer-selection-actions[hidden] { display: none; }
+.footer-selection-btn {
+  display: inline-grid;
+  place-items: center;
+  width: 26px;
+  height: 26px;
+  padding: 0;
+  border: 1px solid transparent;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+}
+.footer-selection-btn .material-icons-round { font-size: 17px; }
+.footer-selection-btn:hover { background: rgba(0, 0, 0, .06); color: var(--text-main); }
+.footer-selection-btn.is-danger:hover { background: rgba(198, 40, 40, .1); color: #c62828; }

@@ -27,7 +27,8 @@ const CONFIG = {
     BACKGROUND_PAGE_WARM_DELAY: 120,
     BACKGROUND_PAGE_WARM_PAUSE: 35,
     VIRTUAL_PREFETCH_PAGES: 1,
-    VIRTUAL_ROW_HEIGHT: 104,
+    ROW_HEIGHT: 76,
+    VIRTUAL_ROW_HEIGHT: 86,
     VIRTUAL_OVERSCAN_ROWS: 8,
 };
 const GROUP_STORAGE_KEY = 'spoticheck_custom_groups_v1';
@@ -39,7 +40,7 @@ const RECOVERY_GROUP_LABEL = 'Ungrouped';
 const GROUP_SELECT_ALL = '__all__';
 const DEFAULT_COLUMN_WIDTHS = Object.freeze({
     stt: 52,
-    asset: 420,
+    asset: 340,
     owner: 160,
     playlistOwner: 160,
     playlistSaves: 92,
@@ -52,7 +53,7 @@ const DEFAULT_COLUMN_WIDTHS = Object.freeze({
 });
 const MIN_COLUMN_WIDTHS = Object.freeze({
     stt: 32,
-    asset: 320,
+    asset: 240,
     owner: 132,
     playlistOwner: 132,
     playlistSaves: 84,
@@ -156,9 +157,9 @@ function canManageUsers(user = getAuthUser()) {
 }
 
 const WORKSPACE_OPTIONS = [
-    { value: 'youtube', label: 'Youtube', view: 'ytm', nav: 'nav-ytm' },
-    { value: 'spotify', label: 'Spotify', view: 'linkchecker', nav: 'nav-links' },
-    { value: 'youtube-spotify', label: 'Youtube-Spotify', view: 'channels', nav: 'nav-channels' },
+    { value: 'youtube', label: 'YouTube Checker', view: 'ytm', nav: 'nav-ytm' },
+    { value: 'spotify', label: 'Spotify Checker', view: 'linkchecker', nav: 'nav-links' },
+    { value: 'youtube-spotify', label: 'Channel & Playlist', view: 'channels', nav: 'nav-channels' },
 ];
 
 function getEffectiveWorkspaces(user = getAuthUser()) {
@@ -360,6 +361,7 @@ function setupAuthUI() {
         switchToView('users');
     };
     updateWorkspaceNavigation(state.currentView);
+    setupOwnerFilter();
 }
 
 
@@ -1263,7 +1265,7 @@ function getTitleToneClass(type) {
 }
 
 function getItemUserName(item) {
-    if (item.user_name) return item.user_name;
+    if (item.user_name) return window.OwnerFilterUI?.ownerLabel(item.user_name, item.manager_name) || item.user_name;
     const currentUser = getAuthUser();
     if (currentUser && String(currentUser.id || '') === String(item.user_id || '')) {
         return currentUser.display_name || currentUser.username || 'ADMIN';
@@ -1779,39 +1781,46 @@ function getGroupsFromUserRecord(userRecord) {
     return [];
 }
 
+/* state.customGroups always holds the viewed owner's groups; only one's own are cached locally. */
 function getOwnerCustomGroups(ownerUserId) {
-    const ownId = String(getAuthUser()?.id || '');
-    if (ownerUserId && String(ownerUserId) !== ownId) return [];
+    const viewId = String(getViewOwnerId() || '');
+    if (ownerUserId && String(ownerUserId) !== viewId) return [];
     return (state.customGroups || []).map(normalizeStoredGroupName).filter(Boolean);
 }
 
 function setOwnerCustomGroups(ownerUserId, groups) {
-    const ownId = String(getAuthUser()?.id || '');
-    if (!ownId || (ownerUserId && String(ownerUserId) !== ownId)) return [];
+    const viewId = String(getViewOwnerId() || '');
+    if (!viewId || (ownerUserId && String(ownerUserId) !== viewId)) return [];
     const cleaned = Array.from(new Set((groups || []).map(normalizeStoredGroupName).filter(Boolean)));
     state.customGroups = cleaned;
-    localStorage.setItem(getUserGroupStorageKey(), JSON.stringify(cleaned));
+    if (isViewingOwnWorkspace()) localStorage.setItem(getUserGroupStorageKey(), JSON.stringify(cleaned));
     return cleaned;
+}
+
+function ownerGroupsPath(ownerId) {
+    return ownerId && ownerId !== String(getAuthUser()?.id || '')
+        ? '/auth/users/' + encodeURIComponent(ownerId) + '/groups'
+        : '/auth/me/groups';
 }
 
 async function syncGroupsFromServer(targetUserId) {
     try {
         const token = getAuthToken();
-        const ownId = String(getAuthUser()?.id || '');
-        if (!token || !ownId || (targetUserId && String(targetUserId) !== ownId)) return;
-        const res = await fetch(CONFIG.API_BASE + '/auth/me/groups', {
+        const ownerId = String(getViewOwnerId() || '');
+        if (!token || !ownerId || (targetUserId && String(targetUserId) !== ownerId)) return;
+        const res = await fetch(CONFIG.API_BASE + ownerGroupsPath(ownerId), {
             headers: { 'Authorization': 'Bearer ' + token },
         });
         if (!res.ok) return;
         const data = await res.json();
-        if (String(getAuthUser()?.id || '') !== ownId) return;
+        if (String(getViewOwnerId() || '') !== ownerId) return;
         const serverGroups = (data.groups || []).map(normalizeStoredGroupName).filter(Boolean);
         const localGroups = (state.customGroups || []).map(normalizeStoredGroupName).filter(Boolean);
-        if (!serverGroups.length && localGroups.length) {
+        if (!serverGroups.length && localGroups.length && isViewingOwnWorkspace()) {
             state.customGroups = localGroups;
             await saveGroupsToServer(localGroups);
         } else {
-            setOwnerCustomGroups(ownId, serverGroups);
+            setOwnerCustomGroups(ownerId, serverGroups);
         }
         syncGroupUI(true);
     } catch (err) {
@@ -1822,17 +1831,17 @@ async function syncGroupsFromServer(targetUserId) {
 async function saveGroupsToServer(groups, targetUserId) {
     try {
         const token = getAuthToken();
-        const ownId = String(getAuthUser()?.id || '');
-        if (!token || !ownId || (targetUserId && String(targetUserId) !== ownId)) return;
-        const res = await fetch(CONFIG.API_BASE + '/auth/me/groups', {
+        const ownerId = String(getViewOwnerId() || '');
+        if (!token || !ownerId || (targetUserId && String(targetUserId) !== ownerId)) return;
+        const res = await fetch(CONFIG.API_BASE + ownerGroupsPath(ownerId), {
             method: 'PUT',
             headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + token },
             body: JSON.stringify({ groups: groups || state.customGroups }),
         });
         if (!res.ok) throw new Error('HTTP ' + res.status);
         const payload = await res.json().catch(() => null);
-        if (String(getAuthUser()?.id || '') !== ownId) return;
-        if (payload && Array.isArray(payload.groups)) setOwnerCustomGroups(ownId, payload.groups);
+        if (String(getViewOwnerId() || '') !== ownerId) return;
+        if (payload && Array.isArray(payload.groups)) setOwnerCustomGroups(ownerId, payload.groups);
     } catch (err) {
         console.warn('[Groups Sync] Failed to save groups:', err.message);
     }
@@ -1845,7 +1854,7 @@ function saveCustomGroups() {
             .filter(Boolean)
     ));
     state.customGroups = cleaned;
-    localStorage.setItem(getUserGroupStorageKey(), JSON.stringify(cleaned));
+    if (isViewingOwnWorkspace()) localStorage.setItem(getUserGroupStorageKey(), JSON.stringify(cleaned));
     saveGroupsToServer(cleaned);
 }
 
@@ -2464,16 +2473,26 @@ function getCurrentUserLabel() {
     return currentUser?.display_name || currentUser?.username || 'Admin';
 }
 
+/* The account whose workspace is shown: the signed-in user, or the owner picked in the owner filter. */
+function getViewOwnerId() {
+    const currentUser = getAuthUser();
+    const ownId = currentUser?.id ? String(currentUser.id) : '';
+    if (!canManageUsers(currentUser)) return ownId || null;
+    return String(window.OwnerFilterUI?.value() || ownId) || null;
+}
+
+function isViewingOwnWorkspace() {
+    return getViewOwnerId() === String(getAuthUser()?.id || '');
+}
+
 function getAdminTargetUserId() {
     const currentUser = getAuthUser();
     if (!canManageUsers(currentUser)) return null;
-    return currentUser?.id ? String(currentUser.id) : null;
+    return getViewOwnerId();
 }
 
 function getScopedGroupOwnerUserId() {
-    const currentUser = getAuthUser();
-    if (!currentUser?.id) return null;
-    return String(currentUser.id);
+    return getViewOwnerId();
 }
 
 function getAdminGroupBaseName(groupName, ownerLabel = '') {
@@ -2508,8 +2527,8 @@ function getAdminGroupDisplayName(groupName, ownerUserId = null) {
 
 function canManageGroupEntry(groupEntry) {
     if (!groupEntry || groupEntry.id === ALL_GROUP_ID) return false;
-    const currentUser = getAuthUser();
-    return Boolean(currentUser?.id && (!groupEntry.ownerUserId || String(groupEntry.ownerUserId) === String(currentUser.id)));
+    const ownerId = getViewOwnerId();
+    return Boolean(ownerId && (!groupEntry.ownerUserId || String(groupEntry.ownerUserId) === ownerId));
 }
 
 function rebuildGroups() {
@@ -3563,6 +3582,7 @@ function renderRow(item, rowIndex = 0) {
         <div class="meta-cell stt-cell text-secondary-text" data-col-key="stt">${escapeHtml(sttLabel)}</div>
         <!-- Left: Asset Details -->
         <div class="list-asset-cell flex items-center gap-4">
+            <input type="checkbox" class="row-check" data-row-check tabindex="-1" aria-label="Select row" ${isSelected ? 'checked' : ''}>
             <button type="button" class="list-cover-trigger" data-action="preview-image" data-image-url="${escapeHtml(coverUrl)}" aria-label="Preview cover image">
                 <img alt="Cover" class="list-cover-image" src="${coverUrl}">
             </button>
@@ -4181,11 +4201,11 @@ function createVirtualSpacer(height) {
 function renderVirtualPlaceholder(rowIndex) {
     const row = document.createElement('div');
     row.className = 'virtual-row-placeholder px-4 py-3 rounded-lg border border-white/5 bg-white/[0.025]';
-    row.style.minHeight = `${CONFIG.VIRTUAL_ROW_HEIGHT}px`;
+    row.style.minHeight = `${CONFIG.ROW_HEIGHT}px`;
     row.innerHTML = `
         <div class="flex items-center gap-4 h-full opacity-70">
             <div class="meta-cell stt-cell text-secondary-text">${rowIndex + 1}</div>
-            <div class="skeleton" style="width:70px;height:70px;border-radius:8px"></div>
+            <div class="skeleton" style="width:44px;height:44px;border-radius:6px"></div>
             <div class="flex flex-col gap-2 flex-1">
                 <div class="skeleton" style="width:60px;height:13px"></div>
                 <div class="skeleton" style="width:260px;height:16px"></div>
@@ -4389,6 +4409,8 @@ function updateKPIs() {
     setText('footer-errors', errors);
     setText('footer-crawling', crawling);
     setText('footer-selected', selected);
+    const selectionActions = document.getElementById('footer-selection-actions');
+    if (selectionActions) selectionActions.hidden = !Number(selected);
     setText('group-count-all', allTotal);
 }
 
@@ -6479,10 +6501,12 @@ function switchToView(view) {
 
     if (view === 'linkchecker') {
         setElementDisplay(listWrap, null);
+        // The list may have been hidden at boot (no width to measure): fit the columns now.
+        syncColumnWidthsToViewport();
         rebuildGroups();
         renderGroups();
         renderList({ preserveScroll: true, force: true });
-        setHeader('Link Checker', null, null);
+        setHeader('Spotify Checker', null, null);
         updateGroupHeader();
         showInstantListOrLoading(getBackendListParams(), {
             keepCurrentOnMiss: true,
@@ -6494,7 +6518,7 @@ function switchToView(view) {
         setHeader('YouTube', null, null);
         window.YouTubeChecker?.show();
     } else if (view === 'channels') {
-        setElementDisplay(channelsPanel, 'block');
+        setElementDisplay(channelsPanel, 'flex');
         setHeader('YouTube', 'Channel & Playlist');
         window.ChannelPlaylists?.show();
     } else if (view === 'settings') {
@@ -6827,6 +6851,52 @@ function renderAdminUsersLoading() {
 }
 
 
+function setupOwnerFilter() {
+    const filter = window.OwnerFilterUI;
+    const user = getAuthUser();
+    if (!filter) return;
+    filter.mount(document.getElementById('manager-filter-wrap'));
+    if (!canManageUsers(user)) { filter.reset(user?.id); return; }
+    if (!state.ownerFilterBound) {
+        state.ownerFilterBound = true;
+        filter.onChange(handleOwnerChange);
+    }
+    filter.setOwners(state.adminUserList || [], user?.id);
+    _fetchAdminUsers({ preferCache: true }).catch(() => {});
+}
+
+function handleOwnerChange() {
+    // Spotify Checker: drop the previous owner's rows, groups and selection, then load as the new owner.
+    state.dataLoadRequestId++;
+    state.activeGroup = ALL_GROUP_ID;
+    state.groupSearchQuery = '';
+    clearRowSelection();
+    clearGroupSelection();
+    state.items = [];
+    state.filteredItems = [];
+    state.draggingRowKeys = [];
+    state.dragOverRowKey = null;
+    state.contextMenuAnchorSelectionKey = null;
+    state.itemClipboard = { keys: [], mode: null };
+    state.customGroups = isViewingOwnWorkspace() ? loadCustomGroups() : [];
+    state.itemSummary = null;
+    state.listScopeCache?.clear();
+    resetVirtualList(0, {});
+    state.groups = [];
+    rebuildGroups();
+    state.lastGroupRenderSignature = '';
+    syncGroupUI(true);
+    syncGroupsFromServer();
+    if (state.currentView === 'linkchecker') {
+        updateGroupHeader();
+        showInstantListOrLoading(getBackendListParams(), { preserveScroll: false });
+        loadData({ preserveScroll: false, force: true });
+    }
+    // The other workspaces follow the same owner.
+    window.ChannelPlaylists?.syncAccountScope();
+    window.YouTubeChecker?.syncOwner?.();
+}
+
 async function _fetchAdminUsers(opts) {
     opts = opts || {};
     var now = Date.now();
@@ -6849,6 +6919,7 @@ async function _fetchAdminUsers(opts) {
         _adminUsersCache = Array.isArray(data) ? data : (data.users || []);
         state.adminUserList = _adminUsersCache.slice();
         state.adminUsersCacheTs = Date.now();
+        if (canManageUsers(getAuthUser())) window.OwnerFilterUI?.setOwners(state.adminUserList, getAuthUser()?.id);
         return _adminUsersCache;
     })
     .finally(function() {
@@ -7453,6 +7524,14 @@ document.addEventListener('DOMContentLoaded', async () => {
     if (clearBtn && !clearBtn.getAttribute('onclick')) {
         clearBtn.addEventListener('click', clearList);
     }
+    document.getElementById('btn-clear-selection')?.addEventListener('click', () => {
+        clearRowSelection();
+        renderList({ preserveScroll: true });
+    });
+    document.getElementById('btn-delete-selection')?.addEventListener('click', () => {
+        const selected = getSelectedItems();
+        if (selected.length) handleDeleteItems(selected);
+    });
 
     const listElForDelete = document.getElementById('link-list');
     if (listElForDelete) {
@@ -7483,6 +7562,12 @@ document.addEventListener('DOMContentLoaded', async () => {
             handleRowSelection(item, e);
         });
         listElForDelete.addEventListener('click', (e) => {
+            const check = e.target.closest('[data-row-check]');
+            if (check) {
+                const item = findItemFromRow(check.closest('.custom-grid-row'));
+                if (item) handleRowSelection(item, { shiftKey: e.shiftKey, ctrlKey: !e.shiftKey });
+                return;
+            }
             const copyBtn = e.target.closest('[data-action="copy-link"]');
             const previewBtn = e.target.closest('[data-action="preview-image"]');
             if (copyBtn) {
@@ -7638,6 +7723,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     window.ChannelPlaylists?.init({
         request: (path, options) => api._fetch(path, options),
         getUser: getAuthUser,
+        getOwner: getViewOwnerId,
         formatChecked: timeAgo,
         formatUpdatedAt,
         renderUserCell: renderOwnerUpdatedCell,
@@ -7657,6 +7743,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     window.YouTubeChecker?.init({
         request: (path, options) => api._fetchRaw(path, options),
         getUser: getAuthUser,
+        getOwner: getViewOwnerId,
         toast: showToast,
         copyText: (text) => copyToClipboard(text, 'Copied link'),
         previewImage: openImagePreview,

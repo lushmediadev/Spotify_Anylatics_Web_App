@@ -1,6 +1,6 @@
-/* YouTube Link Checker workspace.
+/* YouTube Checker workspace.
  * Rendered inside the main dashboard (#ytm-panel) and driven by app.js through window.YouTubeChecker.
- * Rows, hero, footer and group rail reuse the Link Checker components; only the channel grid is YTM-specific.
+ * Rows, hero, footer and group rail reuse the Spotify Checker components; only the channel grid is YTM-specific.
  */
 (() => {
   'use strict';
@@ -9,7 +9,7 @@
     POLL_INTERVAL: 1200,
     LIST_PAGE_SIZE: 160,
     BULK_PAGE_SIZE: 1000,
-    VIRTUAL_ROW_HEIGHT: 104,
+    VIRTUAL_ROW_HEIGHT: 86,
     VIRTUAL_OVERSCAN_ROWS: 10,
     PRELOAD_GROUP_LIMIT: 12,
     BACKGROUND_WARM_DELAY_MS: 180,
@@ -85,9 +85,11 @@
 
   function qs(id) { return document.getElementById(`ytm-${id}`); }
   function currentUser() { return state.options?.getUser?.() || null; }
+  /* The account whose channels are shown (owner filter); every list and write is scoped to it. */
+  function ownerId() { return String(state.options?.getOwner?.() || currentUser()?.id || ''); }
   function currentUserCacheId() {
     const user = currentUser();
-    return String(user?.id || user?.username || 'anonymous');
+    return `${String(user?.id || user?.username || 'anonymous')}:${ownerId()}`;
   }
   function listCacheKey(params = getBackendListParams()) {
     return `ytmanager_list_cache_v${LIST_CACHE_VERSION}:${currentUserCacheId()}:${getBackendListScopeKey(params)}`;
@@ -116,6 +118,11 @@
   async function apiDownload(path, opts = {}) {
     const res = await state.options.request(`/ytm${path}`, opts);
     return res ? res.blob() : null;
+  }
+
+  function ownerGroupsPath() {
+    const owner = ownerId();
+    return owner && owner !== String(currentUser()?.id || '') ? `/auth/users/${encodeURIComponent(owner)}/groups` : '/auth/me/groups';
   }
 
   function buildQuery(params = {}) {
@@ -151,26 +158,26 @@
     itemsSummary: (params = {}) => apiFetch('/items/summary' + buildQuery(params)),
     crawlBatch: (urls, group, itemIds = null) => apiFetch('/crawl/batch', {
       method: 'POST',
-      body: JSON.stringify({ urls, group: group || null, target_user_id: null, item_ids: itemIds }),
+      body: JSON.stringify({ urls, group: group || null, target_user_id: ownerId() || null, item_ids: itemIds }),
     }),
     crawlScope: (params = {}) => apiFetch('/crawl/scope', {
       method: 'POST',
-      body: JSON.stringify({ group: params.group || null, search: params.search || null, target_user_id: null }),
+      body: JSON.stringify({ group: params.group || null, search: params.search || null, target_user_id: ownerId() || null }),
     }),
     moveItems: (itemIds, group) => apiFetch('/items/move', {
       method: 'POST',
-      body: JSON.stringify({ item_ids: itemIds, group: group || null, user_id: null }),
+      body: JSON.stringify({ item_ids: itemIds, group: group || null, user_id: ownerId() || null }),
     }),
     renameGroup: (oldGroup, newGroup) => {
-      const sp = new URLSearchParams({ old_group: oldGroup, new_group: newGroup || '' });
+      const sp = new URLSearchParams({ old_group: oldGroup, new_group: newGroup || '', user_id: ownerId() });
       return apiFetch('/items/group?' + sp.toString(), { method: 'PATCH' });
     },
     deleteItem: (id) => apiFetch(`/items-by-id/${id}`, { method: 'DELETE' }),
     saveNote: (id, note) => apiFetch(`/items-by-id/${id}`, { method: 'PATCH', body: JSON.stringify({ note }) }),
-    clearItems: (group = null) => apiFetch('/items' + buildQuery({ group }), { method: 'DELETE' }),
+    clearItems: (group = null) => apiFetch('/items' + buildQuery({ group, user_id: ownerId() }), { method: 'DELETE' }),
     jobBatch: (jobIds) => apiFetch('/jobs/batch', { method: 'POST', body: JSON.stringify({ job_ids: jobIds }) }),
-    getGroups: () => apiFetch('/auth/me/groups'),
-    saveGroups: (groups) => apiFetch('/auth/me/groups', { method: 'PUT', body: JSON.stringify({ groups }) }),
+    getGroups: () => apiFetch(ownerGroupsPath()),
+    saveGroups: (groups) => apiFetch(ownerGroupsPath(), { method: 'PUT', body: JSON.stringify({ groups }) }),
     exportExcel: (itemIds) => apiDownload('/items/export', {
       method: 'POST',
       body: JSON.stringify({ format: 'xlsx', item_ids: itemIds }),
@@ -221,6 +228,8 @@
   function updateSelectionCount() {
     const count = state.selected.size;
     ['footer-selected', 'kpi-selected'].forEach((id) => { const el = qs(id); if (el) el.textContent = count; });
+    const actions = qs('footer-selection-actions');
+    if (actions) actions.hidden = !count;
   }
   function updateApiStatus() {
     const el = qs('api-status');
@@ -558,6 +567,7 @@
   }
   function getBackendListParams(extra = {}) {
     const params = { ...extra };
+    if (ownerId()) params.user_id = ownerId();
     if (state.activeGroup !== ALL_GROUP_ID) params.group = state.activeGroup || '';
     if (state.search.trim()) params.search = state.search.trim();
     if (state.sortKey && state.sortKey !== 'stt') {
@@ -955,7 +965,7 @@
     return { start, end: Math.max(start, end) };
   }
 
-  // ── Rows (Link Checker row component with the channel grid) ────
+  // ── Rows (Spotify Checker row component with the channel grid) ────
   function renderPlaceholderRow(index) {
     return `<div class="custom-grid-row ytm-grid ytm-row skeleton-row px-4 py-3 rounded-lg border border-transparent" data-virtual-row="${index}" aria-hidden="true">
       <div class="meta-cell stt-cell text-secondary-text">${index + 1}</div>
@@ -1045,6 +1055,7 @@
     return `<div class="${classes}" draggable="true" data-row-id="${escapeHtml(key)}" aria-selected="${state.selected.has(key)}">
       <div class="meta-cell stt-cell text-secondary-text">${idx + 1}</div>
       <div class="list-asset-cell flex items-center gap-4">
+        <input type="checkbox" class="row-check" data-row-check tabindex="-1" aria-label="Select row" ${state.selected.has(key) ? 'checked' : ''}>
         ${cover}
         <div class="min-w-0">
           <span class="list-type-badge ${isError ? 'badge-error' : 'badge-channel'}">channel</span>
@@ -1430,7 +1441,7 @@
       });
   }
 
-  // ── Context menu (same component as Link Checker rows) ─────────
+  // ── Context menu (same component as Spotify Checker rows) ─────────
   function closeContextMenu() {
     const menu = qs('context-menu');
     if (!menu) return;
@@ -1629,10 +1640,12 @@
     if (!row) return;
     const id = row.dataset.rowId;
     const keys = visibleRowKeys();
+    // The row checkbox toggles like Ctrl/Cmd-click.
+    const toggle = e.ctrlKey || e.metaKey || Boolean(e.target.closest('[data-row-check]'));
     if (e.shiftKey && state.lastSelectedRowKey && keys.includes(state.lastSelectedRowKey)) {
       const [a, b] = [keys.indexOf(state.lastSelectedRowKey), keys.indexOf(id)].sort((x, y) => x - y);
       state.selected = new Set(keys.slice(a, b + 1));
-    } else if (e.ctrlKey || e.metaKey) {
+    } else if (toggle) {
       if (state.selected.has(id)) state.selected.delete(id); else state.selected.add(id);
       state.lastSelectedRowKey = id;
     } else {
@@ -1652,6 +1665,8 @@
     })().catch((err) => toast(err.message, 'error')));
     qs('modal-submit').addEventListener('click', () => submitAddChannels().catch((err) => toast(err.message, 'error')));
     qs('btn-clear-list').addEventListener('click', () => clearGroupItems().catch((err) => toast(err.message, 'error')));
+    qs('btn-clear-selection')?.addEventListener('click', () => { if (clearSelection()) renderRows({ preserveScroll: true }); });
+    qs('btn-delete-selection')?.addEventListener('click', () => deleteSelected().catch((err) => toast(err.message, 'error')));
     qs('add-modal').addEventListener('click', (e) => {
       if (e.target === qs('add-modal') || e.target.closest('[data-ytm-close-modal]')) closeAddModal();
     });
@@ -1821,6 +1836,8 @@
     show() {
       state.visible = true;
       updateHeader();
+      if (state.ownerShown === undefined) state.ownerShown = ownerId();
+      else if (state.ownerShown !== ownerId()) window.YouTubeChecker.syncOwner();
       if (!state.loaded) {
         state.loaded = true;
         loadInitialData().catch((err) => toast(err.message || 'Startup error', 'error'));
@@ -1829,6 +1846,26 @@
         renderRows({ preserveScroll: true });
         loadItemsInBackground({ preserveScroll: true });
       }
+    },
+    /* Called when the owner filter changes: forget the previous owner's rows, then reload if shown. */
+    syncOwner() {
+      const owner = ownerId();
+      if (state.ownerShown === owner) return;
+      state.ownerShown = owner;
+      state.dataLoadRequestId += 1;
+      state.selected.clear();
+      state.lastSelectedRowKey = null;
+      state.activeGroup = ALL_GROUP_ID;
+      state.groups = [];
+      state.itemSummary = null;
+      state.noteEdit = null;
+      state.scopeIdCache.clear();
+      state.preloadedScopeKeys.clear();
+      resetVirtualList(0, getBackendListParams());
+      updateSelectionCount();
+      if (!state.loaded) return;
+      if (state.visible) loadInitialData().catch((err) => toast(err.message || 'Could not load channels', 'error'));
+      else state.loaded = false;
     },
     hide() {
       state.visible = false;

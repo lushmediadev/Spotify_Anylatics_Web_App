@@ -9,24 +9,16 @@ from app.ytm.models.crawl_job import CrawlJob
 from app.ytm.models.item import Item
 from app.ytm.models.user import User
 from app.ytm.schemas.job import JobBatchRequest, JobBatchResponse, JobResponse
-from app.ytm.services.auth import get_current_user
+from app.ytm.services.auth import get_current_user, visible_owner_ids
 from app.ytm.utils.youtube_urls import build_channel_url
 
 router = APIRouter()
 
 
 async def _can_see_job(db: AsyncSession, user: User, job: CrawlJob) -> bool:
-    if user.role == "admin":
-        return True
-    if not job.item_id:
-        return job.user_id == user.id
-    item = await db.get(Item, job.item_id)
-    if not item:
-        return job.user_id == user.id
-    if user.role == "manager":
-        owner = await db.get(User, item.user_id)
-        return bool(owner and (owner.id == user.id or owner.manager_id == user.id))
-    return item.user_id == user.id
+    item = await db.get(Item, job.item_id) if job.item_id else None
+    owner = item.user_id if item else job.user_id
+    return owner == user.id or owner in await visible_owner_ids(db, user)
 
 
 def _response(job: CrawlJob) -> JobResponse:
