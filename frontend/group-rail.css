@@ -46,6 +46,7 @@
 
 .group-rail-search-wrap {
     position: relative;
+    display: block; /* a <label>: inline would drop the header's space-y margin */
 }
 
 .group-rail-search-wrap .material-icons-round {
