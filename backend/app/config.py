@@ -58,6 +58,8 @@ class Settings(BaseSettings):
     FRONTEND_URL: str = "http://localhost:8080"
     SERVE_FRONTEND: bool = True
     FRONTEND_DIR: str = "../frontend"
+    # Admin-only file downloads (installers); empty disables the listing.
+    DOWNLOADS_DIR: str = ""
 
     # App
     SECRET_KEY: str = "change-me-in-production"

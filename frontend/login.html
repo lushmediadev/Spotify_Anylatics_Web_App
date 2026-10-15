@@ -178,11 +178,17 @@
             ? 'http://localhost:8010/api'
             : '/api';
 
+        // Return to a same-site page (e.g. /downloads/) after sign-in; never an external URL.
+        const NEXT_URL = (function () {
+            const next = new URLSearchParams(window.location.search).get('next') || '';
+            return /^\/(?![\/\\])/.test(next) ? next : '/';
+        })();
+
         // If already authenticated, redirect
         (function checkAuth() {
             const token = localStorage.getItem('spoticheck_token');
             if (token) {
-                window.location.href = '/';
+                window.location.href = NEXT_URL;
             }
         })();
 
@@ -212,7 +218,7 @@
                 }
                 localStorage.setItem('spoticheck_token', data.access_token || data.token);
                 localStorage.setItem('spoticheck_user', JSON.stringify(data.user || { username: username }));
-                window.location.href = '/';
+                window.location.href = NEXT_URL;
             } catch (err) {
                 errEl.textContent = err.message;
             } finally {

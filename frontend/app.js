@@ -360,6 +360,19 @@ function setupAuthUI() {
         event.preventDefault();
         switchToView('users');
     };
+    if (user?.role === 'admin') {
+        // Admin-only installers live on a standalone page.
+        const nav = document.querySelector('#sidebar nav');
+        if (nav && !document.getElementById('nav-downloads')) {
+            const downloadsLink = document.createElement('a');
+            downloadsLink.id = 'nav-downloads';
+            downloadsLink.className = 'sidebar-tooltip-target flex items-center gap-4 px-3 py-3 rounded-lg text-secondary-text hover:text-white transition-colors group cursor-pointer';
+            downloadsLink.dataset.tooltip = 'Downloads';
+            downloadsLink.href = '/downloads/';
+            downloadsLink.innerHTML = '<span class="material-icons-round">download</span><span class="font-medium sidebar-label">Downloads</span>';
+            nav.insertBefore(downloadsLink, document.getElementById('nav-settings'));
+        }
+    }
     updateWorkspaceNavigation(state.currentView);
     setupOwnerFilter();
 }

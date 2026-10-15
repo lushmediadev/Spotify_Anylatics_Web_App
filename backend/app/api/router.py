@@ -9,11 +9,13 @@ from app.api.items import router as items_router
 from app.api.jobs import router as jobs_router
 from app.api.auth import router as auth_router
 from app.api.youtube import router as youtube_router
+from app.api.downloads import router as downloads_router
 from app.ytm.api.router import router as ytm_router
 
 router = APIRouter(prefix="/api")
 router.include_router(health_router, tags=["Health"])
 router.include_router(auth_router, tags=["Auth"])
+router.include_router(downloads_router, tags=["Downloads"])
 router.include_router(ytm_router)
 router.include_router(crawl_router, tags=["Crawl"], dependencies=[Depends(bind_item_workspace)])
 router.include_router(items_router, tags=["Items"], dependencies=[Depends(bind_item_workspace)])

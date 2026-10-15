@@ -1,0 +1,216 @@
+<!DOCTYPE html>
+<html data-theme="light" lang="en">
+
+<head>
+    <meta charset="utf-8">
+    <meta content="width=device-width, initial-scale=1.0" name="viewport">
+    <title>YoutubeCheck — Downloads</title>
+    <meta name="robots" content="noindex, nofollow">
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg?v=3">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Material+Symbols+Rounded:opsz,wght,FILL,GRAD@20..48,500,0..1,0&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="/style.css?v=20261013-ui-2">
+    <style>
+        body {
+            margin: 0;
+            min-height: 100vh;
+            background: var(--surface-0);
+            color: var(--text-main);
+            font: 400 14px/20px "Inter", system-ui, sans-serif;
+            -webkit-font-smoothing: antialiased;
+        }
+        .icon {
+            font-family: "Material Symbols Rounded";
+            font-weight: 500;
+            font-size: 20px;
+            line-height: 1;
+            font-style: normal;
+            display: inline-block;
+            white-space: nowrap;
+            direction: ltr;
+        }
+        .dl-top {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            padding: 16px 24px;
+            border-bottom: 1px solid var(--stroke-mid);
+        }
+        .dl-top img { width: 40px; height: 28px; object-fit: contain; }
+        .dl-brand { font-weight: 700; font-size: 18px; letter-spacing: -.01em; }
+        .dl-spacer { flex: 1; }
+        .dl-user { color: var(--text-muted); font-size: 13px; }
+        .dl-link {
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            padding: 7px 12px;
+            border: 1px solid var(--stroke-mid);
+            border-radius: 999px;
+            background: var(--surface-1);
+            color: var(--text-main);
+            font: 500 13px/18px "Inter", system-ui, sans-serif;
+            text-decoration: none;
+            cursor: pointer;
+        }
+        .dl-link:hover { border-color: var(--text-main); }
+        .dl-link .icon { font-size: 18px; }
+        .dl-main { max-width: 760px; margin: 0 auto; padding: 40px 24px 64px; }
+        .dl-main h1 { margin: 0 0 6px; font-size: 28px; line-height: 34px; font-weight: 800; letter-spacing: -.02em; }
+        .dl-sub { margin: 0 0 28px; color: var(--text-muted); }
+        .dl-list { display: flex; flex-direction: column; gap: 12px; }
+        .dl-file {
+            display: flex;
+            align-items: center;
+            gap: 16px;
+            padding: 16px 18px;
+            border: 1px solid var(--stroke-mid);
+            border-radius: 16px;
+            background: var(--surface-1);
+        }
+        .dl-file-icon {
+            flex: 0 0 auto;
+            display: grid;
+            place-items: center;
+            width: 44px;
+            height: 44px;
+            border-radius: 12px;
+            background: var(--surface-2);
+        }
+        .dl-file-icon .icon { font-size: 24px; }
+        .dl-file-body { flex: 1 1 auto; min-width: 0; }
+        .dl-file-name { font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+        .dl-file-meta { color: var(--text-muted); font-size: 12px; margin-top: 2px; }
+        .dl-btn {
+            flex: 0 0 auto;
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            padding: 9px 16px;
+            border: 0;
+            border-radius: 999px;
+            background: #0f0f0f;
+            color: #fff;
+            font: 600 13px/18px "Inter", system-ui, sans-serif;
+            cursor: pointer;
+        }
+        .dl-btn:disabled { opacity: .55; cursor: progress; }
+        .dl-btn .icon { font-size: 18px; }
+        .dl-state {
+            padding: 32px 20px;
+            border: 1px dashed var(--stroke-mid);
+            border-radius: 16px;
+            color: var(--text-muted);
+            text-align: center;
+        }
+        .dl-error { color: #c62828; }
+        @media (max-width: 560px) {
+            .dl-top { padding: 12px 16px; }
+            .dl-user, .dl-link span:not(.icon) { display: none; }
+            .dl-main { padding: 28px 16px 48px; }
+            .dl-file { flex-wrap: wrap; }
+            .dl-btn { width: 100%; justify-content: center; }
+        }
+    </style>
+</head>
+
+<body>
+    <header class="dl-top">
+        <img src="/favicon.svg?v=3" alt="">
+        <span class="dl-brand">YoutubeCheck</span>
+        <span class="dl-spacer"></span>
+        <span class="dl-user" id="dl-user"></span>
+        <a class="dl-link" href="/"><span class="icon" aria-hidden="true">dashboard</span><span>Dashboard</span></a>
+        <button class="dl-link" type="button" id="dl-logout"><span class="icon" aria-hidden="true">logout</span><span>Sign out</span></button>
+    </header>
+
+    <main class="dl-main">
+        <h1>Downloads</h1>
+        <p class="dl-sub">Installers and tools for admin accounts.</p>
+        <div class="dl-list" id="dl-list"><div class="dl-state">Loading...</div></div>
+    </main>
+
+    <script>
+        (function () {
+            'use strict';
+            const TOKEN_KEY = 'spoticheck_token';
+            const LOGIN_URL = '/login.html?next=' + encodeURIComponent('/downloads/');
+            const list = document.getElementById('dl-list');
+            const token = localStorage.getItem(TOKEN_KEY);
+            if (!token) { location.replace(LOGIN_URL); return; }
+
+            const escapeHtml = value => String(value ?? '').replace(/[&<>"']/g, ch => ({
+                '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;',
+            }[ch]));
+            function formatSize(bytes) {
+                const units = ['B', 'KB', 'MB', 'GB'];
+                let value = Number(bytes) || 0;
+                let unit = 0;
+                while (value >= 1024 && unit < units.length - 1) { value /= 1024; unit += 1; }
+                return `${value.toFixed(unit ? 1 : 0)} ${units[unit]}`;
+            }
+            function formatDate(iso) {
+                const date = new Date(iso);
+                return Number.isNaN(date.getTime()) ? '' : date.toLocaleString();
+            }
+            function showState(message, isError) {
+                list.innerHTML = `<div class="dl-state${isError ? ' dl-error' : ''}">${escapeHtml(message)}</div>`;
+            }
+            function signOut() {
+                localStorage.removeItem(TOKEN_KEY);
+                localStorage.removeItem('spoticheck_user');
+                location.replace(LOGIN_URL);
+            }
+            async function api(path, options = {}) {
+                const res = await fetch('/api' + path, {
+                    ...options,
+                    headers: { Authorization: 'Bearer ' + token, ...(options.headers || {}) },
+                });
+                if (res.status === 401) { signOut(); throw new Error('Session expired'); }
+                const data = await res.json().catch(() => ({}));
+                if (!res.ok) throw new Error(data.detail || `Request failed (${res.status})`);
+                return data;
+            }
+
+            function render(files) {
+                if (!files.length) { showState('No files available yet.'); return; }
+                list.innerHTML = files.map(file => `<div class="dl-file">
+                    <span class="dl-file-icon"><span class="icon" aria-hidden="true">folder_zip</span></span>
+                    <div class="dl-file-body">
+                        <div class="dl-file-name" title="${escapeHtml(file.name)}">${escapeHtml(file.name)}</div>
+                        <div class="dl-file-meta">${escapeHtml(formatSize(file.size))} · Updated ${escapeHtml(formatDate(file.modified_at))}</div>
+                    </div>
+                    <button class="dl-btn" type="button" data-file="${escapeHtml(file.name)}"><span class="icon" aria-hidden="true">download</span>Download</button>
+                </div>`).join('');
+            }
+
+            list.addEventListener('click', async event => {
+                const button = event.target.closest('[data-file]');
+                if (!button) return;
+                button.disabled = true;
+                try {
+                    const link = await api(`/downloads/${encodeURIComponent(button.dataset.file)}/link`, { method: 'POST' });
+                    // Navigating to the signed link lets the browser stream the file to disk.
+                    location.assign(link.url);
+                } catch (error) {
+                    alert(error.message);
+                } finally {
+                    setTimeout(() => { button.disabled = false; }, 1500);
+                }
+            });
+            document.getElementById('dl-logout').addEventListener('click', signOut);
+
+            (async () => {
+                try {
+                    const me = await api('/auth/me');
+                    const user = me.user || me;
+                    document.getElementById('dl-user').textContent = user.display_name || user.username || '';
+                    if (user.role !== 'admin') { showState('Downloads are available to admin accounts only.', true); return; }
+                    render((await api('/downloads')).files || []);
+                } catch (error) {
+                    showState(error.message, true);
+                }
+            })();
+        }());
+    </script>
+</body>
+</html>
