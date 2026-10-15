@@ -469,7 +469,8 @@ html[data-theme="light"] body .group-rail-confirm-actions .btn-accent.is-danger:
     position: absolute; left: 9px; top: 50%; transform: translateY(-50%);
     font-size: 16px; color: var(--text-muted); pointer-events: none;
 }
-.owner-filter-search {
+/* Scoped under .owner-filter so the Tailwind forms [type="search"] rules (injected later) do not win. */
+.owner-filter .owner-filter-search {
     width: 100%;
     padding: 7px 10px 7px 30px;
     border: 1px solid var(--stroke-mid);
@@ -479,7 +480,7 @@ html[data-theme="light"] body .group-rail-confirm-actions .btn-accent.is-danger:
     font: 400 13px/18px "Inter", system-ui, sans-serif;
     outline: none;
 }
-.owner-filter-search:focus { border-color: var(--text-main); }
+.owner-filter .owner-filter-search:focus { border-color: var(--text-main); box-shadow: none; }
 .owner-filter-options { max-height: 280px; overflow-y: auto; display: flex; flex-direction: column; gap: 2px; }
 .owner-filter-option {
     display: flex;
