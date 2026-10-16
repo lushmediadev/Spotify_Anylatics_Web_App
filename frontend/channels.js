@@ -131,6 +131,8 @@
                 else selectChannel(check.closest('[data-chp-channel]')?.dataset.chpChannel, toggle);
                 return;
             }
+            const noteEdit = event.target.closest('[data-chp-note-edit]');
+            if (noteEdit) { startNoteEdit(noteEdit.closest('[data-chp-note]')); return; }
             if (event.target.closest('a, button, input, select, textarea')) return;
             const playlist = event.target.closest('[data-chp-playlist]');
             if (playlist) { selectRows('playlist', playlist.dataset.chpPlaylist, event); playlist.focus(); return; }
@@ -146,8 +148,8 @@
         host.addEventListener('dblclick', event => {
             if (event.button !== 0 || state.modal || state.drag || state.resize
                 || event.target.closest('a, button, input, select, textarea, img, [data-chp-resize]')) return;
-            const note = event.target.closest('[data-chp-note]');
-            if (note) { event.preventDefault(); startNoteEdit(note); return; }
+            // Notes are edited with the pencil button; a double-click on them does nothing.
+            if (event.target.closest('[data-chp-note]')) return;
             const row = event.target.closest('[data-chp-channel]');
             if (!row) return;
             event.preventDefault();
@@ -262,7 +264,7 @@
         const text = value => value.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
         const note = String(row.note || '').replace(/\r\n?/g, '\n');
         const edited = note && row.note_updated_at ? `\n\nLast edited ${date(row.note_updated_at)}${row.note_updated_by_name ? ` · ${row.note_updated_by_name}` : ''}` : '';
-        return `<div class="meta-cell chp-note-cell" data-chp-note=""${note ? ` title="${text(note + edited).replace(/"/g, '&quot;')}"` : ''}><span class="chp-note-text">${text(note)}</span></div>`;
+        return `<div class="meta-cell chp-note-cell" data-chp-note=""${note ? ` title="${text(note + edited).replace(/"/g, '&quot;')}"` : ''}><span class="chp-note-text">${text(note)}</span><button type="button" class="chp-note-edit-btn" data-chp-note-edit="" aria-label="Edit note" title="Edit note"><span class="material-icons-round" aria-hidden="true">edit</span></button></div>`;
     }
     function applyNote(target, data) {
         // Polling may have replaced the row objects while the editor was open, so update by id.
@@ -949,11 +951,18 @@
         event.preventDefault(); event.stopImmediatePropagation(); run();
     }
     document.addEventListener('keydown', keyboard, true);
-    function dialog(title, content, submitLabel, submit) {
+    function dialog(title, content, submitLabel, submit, { shared = false } = {}) {
         closeMenu(); closeModal();
         invalidate();
-        const node = document.createElement('div'); node.className = 'chp-backdrop';
-        node.innerHTML = `<section class="chp-dialog" role="dialog" aria-modal="true" aria-labelledby="chp-dialog-title"><form><header><h2 id="chp-dialog-title">${escapeHtml(title)}</h2><button type="button" data-close aria-label="Close">×</button></header><div class="chp-dialog-body">${content}</div><p class="chp-dialog-status" role="status" aria-live="polite"></p><footer><button type="button" data-close>Cancel</button><button type="submit" class="chp-primary">${escapeHtml(submitLabel)}</button></footer></form></section>`;
+        const node = document.createElement('div');
+        if (shared) {
+            // Same markup as the Add Spotify Link / Add YouTube Channel modals, so every add box looks alike.
+            node.className = 'modal-overlay open chp-shared-modal';
+            node.innerHTML = `<form class="modal-content" role="dialog" aria-modal="true" aria-labelledby="chp-dialog-title"><div class="flex items-center justify-between mb-6"><h2 id="chp-dialog-title" class="text-xl font-bold">${escapeHtml(title)}</h2><button type="button" data-close class="text-secondary-text hover:text-white transition-colors cursor-pointer" aria-label="Close"><span class="material-icons-round">close</span></button></div><div class="chp-dialog-body space-y-4">${content}</div><p class="chp-dialog-status text-sm mt-3" role="status" aria-live="polite"></p><div class="flex gap-3 pt-4"><button type="button" data-close class="flex-1 btn-ghost px-4 py-3 rounded-xl border border-white/20 text-sm font-bold cursor-pointer">Cancel</button><button type="submit" class="flex-1 px-4 py-3 rounded-xl bg-primary hover:bg-primary/90 text-white text-sm font-bold transition-colors cursor-pointer"><span class="flex items-center justify-center gap-2"><span class="material-icons-round text-lg">playlist_add</span>${escapeHtml(submitLabel)}</span></button></div></form>`;
+        } else {
+            node.className = 'chp-backdrop';
+            node.innerHTML = `<section class="chp-dialog" role="dialog" aria-modal="true" aria-labelledby="chp-dialog-title"><form><header><h2 id="chp-dialog-title">${escapeHtml(title)}</h2><button type="button" data-close aria-label="Close">×</button></header><div class="chp-dialog-body">${content}</div><p class="chp-dialog-status" role="status" aria-live="polite"></p><footer><button type="button" data-close>Cancel</button><button type="submit" class="chp-primary">${escapeHtml(submitLabel)}</button></footer></form></section>`;
+        }
         const modal = { node, controller: new AbortController(), focus: document.activeElement, busy: false };
         state.modal = modal; document.body.appendChild(node);
         node.querySelectorAll('[data-close]').forEach(button => button.addEventListener('click', () => { if (!modal.busy) closeModal(); }));
@@ -1003,14 +1012,15 @@
     function openAdd() {
         if (!state.group) { message('Create and select a group before adding channels.'); return; }
         const ownerId = state.userId;
-        dialog('Add YouTube Channels', `<label>Group (required)<input name="group" list="chp-group-options" required maxlength="128" value="${escapeHtml(state.group)}" placeholder="Choose a group or type a new one"></label><datalist id="chp-group-options">${state.groups.map(group => `<option value="${escapeHtml(group.name)}"></option>`).join('')}</datalist><label>Channel URLs, one per line<textarea name="urls" rows="7" required placeholder="https://www.youtube.com/@channel"></textarea></label>`, 'Add channels', async node => {
-            const group = node.querySelector('[name="group"]').value.trim();
+        // Channels always go into the group that is open; there is no group picker.
+        const group = state.group;
+        dialog(`Add YouTube Channels to ${group}`, `<div><label for="chp-add-urls" class="block text-sm font-medium text-secondary-text mb-2">YouTube channel URLs, one per line</label><textarea id="chp-add-urls" name="urls" class="modal-input resize-none" rows="6" required placeholder="https://www.youtube.com/@handle&#10;https://www.youtube.com/channel/UC..."></textarea><p class="text-xs text-secondary-text mt-2">Supports /channel/UC..., /@handle, /user/..., /c/...</p></div>`, 'Add & Check', async node => {
             const urls = lines(node.querySelector('[name="urls"]').value);
-            if (!group || group.toLowerCase() === 'all' || !urls.length) throw new Error('Choose a real group (not All) and enter at least one channel URL.');
+            if (!urls.length) throw new Error('Enter at least one channel URL.');
             if (urls.length > 500) throw new Error('Up to 500 URLs at a time.');
             const data = await api('/youtube/channels', 'POST', { urls, group, ...(ownerId ? { target_user_id: ownerId } : {}) });
             return `Added: ${number(data.accepted ?? data.items?.length ?? 0)}; skipped: ${number(Array.isArray(data.skipped) ? data.skipped.length : data.skipped ?? 0)}.`;
-        });
+        }, { shared: true });
     }
     async function openEdit(item) {
         if (String(item.user_id) !== state.userId || !sameActor()) return;

@@ -43,6 +43,10 @@
 .chp-note-text { flex: 1 1 auto; min-width: 0; display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; overflow: hidden; white-space: pre-line; overflow-wrap: anywhere; font-size: 12px; line-height: 1.4; color: var(--chp-muted); }
 .chp-note-input { display: block; width: 100%; min-height: 44px; padding: 6px 8px; border: 1px solid var(--chp-border); border-radius: 8px; background: var(--surface-0, #fff); color: var(--chp-text); font: inherit; font-size: 12px; line-height: 1.4; resize: vertical; }
 .chp-note-input:focus { border-color: #1db954; outline: none; }
+.chp-note-edit-btn { flex: 0 0 auto; display: inline-flex; align-items: center; justify-content: center; width: 26px; height: 26px; margin-left: 4px; padding: 0; border: 0; border-radius: 6px; background: transparent; color: var(--chp-muted); cursor: pointer; opacity: .55; transition: opacity .15s, background-color .15s, color .15s; }
+.chp-note-edit-btn .material-icons-round { font-size: 16px; }
+.chp-root .custom-grid-row:hover .chp-note-edit-btn, .chp-note-edit-btn:focus-visible { opacity: 1; }
+.chp-note-edit-btn:hover { background: rgba(0, 0, 0, .06); color: var(--chp-text); }
 .chp-empty { padding: 24px 20px; color: var(--chp-muted); }
 .chp-muted { color: var(--text-muted, #606060); }
 .chp-error { color: #b42318; }
@@ -82,6 +86,9 @@
 .chp-root .head-cell { position: relative; }
 .chp-root .list-head .list-columns-head .head-cell > .column-resize-handle[data-chp-resize] { display: block; position: absolute; top: 0; right: -5px; bottom: 0; width: 10px; cursor: col-resize; touch-action: none; }
 body.chp-resizing { cursor: col-resize; user-select: none; }
+.chp-shared-modal { z-index: 1200; padding: 20px; }
+.chp-shared-modal .chp-dialog-status:empty { display: none; }
+.chp-shared-modal .chp-dialog-body { padding: 0; }
 .chp-backdrop { position: fixed; inset: 0; z-index: 1200; display: flex; align-items: center; justify-content: center; padding: 20px; background: rgba(0, 0, 0, .4); }
 .chp-dialog { width: min(620px, 100%); max-height: 90vh; overflow: auto; border-radius: 16px; border: 1px solid var(--chp-border); background: var(--surface-0, #fff); }
 .chp-dialog button, .chp-settings .chp-key-list button { padding: 7px 12px; border: 1px solid var(--chp-border); border-radius: 8px; color: inherit; background: transparent; font: inherit; cursor: pointer; }

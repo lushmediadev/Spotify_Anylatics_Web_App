@@ -768,7 +768,10 @@ test('ChannelPlaylists isolated browser behavior', async t => {
             const box = await cell.boundingBox();
             assert.ok(Math.abs(head.x - box.x) < 2, 'Note cells align with the Note header');
 
+            // Double-clicking a note does nothing; the pencil button opens the editor.
             await cell.dblclick();
+            assert.equal(await page.locator('.chp-note-input').count(), 0);
+            await cell.locator('[data-chp-note-edit]').click();
             const input = page.locator('[data-chp-playlist="c1:p1"] .chp-note-input');
             assert.equal(await input.inputValue(), long);
             assert.equal(await input.getAttribute('maxlength'), '1000');
@@ -780,15 +783,15 @@ test('ChannelPlaylists isolated browser behavior', async t => {
             assert.equal(await page.locator('[data-chp-playlist="c3:p1"] .chp-note-text').textContent(), '');
             assert.equal(await page.locator('[data-chp-playlist="c1:p1"]').getAttribute('draggable'), 'true');
 
-            await page.locator('[data-chp-playlist="c1:p2"] [data-chp-note]').dblclick();
+            await page.locator('[data-chp-playlist="c1:p2"] [data-chp-note-edit]').click();
             await page.locator('[data-chp-playlist="c1:p2"] .chp-note-input').fill('discarded draft');
             await page.keyboard.press('Escape');
             assert.equal(await page.locator('.chp-note-input').count(), 0);
             assert.equal(await page.locator('[data-chp-playlist="c1:p2"] .chp-note-text').textContent(), '');
             assert.equal((await patches()).length, 1);
 
-            // Channel rows take a note too; double-clicking the cell edits instead of collapsing.
-            await page.locator('[data-chp-channel="c1"] [data-chp-note]').dblclick();
+            // Channel rows take a note too; the pencil edits it without collapsing the row.
+            await page.locator('[data-chp-channel="c1"] [data-chp-note-edit]').click();
             await page.locator('[data-chp-channel="c1"] .chp-note-input').fill('Channel note');
             await page.keyboard.press('Enter');
             await page.waitForFunction(() => document.querySelector('[data-chp-channel="c1"] .chp-note-text')?.textContent === 'Channel note');

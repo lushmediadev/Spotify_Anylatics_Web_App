@@ -444,24 +444,6 @@
     ];
     state.rail.render(items);
   }
-  function renderModalGroups() {
-    const wrap = qs('modal-group-wrap');
-    if (!wrap) return;
-    // Every new channel must land in a group, so there is no "No group" choice here.
-    const groups = allGroupsFromItems();
-    const options = groups.length
-      ? groups.map((g) => ({ value: g, label: g }))
-      : [{ value: '', label: 'Create a group first' }];
-    const selected = groups.includes(state.activeGroup) ? state.activeGroup : (groups[0] || '');
-    if (document.getElementById('ytm-modal-group-dropdown')) {
-      state.options.updateDropdown('ytm-modal-group-dropdown', options, selected);
-    } else {
-      wrap.replaceChildren(state.options.createDropdown({ id: 'ytm-modal-group', options, selected, cssClass: 'dropdown-modal' }));
-    }
-  }
-  function selectedModalGroup() {
-    return document.getElementById('ytm-modal-group-dropdown')?.getAttribute('data-value') || null;
-  }
   function setActiveGroup(group) {
     state.activeGroup = group || ALL_GROUP_ID;
     updateHeader();
@@ -1281,7 +1263,14 @@
 
   // ── Add / delete / move ────────────────────────────────────────
   function openAddModal() {
-    renderModalGroups();
+    // Channels always go into the open group, so the modal has no group picker.
+    const group = state.activeGroup;
+    if (!group || group === ALL_GROUP_ID || !allGroupsFromItems().includes(group)) {
+      toast('Select a group before adding channels', 'info');
+      return;
+    }
+    state.addGroup = group;
+    qs('add-modal-title').textContent = `Add YouTube Channels to ${group}`;
     qs('modal-input').value = '';
     qs('add-modal').classList.add('open');
     qs('modal-input').focus();
@@ -1293,9 +1282,9 @@
       toast('Please enter at least one channel URL', 'error');
       return;
     }
-    const group = selectedModalGroup();
+    const group = state.addGroup;
     if (!group) {
-      toast('Please choose a group first', 'error');
+      toast('Select a group before adding channels', 'error');
       return;
     }
     closeAddModal();

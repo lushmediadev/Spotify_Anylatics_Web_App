@@ -5746,6 +5746,10 @@ function openModal() {
     document.getElementById('modal-url-hint').textContent = 'Supports: playlist, track, album, and artist links';
     document.getElementById('modal-url-hint').className = 'text-xs text-secondary-text mt-2';
     populateGroupSelect();
+    var activeGroup = state.groups.find(function(g) { return String(g.id) === String(state.activeGroup); });
+    document.getElementById('add-link-modal-title').textContent = activeGroup
+        ? 'Add Spotify Links to ' + (activeGroup.displayName || activeGroup.name)
+        : 'Add Spotify Links';
 }
 
 function closeModal() {
