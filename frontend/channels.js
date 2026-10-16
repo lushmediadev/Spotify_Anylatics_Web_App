@@ -1056,7 +1056,7 @@
         try {
             const data = await api('/youtube/keys');
             if (!current()) return;
-            host.innerHTML = '<form><h3 class="app-card-title">YouTube API Keys</h3><p class="text-sm text-secondary-text mb-4">System key pool used by every account. Enable YouTube Data API v3 in Google Cloud. If you restrict keys by caller, allow the VPS server IP 194.233.69.135 (not a browser referrer) and limit the key to YouTube Data API v3.</p><ul class="chp-key-list" aria-label="System API keys"></ul><label class="app-card-label">Add API keys<textarea name="api_keys" class="settings-input" rows="4" autocomplete="off" spellcheck="false" aria-describedby="chp-key-note" placeholder="One key per line"></textarea></label><p id="chp-key-note" class="text-xs text-secondary-text mb-4">One key per line; duplicates are skipped. Keys rotate automatically when quota runs out. Stored keys are only ever shown masked.</p><div class="chp-settings-actions"><button type="submit" class="btn-accent inline-flex items-center gap-2 px-6 py-2.5 rounded-full text-sm font-bold cursor-pointer"><span class="material-icons-round text-base" aria-hidden="true">add</span>Add keys</button><button type="button" data-check class="btn-ghost inline-flex items-center gap-2 px-6 py-2.5 rounded-full border text-sm font-bold cursor-pointer"><span class="material-icons-round text-base" aria-hidden="true">fact_check</span>Check keys</button></div><p class="chp-key-status" role="status" aria-live="polite"></p></form>';
+            host.innerHTML = '<form><h3 class="app-card-title">YouTube API Keys</h3><p class="text-sm text-secondary-text mb-4">System key pool used by every account. Enable YouTube Data API v3 in Google Cloud. If you restrict keys by caller, allow the VPS server IP 194.233.69.135 (not a browser referrer) and limit the key to YouTube Data API v3.</p><label class="app-card-label">API keys<textarea name="api_keys" class="settings-input" rows="8" autocomplete="off" spellcheck="false" aria-describedby="chp-key-note" placeholder="One key per line"></textarea></label><p id="chp-key-note" class="text-xs text-secondary-text mb-4">One key per line. Save replaces the whole list: delete a line and save to remove that key. Keys rotate automatically when quota runs out.</p><div class="chp-settings-actions"><button type="submit" class="btn-accent inline-flex items-center gap-2 px-6 py-2.5 rounded-full text-sm font-bold cursor-pointer"><span class="material-icons-round text-base" aria-hidden="true">save</span>Save keys</button><button type="button" data-check class="btn-ghost inline-flex items-center gap-2 px-6 py-2.5 rounded-full border text-sm font-bold cursor-pointer"><span class="material-icons-round text-base" aria-hidden="true">fact_check</span>Check keys</button></div><p class="chp-key-status" role="status" aria-live="polite"></p><ul class="chp-key-list" aria-label="Key check results"></ul></form>';
             const input = host.querySelector('textarea');
             const list = host.querySelector('.chp-key-list');
             const status = host.querySelector('.chp-key-status');
@@ -1066,15 +1066,11 @@
             const resultLabel = entry => typeof entry.valid === 'boolean'
                 ? entry.valid ? labels.valid : codes[entry.error_code] || 'Invalid / check failed'
                 : entry.status === 'valid' ? labels.valid : codes[entry.error_code] || labels[entry.status] || 'Unknown';
-            function renderKeys(keys, results = []) {
-                const byId = new Map(results.filter(entry => entry.id).map(entry => [String(entry.id), entry]));
-                list.innerHTML = keys.length ? keys.map(key => {
-                    const result = byId.get(String(key.id));
-                    return `<li data-key-id="${escapeHtml(key.id)}"><code>${escapeHtml(key.masked)}</code><span class="chp-muted">${escapeHtml(key.owner || '')}</span>${result ? `<span class="chp-key-result${result.status === 'valid' ? '' : ' chp-error'}">${escapeHtml(resultLabel(result))}</span>` : ''}<button type="button" data-delete-key="${escapeHtml(key.id)}" aria-label="Delete key ${escapeHtml(key.masked)}">Delete</button></li>`;
-                }).join('') : `<li class="chp-muted">${escapeHtml(NO_SYSTEM_KEY)}</li>`;
-            }
-            let keys = Array.isArray(data?.keys) ? data.keys : [];
-            renderKeys(keys);
+            const isValid = entry => (typeof entry.valid === 'boolean' ? entry.valid : entry.status === 'valid');
+            // Internal tool: the full keys are shown and edited as plain text, one per line.
+            const keyText = result => (typeof result?.api_keys === 'string' ? result.api_keys
+                : (Array.isArray(result?.keys) ? result.keys : []).map(key => key.key || '').filter(Boolean).join('\n'));
+            input.value = keyText(data);
             let busy = false;
             async function run(label, work) {
                 if (busy || !current()) return;
@@ -1087,38 +1083,30 @@
                 } catch (_) { if (current()) { status.textContent = 'Could not process API keys. Please try again.'; status.classList.add('chp-error'); } }
                 finally { busy = false; host.querySelectorAll('button').forEach(button => { button.disabled = false; }); }
             }
-            const refreshed = result => {
-                if (!Array.isArray(result?.keys)) throw new Error('Invalid key response');
-                keys = result.keys; renderKeys(keys); state.hasKeys = keys.length > 0;
-            };
             host.querySelector('form').addEventListener('submit', event => {
                 event.preventDefault();
-                if (!input.value.trim()) { status.textContent = 'Enter at least one API key.'; return; }
-                run('Adding…', async () => {
-                    const result = await api('/youtube/keys', 'POST', { api_keys: input.value });
-                    refreshed(result); input.value = '';
-                    return `Added ${Number(result.added) || 0} key(s)` + (result.skipped ? `, skipped ${Number(result.skipped)} duplicate(s).` : '.');
+                if (!input.value.trim() && !window.confirm('Save an empty list? This removes every system API key.')) return;
+                run('Saving…', async () => {
+                    const result = await api('/youtube/keys', 'PUT', { api_keys: input.value });
+                    if (!Array.isArray(result?.keys)) throw new Error('Invalid key response');
+                    input.value = keyText(result); list.innerHTML = '';
+                    state.hasKeys = result.keys.length > 0;
+                    return `Saved ${Number(result.count) || 0} key(s).`;
                 });
             });
-            list.addEventListener('click', event => {
-                const id = event.target.closest('[data-delete-key]')?.dataset.deleteKey;
-                if (!id || !window.confirm('Delete this API key from the system pool?')) return;
-                run('Deleting…', async () => {
-                    await api(`/youtube/keys/${encodeURIComponent(id)}`, 'DELETE');
-                    refreshed(await api('/youtube/keys'));
-                    return 'Key deleted.';
+            host.querySelector('[data-check]').addEventListener('click', () => {
+                if (!input.value.trim()) { status.textContent = NO_SYSTEM_KEY; list.innerHTML = ''; return; }
+                run('Checking…', async () => {
+                    const result = await api('/youtube/keys/check', 'POST', { api_keys: input.value });
+                    const results = result?.results;
+                    if (!Array.isArray(results)) throw new Error('Invalid key check response');
+                    list.innerHTML = results.map((entry, index) => {
+                        const name = entry.key || entry.masked || `Key ${Number.isInteger(entry.index) ? entry.index + 1 : index + 1}`;
+                        return `<li><code>${escapeHtml(name)}</code><span class="chp-key-result${isValid(entry) ? '' : ' chp-error'}">${escapeHtml(resultLabel(entry))}</span></li>`;
+                    }).join('');
+                    return `Checked ${results.length} key(s): ${results.filter(isValid).length} valid.`;
                 });
             });
-            host.querySelector('[data-check]').addEventListener('click', () => run('Checking…', async () => {
-                // New keys in the textarea are checked before they are added; otherwise check the pool.
-                const pending = input.value.trim();
-                const result = await api('/youtube/keys/check', 'POST', pending ? { api_keys: input.value } : {});
-                const results = result?.results;
-                if (!Array.isArray(results)) throw new Error('Invalid key check response');
-                if (!pending) renderKeys(keys, results);
-                return results.length ? results.map((entry, index) =>
-                    `${entry.masked || `Key ${Number.isInteger(entry.index) ? entry.index + 1 : index + 1}`}: ${resultLabel(entry)}`).join(' · ') : NO_SYSTEM_KEY;
-            }));
         } catch (_) { if (current()) host.textContent = 'Could not load system API keys. Reopen Settings to retry.'; }
     }
     /* Follow the signed-in account and the owner picked in the shared owner filter. */

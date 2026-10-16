@@ -317,7 +317,7 @@ def test_list_order_groups_filters_and_pagination(env):
 
 
 @pytest.mark.parametrize("method,path,payload", [
-    ("GET", "/keys", None), ("POST", "/keys", {"api_keys": "key"}),
+    ("GET", "/keys", None), ("POST", "/keys", {"api_keys": "key"}), ("PUT", "/keys", {"api_keys": "key"}),
     ("POST", "/keys/check", {}), ("DELETE", "/keys/{id}", None), ("GET", "/channels", None),
     ("POST", "/groups", {"name": "Private"}),
     ("POST", "/channels", {"urls": ["@new"], "group": "New"}),
@@ -333,16 +333,15 @@ def test_real_auth_rejects_missing_or_invalid_token(env, method, path, payload, 
     assert env.scheduled == []
 
 
-def test_keys_are_admin_only_masked_appended_and_shared_by_every_account(env):
+def test_keys_are_admin_only_visible_appended_and_shared_by_every_account(env):
     foreign_key = next(row.id for row in rows(env, YouTubeApiKey) if row.user_id == env.users["manager"].id)
     for actor in ("manager", "assigned", "unassigned", "other_manager"):
         env.actor = actor
         for method, path, payload in [
-            ("GET", "/keys", None), ("POST", "/keys", {"api_keys": "new_key"}),
+            ("GET", "/keys", None), ("POST", "/keys", {"api_keys": "new_key"}), ("PUT", "/keys", {"api_keys": "new_key"}),
             ("POST", "/keys/check", {}), ("DELETE", f"/keys/{foreign_key}", None),
         ]:
             assert request(env, method, path, json=payload).status_code == 403, (actor, method, path)
-        assert request(env, "PUT", "/keys", json={"api_keys": "new_key"}).status_code == 405
         body = request(env, "GET").json()
         assert body["key_count"] == 2 and body["has_keys"] is True
     env.external_check.assert_not_awaited()
@@ -353,15 +352,14 @@ def test_keys_are_admin_only_masked_appended_and_shared_by_every_account(env):
     body = response.json()
     assert body["count"] == 2 and [row["position"] for row in body["keys"]] == [0, 1]
     assert [row["owner"] for row in body["keys"]] == ["Display admin", "Display linked_admin"]
-    assert all(set(row) == {"id", "masked", "owner", "position"} for row in body["keys"])
-    assert "key_admin" not in response.text and "key_linked_admin" not in response.text
+    assert all(set(row) == {"id", "key", "masked", "owner", "position"} for row in body["keys"])
+    assert body["api_keys"] == "key_admin\nkey_linked_admin"
 
     response = request(env, "POST", "/keys", json={"api_keys": " one_long_key_value\n\ntwo\nkey_admin\none_long_key_value \n"})
     assert response.status_code == 200, response.text
     body = response.json()
     assert (body["added"], body["skipped"], body["count"]) == (2, 1, 4)
     assert [row["masked"] for row in body["keys"]] == ["…in", "one_…alue", "…wo", "key_…dmin"]
-    assert "one_long_key_value" not in response.text
     stored = sorted((row.position, row.key) for row in rows(env, YouTubeApiKey) if row.user_id == env.users["admin"].id)
     assert stored == [(0, "key_admin"), (1, "one_long_key_value"), (2, "two")]
 
@@ -373,13 +371,13 @@ def test_keys_are_admin_only_masked_appended_and_shared_by_every_account(env):
     env.external_check.assert_awaited_once_with(pool)
     results = response.json()["results"]
     assert [row["id"] for row in results] == [row["id"] for row in body["keys"]]
-    assert all(set(row) == {"index", "id", "masked", "status", "error_code", "error_message"} for row in results)
-    assert "one_long_key_value" not in response.text.replace('"error_message":"one_long_key_value"', "")
+    assert all(set(row) == {"index", "id", "key", "masked", "status", "error_code", "error_message"} for row in results)
+    assert [row["key"] for row in results] == pool
     env.external_check.reset_mock()
     env.external_check.return_value = [{"status": "invalid", "error_code": "invalid_key", "error_message": "YouTube API key is invalid."}]
     response = request(env, "POST", "/keys/check", json={"api_keys": " probe_secret_value\nprobe_secret_value"})
     env.external_check.assert_awaited_once_with(["probe_secret_value"])
-    assert response.json()["results"] == [{"index": 0, "id": None, "masked": "prob…alue", "status": "invalid",
+    assert response.json()["results"] == [{"index": 0, "id": None, "key": "probe_secret_value", "masked": "prob…alue", "status": "invalid",
         "error_code": "invalid_key", "error_message": "YouTube API key is invalid."}]
     assert request(env, "GET", "/keys").json()["count"] == 4
 
@@ -405,6 +403,20 @@ def test_keys_are_admin_only_masked_appended_and_shared_by_every_account(env):
     assert body["key_count"] == 0 and body["has_keys"] is False
 
 
+def test_put_replaces_the_whole_system_pool(env):
+    env.actor = "linked_admin"
+    response = request(env, "PUT", "/keys", json={"api_keys": " new_b\n\nnew_a\nnew_b\n"})
+    assert response.status_code == 200, response.text
+    body = response.json()
+    assert (body["saved"], body["count"], body["api_keys"]) == (2, 2, "new_b\nnew_a")
+    admins = {env.users["admin"].id, env.users["linked_admin"].id}
+    assert sorted((row.position, row.key) for row in rows(env, YouTubeApiKey) if row.user_id in admins) == [(0, "new_b"), (1, "new_a")]
+    # Non-admin legacy rows are never part of the pool and are left alone.
+    assert "key_manager" in {row.key for row in rows(env, YouTubeApiKey)}
+    assert request(env, "PUT", "/keys", json={"api_keys": ""}).json()["count"] == 0
+    assert request(env, "PUT", "/keys", json={"api_keys": "bad key"}).status_code == 400
+
+
 def test_key_pool_is_capped(env):
     env.actor = "admin"
     assert request(env, "POST", "/keys", json={"api_keys": "\n".join(f"k{i}" for i in range(99))}).status_code == 400
@@ -416,7 +428,7 @@ def test_key_pool_is_capped(env):
 def test_invalid_key_input_is_atomic(env, bad):
     env.actor = "admin"
     before = {(row.user_id, row.key, row.position) for row in rows(env, YouTubeApiKey)}
-    for method, path in (("POST", "/keys"), ("POST", "/keys/check")):
+    for method, path in (("POST", "/keys"), ("PUT", "/keys"), ("POST", "/keys/check")):
         assert request(env, method, path, json={"api_keys": bad}).status_code == 400
         assert {(row.user_id, row.key, row.position) for row in rows(env, YouTubeApiKey)} == before
     env.external_check.assert_not_awaited()

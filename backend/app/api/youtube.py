@@ -273,9 +273,22 @@ def key_owner(user):
 
 @router.get("/keys")
 async def get_keys(db: AsyncSession = Depends(get_db), admin: User = Depends(get_admin_user)):
-    keys = [{"id": str(key.id), "masked": mask_key(key.key), "owner": key_owner(owner), "position": position}
+    # Internal tool: admins see the full keys so the pool can be edited as plain text.
+    keys = [{"id": str(key.id), "key": key.key, "masked": mask_key(key.key), "owner": key_owner(owner), "position": position}
         for position, (key, owner) in enumerate(await system_api_key_rows(db))]
-    return {"keys": keys, "count": len(keys)}
+    return {"keys": keys, "count": len(keys), "api_keys": "\n".join(row["key"] for row in keys)}
+
+
+@router.put("/keys")
+async def replace_keys(req: KeysRequest, db: AsyncSession = Depends(get_db), admin: User = Depends(get_admin_user)):
+    """Replace the whole system pool with the submitted list (one key per line, in order)."""
+    keys = clean_keys(req.api_keys)
+    await db.execute(select(User.id).where(User.id == admin.id).with_for_update())
+    await db.execute(delete(YouTubeApiKey).where(YouTubeApiKey.user_id.in_(select(User.id).where(User.role == "admin"))))
+    for position, key in enumerate(keys):
+        db.add(YouTubeApiKey(user_id=admin.id, key=key, position=position))
+    await db.commit()
+    return {"saved": len(keys), **(await get_keys(db, admin))}
 
 
 @router.post("/keys")
@@ -319,7 +332,7 @@ async def check_keys(req: KeysCheckRequest = KeysCheckRequest(), db: AsyncSessio
     results = []
     for index, result in enumerate(await check_external_keys(keys)):
         # Rebuild each entry: provider payloads must never carry a raw credential back.
-        results.append({"index": index, "id": key_ids[index] if key_ids else None, "masked": mask_key(keys[index]),
+        results.append({"index": index, "id": key_ids[index] if key_ids else None, "key": keys[index], "masked": mask_key(keys[index]),
             "status": result.get("status"), "error_code": result.get("error_code"),
             "error_message": result.get("error_message")})
     return {"results": results}

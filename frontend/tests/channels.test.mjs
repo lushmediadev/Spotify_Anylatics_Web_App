@@ -464,7 +464,7 @@ test('ChannelPlaylists isolated browser behavior', async t => {
         } finally { await page.close(); }
     });
 
-    await t.test('system key settings are admin-only, masked, and never echo secrets or owner filters', async () => {
+    await t.test('system key settings are admin-only, show full keys, and never echo provider messages or owner filters', async () => {
         const page = await fixture();
         try {
             await page.evaluate(async () => {
@@ -479,19 +479,19 @@ test('ChannelPlaylists isolated browser behavior', async t => {
 
             await page.evaluate(async () => {
                 window.actor.role = 'admin';
-                window.pool = [{ id: 'k1', masked: 'AIza…abcd', owner: '<b>Root</b>', position: 0 }];
-                window.keyResults = [{ index: 0, id: 'k1', masked: 'AIza…abcd', status: 'invalid', error_code: 'invalid_key', error_message: 'SECRET' }];
+                window.pool = [{ id: 'k1', key: 'AIzaFULLKEYabcd', masked: 'AIza…abcd', owner: 'Root', position: 0 }];
+                window.keyResults = [
+                    { index: 0, key: 'RAWKEY01', status: 'valid' }, { index: 1, key: '<b>RAWKEY02</b>', status: 'quota_exceeded' },
+                    { index: 2, valid: false, error_code: 'network_error', error_message: 'SECRET' },
+                ];
                 const original = window.handleRequest;
                 window.handleRequest = async (requestPath, options = {}) => {
-                    if (requestPath === '/youtube/keys' && options.method === 'POST') {
-                        window.pool.push({ id: 'k2', masked: 'AIza…wxyz', owner: 'Root', position: 1 });
-                        return { added: 1, skipped: 1, keys: window.pool, count: window.pool.length };
+                    if (requestPath === '/youtube/keys' && options.method === 'PUT') {
+                        const lines = JSON.parse(options.body).api_keys.split('\n').map(line => line.trim()).filter(Boolean);
+                        window.pool = lines.map((key, position) => ({ id: `n${position}`, key, masked: key, owner: 'Root', position }));
+                        return { saved: lines.length, keys: window.pool, count: window.pool.length, api_keys: lines.join('\n') };
                     }
-                    if (requestPath === '/youtube/keys') return { keys: window.pool, count: window.pool.length };
-                    if (requestPath === '/youtube/keys/k1' && options.method === 'DELETE') {
-                        window.pool = window.pool.filter(key => key.id !== 'k1');
-                        return { deleted: true, id: 'k1' };
-                    }
+                    if (requestPath === '/youtube/keys') return { keys: window.pool, count: window.pool.length, api_keys: window.pool.map(key => key.key).join('\n') };
                     if (requestPath === '/youtube/keys/check') return { results: window.keyResults };
                     return original(requestPath, options);
                 };
@@ -501,46 +501,31 @@ test('ChannelPlaylists isolated browser behavior', async t => {
             assert.equal(await page.locator('.chp-key-warning [data-chp-action="settings"]').count(), 1);
             const host = page.locator('#youtube-key-settings');
             assert.equal(await host.evaluate(node => node.hidden), false);
-            assert.equal(await host.locator('.chp-key-list li').count(), 1);
-            assert.equal(await host.locator('.chp-key-list code').textContent(), 'AIza…abcd');
-            assert.equal(await host.locator('.chp-key-list b').count(), 0);
-            assert.match(await host.locator('.chp-key-list li').textContent(), /<b>Root<\/b>/);
-            assert.equal(await host.locator('textarea').inputValue(), '');
+            // Internal tool: the stored keys are shown in full, one per line.
+            assert.equal(await host.locator('textarea').inputValue(), 'AIzaFULLKEYabcd');
+            assert.equal(await host.locator('.chp-key-list li').count(), 0);
 
-            await page.locator('[data-check]').click();
-            await page.waitForFunction(() => document.querySelector('.chp-key-status').textContent.includes('AIza…abcd:'));
-            assert.equal(await page.locator('.chp-key-status').textContent(), 'AIza…abcd: Invalid key');
-            assert.equal(await host.locator('.chp-key-result').textContent(), 'Invalid key');
-            await page.evaluate(() => {
-                window.keyResults = [
-                    { index: 0, masked: 'RAWK…EY01', status: 'valid' }, { index: 1, status: 'quota_exceeded' },
-                    { index: 2, valid: false, error_code: 'network_error', error_message: 'SECRET' },
-                ];
-            });
             await host.locator('textarea').fill('RAWKEY01\nRAWKEY02\nRAWKEY03');
             await page.locator('[data-check]').click();
-            await page.waitForFunction(() => document.querySelector('.chp-key-status').textContent.includes('Key 3:'));
-            assert.match(await page.locator('.chp-key-status').textContent(), /RAWK…EY01: Valid.*Key 2: Quota exceeded.*Key 3: Connection error/);
+            await page.waitForFunction(() => document.querySelectorAll('.chp-key-list li').length === 3);
+            assert.equal(await page.locator('.chp-key-status').textContent(), 'Checked 3 key(s): 1 valid.');
+            assert.deepEqual(await host.locator('.chp-key-list code').allTextContents(), ['RAWKEY01', '<b>RAWKEY02</b>', 'Key 3']);
+            assert.deepEqual(await host.locator('.chp-key-result').allTextContents(), ['Valid', 'Quota exceeded', 'Connection error']);
+            assert.equal(await host.locator('.chp-key-list b').count(), 0);
             assert.doesNotMatch(await host.textContent(), /SECRET/);
 
+            await host.locator('textarea').fill(' RAWKEY01\n\nRAWKEY03 ');
             await host.locator('button[type="submit"]').click();
-            await page.waitForFunction(() => document.querySelectorAll('.chp-key-list li').length === 2);
-            assert.equal(await page.locator('.chp-key-status').textContent(), 'Added 1 key(s), skipped 1 duplicate(s).');
-            assert.equal(await host.locator('textarea').inputValue(), '');
-            assert.doesNotMatch(await host.evaluate(node => node.innerHTML), /RAWKEY0/);
-
-            page.once('dialog', dialog => dialog.accept());
-            await host.locator('[data-delete-key="k1"]').click();
-            await page.waitForFunction(() => document.querySelectorAll('.chp-key-list li').length === 1);
-            assert.equal(await host.locator('.chp-key-list code').textContent(), 'AIza…wxyz');
+            await page.waitForFunction(() => document.querySelector('.chp-key-status').textContent.startsWith('Saved'));
+            assert.equal(await page.locator('.chp-key-status').textContent(), 'Saved 2 key(s).');
+            assert.equal(await host.locator('textarea').inputValue(), 'RAWKEY01\nRAWKEY03');
 
             const keyCalls = await page.evaluate(() => window.calls.filter(call => call.path.startsWith('/youtube/keys')));
             assert.ok(keyCalls.every(call => !call.path.includes('?')));
             const checks = keyCalls.filter(call => call.path.endsWith('/check')).map(call => JSON.parse(call.body));
-            assert.deepEqual(checks, [{}, { api_keys: 'RAWKEY01\nRAWKEY02\nRAWKEY03' }]);
-            assert.ok(keyCalls.some(call => call.method === 'POST' && call.path === '/youtube/keys'));
-            assert.ok(keyCalls.some(call => call.method === 'DELETE' && call.path === '/youtube/keys/k1'));
-            assert.ok(keyCalls.every(call => call.method !== 'PUT'));
+            assert.deepEqual(checks, [{ api_keys: 'RAWKEY01\nRAWKEY02\nRAWKEY03' }]);
+            assert.ok(keyCalls.some(call => call.method === 'PUT' && call.path === '/youtube/keys'));
+            assert.ok(keyCalls.every(call => call.method !== 'POST' || call.path.endsWith('/check')));
         } finally { await page.close(); }
     });
 

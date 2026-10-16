@@ -26,7 +26,7 @@
     }
 }
 
-/* Stretch so an empty note is still a double-click target for inline editing. */
+/* Stretch so the edit button stays reachable on rows with an empty note. */
 .ytm-root .ytm-note-cell {
     align-self: stretch;
     display: flex;
@@ -46,6 +46,38 @@
     font-size: 12px;
     line-height: 1.4;
     color: var(--text-muted, #606060);
+}
+
+.ytm-note-edit-btn {
+    flex: 0 0 auto;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 26px;
+    height: 26px;
+    margin-left: 4px;
+    padding: 0;
+    border: 0;
+    border-radius: 6px;
+    background: transparent;
+    color: var(--text-muted, #606060);
+    cursor: pointer;
+    opacity: .55;
+    transition: opacity .15s, background-color .15s, color .15s;
+}
+
+.ytm-note-edit-btn .material-icons-round {
+    font-size: 16px;
+}
+
+.ytm-row:hover .ytm-note-edit-btn,
+.ytm-note-edit-btn:focus-visible {
+    opacity: 1;
+}
+
+.ytm-note-edit-btn:hover {
+    background: rgba(0, 0, 0, .06);
+    color: var(--text-main, #0f0f0f);
 }
 
 .ytm-note-input {

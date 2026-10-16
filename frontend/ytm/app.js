@@ -447,8 +447,12 @@
   function renderModalGroups() {
     const wrap = qs('modal-group-wrap');
     if (!wrap) return;
-    const options = [{ value: '', label: 'No group' }, ...allGroupsFromItems().map((g) => ({ value: g, label: g }))];
-    const selected = state.activeGroup !== ALL_GROUP_ID ? state.activeGroup : '';
+    // Every new channel must land in a group, so there is no "No group" choice here.
+    const groups = allGroupsFromItems();
+    const options = groups.length
+      ? groups.map((g) => ({ value: g, label: g }))
+      : [{ value: '', label: 'Create a group first' }];
+    const selected = groups.includes(state.activeGroup) ? state.activeGroup : (groups[0] || '');
     if (document.getElementById('ytm-modal-group-dropdown')) {
       state.options.updateDropdown('ytm-modal-group-dropdown', options, selected);
     } else {
@@ -976,7 +980,7 @@
   function noteCell(item) {
     const note = String(item.note || '');
     const edited = note && item.note_updated_at ? `\n\nLast edited ${formatDate(item.note_updated_at)}` : '';
-    return `<div class="meta-cell ytm-note-cell" data-ytm-note${note ? ` title="${escapeHtml(note + edited)}"` : ''}><span class="ytm-note-text">${escapeHtml(note)}</span></div>`;
+    return `<div class="meta-cell ytm-note-cell" data-ytm-note${note ? ` title="${escapeHtml(note + edited)}"` : ''}><span class="ytm-note-text">${escapeHtml(note)}</span><button type="button" class="ytm-note-edit-btn" data-ytm-note-edit aria-label="Edit note" title="Edit note"><span class="material-icons-round">edit</span></button></div>`;
   }
   function startNoteEdit(cell) {
     const row = cell?.closest('[data-row-id]');
@@ -1290,6 +1294,10 @@
       return;
     }
     const group = selectedModalGroup();
+    if (!group) {
+      toast('Please choose a group first', 'error');
+      return;
+    }
     closeAddModal();
     const response = await crawlBatchChunked(urls, group);
     const accepted = Array.isArray(response.accepted_indices) ? response.accepted_indices : urls.map((_, index) => index);
@@ -1635,6 +1643,8 @@
     if (preview) { state.options.previewImage?.(preview.dataset.ytmPreview); return; }
     const copy = e.target.closest('[data-ytm-copy]');
     if (copy) { state.options.copyText?.(copy.dataset.ytmCopy); return; }
+    const noteEdit = e.target.closest('[data-ytm-note-edit]');
+    if (noteEdit) { startNoteEdit(noteEdit.closest('[data-ytm-note]')); return; }
     if (e.target.closest('a, textarea')) return;
     const row = e.target.closest('[data-row-id]');
     if (!row) return;
@@ -1686,8 +1696,7 @@
     list.addEventListener('dblclick', (e) => {
       const row = e.target.closest('[data-row-id]');
       if (!row || e.target.closest('a, button, textarea')) return;
-      const note = e.target.closest('[data-ytm-note]');
-      if (note) { startNoteEdit(note); return; }
+      if (e.target.closest('[data-ytm-note]')) return;
       const item = itemsByKeys([row.dataset.rowId])[0];
       if (item) window.open(itemUrl(item), '_blank', 'noopener');
     });
